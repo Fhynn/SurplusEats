@@ -1,0 +1,182 @@
+"use client";
+
+import Image from "next/image";
+import { ChevronDown, Flame, Leaf, MapPin, Plus, Search, Star } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useMemo, useState } from "react";
+
+import { useCustomerApp } from "@/components/customer-app-provider";
+import { CATEGORIES, MOCK_FOODS, formatRp } from "@/lib/customer-data";
+
+export function CustomerHomeScreen() {
+  const router = useRouter();
+  const [activeCategory, setActiveCategory] =
+    useState<(typeof CATEGORIES)[number]>("Semua");
+  const { addToCart } = useCustomerApp();
+
+  const foods = useMemo(() => {
+    if (activeCategory === "Semua") {
+      return MOCK_FOODS;
+    }
+
+    return MOCK_FOODS.filter((food) => food.category === activeCategory);
+  }, [activeCategory]);
+
+  return (
+    <div className="flex flex-1 flex-col overflow-y-auto pb-24 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div className="sticky top-0 z-20 rounded-b-3xl bg-white px-6 pt-8 pb-4 shadow-[0_4px_20px_rgba(0,0,0,0.03)]">
+        <div className="mb-5 flex items-center justify-between">
+          <div className="flex flex-col">
+            <span className="mb-0.5 flex items-center gap-1 text-xs font-semibold text-gray-400">
+              Lokasi Saat Ini
+              <ChevronDown size={14} className="text-emerald-500" />
+            </span>
+            <div className="flex items-center gap-1.5 text-sm font-bold text-gray-900">
+              <MapPin size={16} className="text-emerald-500" />
+              Sudirman, Pekanbaru
+            </div>
+          </div>
+
+          <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border-2 border-emerald-500 bg-emerald-100">
+            <Image
+              src="https://api.dicebear.com/7.x/avataaars/svg?seed=Alfhin"
+              alt="User profile"
+              width={40}
+              height={40}
+              unoptimized
+              className="h-full w-full object-cover"
+            />
+          </div>
+        </div>
+
+        <div className="relative flex items-center rounded-2xl border border-transparent bg-gray-100/80 transition-all duration-300 focus-within:border-emerald-500 focus-within:bg-white focus-within:shadow-[0_0_0_4px_rgba(16,185,129,0.1)]">
+          <Search size={20} className="absolute left-4 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Cari makan malam hemat..."
+            onFocus={() => router.push("/browse")}
+            className="w-full rounded-2xl bg-transparent py-3.5 pr-4 pl-12 text-sm text-gray-900 outline-none placeholder:text-gray-400"
+          />
+        </div>
+      </div>
+
+      <div className="mt-6 px-6">
+        <section className="group relative mb-8 flex cursor-pointer items-center justify-between overflow-hidden rounded-3xl bg-emerald-500 p-5 text-white shadow-[0_8px_20px_rgba(16,185,129,0.25)]">
+          <div className="absolute top-0 right-0 -mt-4 -mr-4 h-24 w-24 rounded-full bg-white/10 blur-xl transition-transform duration-700 group-hover:scale-150" />
+
+          <div className="relative z-10">
+            <h2 className="mb-1 flex items-center gap-2 text-lg font-extrabold tracking-tight">
+              <Leaf size={18} className="fill-white" />
+              Kamu Food Hero!
+            </h2>
+            <p className="text-xs leading-relaxed font-medium text-emerald-50/90">
+              Bulan ini kamu sudah menyelamatkan
+              <br />
+              <span className="ml-1 rounded-md bg-emerald-600/50 px-1.5 py-0.5 text-sm font-bold text-white">
+                2.5 Kg
+              </span>{" "}
+              makanan lezat.
+            </p>
+          </div>
+
+          <div className="relative z-10 flex h-12 w-12 items-center justify-center rounded-2xl border border-white/30 bg-white/20 backdrop-blur-sm">
+            <Flame size={24} className="fill-amber-300 text-amber-300" />
+          </div>
+        </section>
+
+        <section className="-mx-6 flex space-x-3 overflow-x-auto px-6 pb-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {CATEGORIES.map((category) => (
+            <button
+              key={category}
+              type="button"
+              onClick={() => setActiveCategory(category)}
+              className={`whitespace-nowrap rounded-2xl px-5 py-2.5 text-xs font-bold transition-all duration-200 ${
+                activeCategory === category
+                  ? "bg-gray-900 text-white shadow-[0_4px_18px_rgba(17,24,39,0.18)]"
+                  : "border border-gray-200 bg-white text-gray-500 hover:bg-gray-50"
+              }`}
+            >
+              {category}
+            </button>
+          ))}
+        </section>
+
+        <section className="mt-4 mb-4 flex items-end justify-between">
+          <div>
+            <h2 className="text-lg font-extrabold tracking-tight text-gray-900">
+              Flash Rescue
+            </h2>
+            <p className="text-xs font-medium text-gray-500">
+              Makanan terdekat yang segera habis
+            </p>
+          </div>
+          <button type="button" className="text-xs font-bold text-emerald-600">
+            Lihat Semua
+          </button>
+        </section>
+
+        <section className="space-y-4">
+          {foods.map((food) => (
+            <article
+              key={food.id}
+              onClick={() => router.push(`/detail/${food.id}`)}
+              className="group flex gap-4 rounded-[24px] border border-gray-100 bg-white p-3 shadow-[0_2px_10px_rgba(0,0,0,0.03)]"
+            >
+              <div className="relative h-28 w-28 shrink-0 overflow-hidden rounded-[18px]">
+                <Image
+                  src={food.image}
+                  alt={food.name}
+                  fill
+                  sizes="112px"
+                  className="object-cover transition-transform duration-500 group-hover:scale-105"
+                />
+                <div className="absolute top-2 left-2 rounded-lg border border-white/20 bg-amber-500/90 px-2 py-1 text-[9px] font-bold text-white backdrop-blur-sm">
+                  Sisa {food.stock}
+                </div>
+              </div>
+              <div className="flex flex-1 flex-col justify-center py-1 pr-2">
+                <h3 className="mb-1 line-clamp-2 text-sm leading-snug font-bold text-gray-900">
+                  {food.name}
+                </h3>
+                <p className="mb-2 text-[11px] font-medium text-gray-500">
+                  {food.restaurant}
+                </p>
+                <div className="mb-3 flex items-center gap-2.5 text-[10px] font-bold text-gray-500">
+                  <span className="flex items-center gap-1 rounded bg-amber-50 px-1.5 py-0.5 text-amber-700">
+                    <Star size={10} className="fill-amber-500 text-amber-500" />
+                    {food.rating}
+                  </span>
+                  <span className="flex items-center gap-1 rounded bg-gray-50 px-1.5 py-0.5">
+                    <MapPin size={10} />
+                    {food.distance}
+                  </span>
+                </div>
+                <div className="mt-auto flex items-end justify-between">
+                  <div>
+                    <p className="mb-0.5 text-[10px] font-medium text-gray-400 line-through decoration-gray-300">
+                      {formatRp(food.originalPrice)}
+                    </p>
+                    <p className="text-sm font-extrabold tracking-tight text-emerald-600">
+                      {formatRp(food.price)}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      addToCart(food);
+                    }}
+                    className="rounded-xl bg-gray-100 p-2 text-gray-600 transition-colors duration-300 hover:bg-emerald-500 hover:text-white active:scale-95"
+                    aria-label={`Tambah ${food.name} ke keranjang`}
+                  >
+                    <Plus size={16} />
+                  </button>
+                </div>
+              </div>
+            </article>
+          ))}
+        </section>
+      </div>
+    </div>
+  );
+}
