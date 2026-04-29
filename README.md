@@ -13,9 +13,40 @@ Web application prototype for food rescue, surplus food ordering, restaurant own
 
 **Status: Work in Progress / Masih Dalam Tahap Pengerjaan**
 
-[Bahasa Indonesia](#bahasa-indonesia) · [English](#english) · [Screenshots](#screenshots) · [Credit](#credit--ownership)
+[Live Demo](#live-demo--links) · [Bahasa Indonesia](#bahasa-indonesia) · [English](#english) · [Screenshots](#screenshots) · [Credit](#credit--ownership)
 
 </div>
+
+---
+
+## Live Demo / Links
+
+Public deployment / Deployment publik:
+
+**https://surplus-eats.vercel.app/**
+
+> This website is still a frontend prototype and is currently in development.  
+> Website ini masih prototype frontend dan masih dalam tahap pengerjaan.
+
+| Page / Halaman | Public URL |
+| --- | --- |
+| Main / Login | https://surplus-eats.vercel.app/ |
+| Customer Register | https://surplus-eats.vercel.app/register |
+| Customer Home | https://surplus-eats.vercel.app/home |
+| Browse Food | https://surplus-eats.vercel.app/browse |
+| Cart | https://surplus-eats.vercel.app/cart |
+| Checkout | https://surplus-eats.vercel.app/checkout |
+| Order Tracking | https://surplus-eats.vercel.app/tracking |
+| Order History | https://surplus-eats.vercel.app/history |
+| Customer Profile | https://surplus-eats.vercel.app/profile |
+| Daftar Usaha / Partner Registration | https://surplus-eats.vercel.app/register-mitra |
+| Owner Dashboard | https://surplus-eats.vercel.app/owner/dashboard |
+| Owner Menu Management | https://surplus-eats.vercel.app/owner/menu |
+| Owner Notifications | https://surplus-eats.vercel.app/owner/notifications |
+| Owner Settings | https://surplus-eats.vercel.app/owner/settings |
+| Owner Verification | https://surplus-eats.vercel.app/owner/verify |
+| Owner Banned Page | https://surplus-eats.vercel.app/owner/banned |
+| Admin Dashboard | https://surplus-eats.vercel.app/admin/dashboard |
 
 ---
 
