@@ -2,14 +2,13 @@ import {
   ApplicationStatus,
   RestaurantStatus,
   UserRole,
-  type Prisma,
 } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { getCurrentSession } from "@/lib/auth-session";
 import { slugify } from "@/lib/backend-utils";
-import { prisma } from "@/lib/prisma";
+import { prisma, type PrismaTransactionClient } from "@/lib/prisma";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -131,7 +130,7 @@ export async function PATCH(request: Request) {
 
   const data = parsed.data;
 
-  const result = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+  const result = await prisma.$transaction(async (tx: PrismaTransactionClient) => {
     const application = await tx.restaurantApplication.update({
       where: { id: data.applicationId },
       data: {

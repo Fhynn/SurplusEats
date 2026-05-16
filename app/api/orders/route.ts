@@ -3,14 +3,13 @@ import {
   NotificationType,
   OrderStatus,
   PaymentStatus,
-  type Prisma,
 } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { getCurrentSession } from "@/lib/auth-session";
 import { createOrderCode } from "@/lib/backend-utils";
-import { prisma } from "@/lib/prisma";
+import { prisma, type PrismaTransactionClient } from "@/lib/prisma";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -98,7 +97,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const order = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    const order = await prisma.$transaction(async (tx: PrismaTransactionClient) => {
       const requestedIds = data.items.map((item) => item.menuItemId);
       const menuItems = await tx.menuItem.findMany({
         where: {

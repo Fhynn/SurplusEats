@@ -3,7 +3,6 @@ import {
   ApplicationStatus,
   AssetVisibility,
   UserRole,
-  type Prisma,
 } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -11,7 +10,7 @@ import { z } from "zod";
 import { createSessionToken, setSessionCookie } from "@/lib/auth-session";
 import { slugify } from "@/lib/backend-utils";
 import { hashPassword } from "@/lib/password";
-import { prisma } from "@/lib/prisma";
+import { prisma, type PrismaTransactionClient } from "@/lib/prisma";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -210,7 +209,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const result = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+  const result = await prisma.$transaction(async (tx: PrismaTransactionClient) => {
     const user = await tx.user.create({
       data: {
         email,

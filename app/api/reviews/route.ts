@@ -1,9 +1,9 @@
-import { OrderStatus, type Prisma } from "@prisma/client";
+import { OrderStatus } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { getCurrentSession } from "@/lib/auth-session";
-import { prisma } from "@/lib/prisma";
+import { prisma, type PrismaTransactionClient } from "@/lib/prisma";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -48,7 +48,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const review = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+  const review = await prisma.$transaction(async (tx: PrismaTransactionClient) => {
     const savedReview = await tx.review.upsert({
       where: { orderId: order.id },
       create: {
