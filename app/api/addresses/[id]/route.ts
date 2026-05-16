@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -59,7 +60,7 @@ export async function PATCH(request: Request, { params }: AddressRouteProps) {
     );
   }
 
-  const updatedAddress = await prisma.$transaction(async (tx) => {
+  const updatedAddress = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     if (parsed.data.isPrimary) {
       await tx.address.updateMany({
         where: { userId: session.userId },
@@ -99,7 +100,7 @@ export async function DELETE(_request: Request, { params }: AddressRouteProps) {
     );
   }
 
-  await prisma.$transaction(async (tx) => {
+  await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     await tx.address.delete({
       where: { id: address.id },
     });

@@ -2,6 +2,7 @@ import {
   ApplicationStatus,
   RestaurantStatus,
   UserRole,
+  type Prisma,
 } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -130,7 +131,7 @@ export async function PATCH(request: Request) {
 
   const data = parsed.data;
 
-  const result = await prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const application = await tx.restaurantApplication.update({
       where: { id: data.applicationId },
       data: {

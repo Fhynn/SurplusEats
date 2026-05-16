@@ -3,6 +3,7 @@ import {
   NotificationType,
   OrderStatus,
   PaymentStatus,
+  type Prisma,
 } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -97,7 +98,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const order = await prisma.$transaction(async (tx) => {
+    const order = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const requestedIds = data.items.map((item) => item.menuItemId);
       const menuItems = await tx.menuItem.findMany({
         where: {

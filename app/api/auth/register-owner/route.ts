@@ -1,5 +1,10 @@
 import { put } from "@vercel/blob";
-import { ApplicationStatus, AssetVisibility, UserRole } from "@prisma/client";
+import {
+  ApplicationStatus,
+  AssetVisibility,
+  UserRole,
+  type Prisma,
+} from "@prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -205,7 +210,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const result = await prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const user = await tx.user.create({
       data: {
         email,

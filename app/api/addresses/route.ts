@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -50,7 +51,7 @@ export async function POST(request: Request) {
   });
   const shouldBePrimary = parsed.data.isPrimary || addressCount === 0;
 
-  const address = await prisma.$transaction(async (tx) => {
+  const address = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     if (shouldBePrimary) {
       await tx.address.updateMany({
         where: { userId: session.userId },
