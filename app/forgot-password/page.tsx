@@ -126,7 +126,7 @@ export default function ForgotPasswordPage() {
 
   return (
     <MobileDeviceFrame backgroundClassName="bg-white">
-      <div className="flex h-full flex-1 flex-col bg-white">
+      <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-white">
         <div className="sticky top-0 z-20 flex items-center justify-between bg-white px-6 pt-10 pb-4">
           <button
             type="button"
@@ -147,7 +147,7 @@ export default function ForgotPasswordPage() {
           </Link>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-6 pb-10">
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-12">
           <div className="mb-7">
             <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-[24px] bg-emerald-50 text-emerald-600">
               {stage === "done" ? (

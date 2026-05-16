@@ -124,7 +124,7 @@ export default function CustomerHelpPage() {
 
   return (
     <MobileDeviceFrame backgroundClassName="bg-white">
-      <div className="relative flex min-h-full flex-1 flex-col bg-white">
+      <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-white">
         <header className="sticky top-0 z-20 flex items-center bg-emerald-500 px-6 pt-10 pb-4 shadow-sm">
           <Link
             href="/profile/settings"
@@ -138,7 +138,7 @@ export default function CustomerHelpPage() {
           </h1>
         </header>
 
-        <div className="flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <section className="rounded-b-[40px] bg-emerald-500 px-6 pt-2 pb-10 text-white shadow-sm">
             <h2 className="mb-2 text-2xl font-extrabold tracking-tight">
               Ada yang bisa

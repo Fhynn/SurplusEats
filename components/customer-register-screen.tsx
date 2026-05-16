@@ -137,7 +137,7 @@ export function CustomerRegisterScreen() {
 
   return (
     <MobileDeviceFrame backgroundClassName="bg-white">
-      <div className="flex min-h-full flex-1 flex-col bg-white">
+      <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-white">
         <header className="sticky top-0 z-20 bg-white px-6 pt-10 pb-4">
           <div className="mb-5 flex items-center">
             <button
@@ -166,7 +166,7 @@ export function CustomerRegisterScreen() {
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto px-6 pb-12 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <main className="min-h-0 flex-1 overflow-y-auto px-6 pb-12 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <section className="mb-6 rounded-[24px] border border-gray-100 bg-gray-50 p-4">
             <div className="space-y-3">
               {benefits.map((benefit) => (

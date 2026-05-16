@@ -113,6 +113,69 @@ function formatPickupWindow(start: string, end: string) {
   return `${start} - ${end}`;
 }
 
+function getFormValidationMessage(
+  formState: MenuFormState,
+  originalPrice: number,
+  discountPrice: number,
+  stock: number,
+) {
+  if (formState.name.trim().length < 3) {
+    return "Nama makanan minimal 3 karakter.";
+  }
+
+  if (!formState.category) {
+    return "Pilih kategori makanan terlebih dahulu.";
+  }
+
+  if (formState.description.trim().length < 8) {
+    return "Deskripsi makanan minimal 8 karakter.";
+  }
+
+  if (!Number.isFinite(originalPrice) || originalPrice <= 0) {
+    return "Harga asli harus lebih besar dari 0.";
+  }
+
+  if (!Number.isFinite(discountPrice) || discountPrice <= 0) {
+    return "Harga diskon harus lebih besar dari 0.";
+  }
+
+  if (discountPrice > originalPrice) {
+    return "Harga diskon tidak boleh lebih besar dari harga asli.";
+  }
+
+  if (!Number.isInteger(stock) || stock < 0) {
+    return "Stok harus angka bulat minimal 0.";
+  }
+
+  if (!formState.pickupStart || !formState.pickupEnd) {
+    return "Jam pickup mulai dan selesai wajib diisi.";
+  }
+
+  if (formState.pickupEnd <= formState.pickupStart) {
+    return "Jam selesai pickup harus lebih besar dari jam mulai.";
+  }
+
+  return null;
+}
+
+function getApiErrorMessage(
+  data: {
+    message?: string;
+    issues?: {
+      fieldErrors?: Record<string, string[] | undefined>;
+      formErrors?: string[];
+    };
+  },
+  fallback: string,
+) {
+  const fieldErrors = data.issues?.fieldErrors;
+  const firstFieldError = fieldErrors
+    ? Object.values(fieldErrors).flat().find(Boolean)
+    : undefined;
+
+  return firstFieldError || data.issues?.formErrors?.[0] || data.message || fallback;
+}
+
 function mapOwnerMenuItem(item: ApiOwnerMenuItem): SurplusMenuItem {
   const imageUrl = item.imageUrl || null;
 
@@ -257,6 +320,7 @@ export function OwnerMenuManagement() {
     setImagePreview(null);
     setSelectedImageFile(null);
     setFormState(defaultFormState);
+    setMenuNotice(null);
     setIsModalOpen(true);
   };
 
@@ -265,6 +329,7 @@ export function OwnerMenuManagement() {
     setEditingItem(item);
     setImagePreview(item.imageUrl ?? item.image);
     setSelectedImageFile(null);
+    setMenuNotice(null);
     setFormState({
       name: item.name,
       category: item.category,
@@ -281,6 +346,7 @@ export function OwnerMenuManagement() {
     field: Key,
     value: MenuFormState[Key],
   ) => {
+    setMenuNotice(null);
     setFormState((current) => ({
       ...current,
       [field]: value,
@@ -295,6 +361,7 @@ export function OwnerMenuManagement() {
     }
 
     setSelectedImageFile(file);
+    setMenuNotice(null);
 
     const reader = new FileReader();
 
@@ -341,6 +408,17 @@ export function OwnerMenuManagement() {
     const originalPrice = Number(formState.originalPrice);
     const discountPrice = Number(formState.discountPrice);
     const stock = Number(formState.stock);
+    const validationMessage = getFormValidationMessage(
+      formState,
+      originalPrice,
+      discountPrice,
+      stock,
+    );
+
+    if (validationMessage) {
+      setMenuNotice(validationMessage);
+      return;
+    }
 
     setIsSavingMenu(true);
     setMenuNotice(null);
@@ -371,10 +449,14 @@ export function OwnerMenuManagement() {
       const data = (await response.json()) as {
         ok: boolean;
         message?: string;
+        issues?: {
+          fieldErrors?: Record<string, string[] | undefined>;
+          formErrors?: string[];
+        };
       };
 
       if (!response.ok || !data.ok) {
-        throw new Error(data.message || "Menu gagal disimpan.");
+        throw new Error(getApiErrorMessage(data, "Menu gagal disimpan."));
       }
 
       await loadMenuItems();
@@ -666,16 +748,16 @@ export function OwnerMenuManagement() {
 
       {isFoodModalOpen ? (
         <div
-          className="animate-in fade-in fixed inset-0 z-[90] bg-gray-900/60 backdrop-blur-sm"
+          className="animate-in fade-in fixed inset-0 z-[90] overflow-y-auto bg-gray-900/60 px-4 py-6 backdrop-blur-sm [scrollbar-width:none] sm:px-6 sm:py-8 [&::-webkit-scrollbar]:hidden"
           onClick={handleCloseModal}
         >
-          <div className="flex min-h-full items-center justify-center px-4 py-8 sm:px-6">
+          <div className="flex min-h-full items-start justify-center">
             <div
               role="dialog"
               aria-modal="true"
               aria-labelledby="owner-food-form-title"
               onClick={(event) => event.stopPropagation()}
-              className="w-full max-w-2xl rounded-[32px] bg-white p-6 shadow-[0_28px_120px_rgba(15,23,42,0.22)] animate-[modal-pop_240ms_cubic-bezier(0.16,1,0.3,1)] sm:p-8"
+              className="max-h-[calc(100vh-3rem)] w-full max-w-2xl overflow-y-auto rounded-[32px] bg-white p-6 shadow-[0_28px_120px_rgba(15,23,42,0.22)] [scrollbar-width:none] animate-[modal-pop_240ms_cubic-bezier(0.16,1,0.3,1)] sm:max-h-[calc(100vh-4rem)] sm:p-8 [&::-webkit-scrollbar]:hidden"
             >
               <div className="flex items-start justify-between gap-4">
                 <div className="flex gap-3">
@@ -708,6 +790,12 @@ export function OwnerMenuManagement() {
                   <X size={18} />
                 </button>
               </div>
+
+              {menuNotice ? (
+                <div className="mt-6 rounded-[22px] border border-amber-100 bg-amber-50 px-5 py-4 text-sm leading-6 font-bold text-amber-700">
+                  {menuNotice}
+                </div>
+              ) : null}
 
               <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
                 <div>

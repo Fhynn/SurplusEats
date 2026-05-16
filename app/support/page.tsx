@@ -109,7 +109,7 @@ export default function CustomerSupportPage() {
 
   return (
     <MobileDeviceFrame backgroundClassName="bg-[#f8fafc]">
-      <div className="relative flex min-h-full flex-1 flex-col bg-[#f8fafc]">
+      <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-[#f8fafc]">
         <header className="sticky top-0 z-20 bg-white px-6 pt-10 pb-5 shadow-sm">
           <div className="mb-5 flex items-center justify-between gap-3">
             <button
@@ -166,7 +166,7 @@ export default function CustomerSupportPage() {
           </div>
         </header>
 
-        <div className="flex-1 overflow-y-auto px-6 py-6 pb-28 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6 pb-40 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <section className="mb-6 grid grid-cols-1 gap-3">
             {quickTopics.map(({ title, description, icon: Icon }) => (
               <article

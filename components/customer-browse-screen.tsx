@@ -122,7 +122,7 @@ export function CustomerBrowseScreen() {
   }, [activeCategory, activeFilter, allFoods, query]);
 
   return (
-    <div className="relative flex flex-1 flex-col overflow-hidden bg-gray-50">
+    <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-gray-50">
       <header className="sticky top-0 z-20 rounded-b-3xl bg-white px-6 pt-8 pb-4 shadow-[0_4px_20px_rgba(0,0,0,0.03)]">
         <div className="mb-5 flex items-center justify-between">
           <div className="flex flex-col">
@@ -185,7 +185,7 @@ export function CustomerBrowseScreen() {
         </div>
       </header>
 
-      <main className="flex-1 overflow-y-auto px-6 pt-6 pb-24 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <main className="min-h-0 flex-1 overflow-y-auto px-6 pt-6 pb-28 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <section className="group relative mb-8 flex items-center justify-between overflow-hidden rounded-3xl bg-emerald-500 p-5 text-white shadow-[0_8px_20px_rgba(16,185,129,0.25)]">
           <div className="absolute top-0 right-0 -mt-4 -mr-4 h-24 w-24 rounded-full bg-white/10 blur-xl transition-transform duration-700 group-hover:scale-150" />
 

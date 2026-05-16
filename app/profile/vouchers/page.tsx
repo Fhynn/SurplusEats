@@ -144,7 +144,7 @@ export default function CustomerVouchersPage() {
 
   return (
     <MobileDeviceFrame backgroundClassName="bg-[#f8fafc]">
-      <div className="relative flex min-h-full flex-1 flex-col bg-[#f8fafc]">
+      <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-[#f8fafc]">
         <header className="sticky top-0 z-20 bg-white px-6 pt-10 pb-5 shadow-sm">
           <div className="mb-5 flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center">
@@ -191,7 +191,7 @@ export default function CustomerVouchersPage() {
 
         </header>
 
-        <div className="flex-1 space-y-4 overflow-y-auto px-6 py-6 pb-24 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-6 pb-28 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {feedback ? (
             <div
               className={`flex gap-3 rounded-[20px] border p-4 ${

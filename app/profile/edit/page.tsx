@@ -160,7 +160,7 @@ export default function CustomerEditProfilePage() {
     <MobileDeviceFrame backgroundClassName="bg-white">
       <form
         onSubmit={handleSubmit}
-        className="relative flex min-h-full flex-1 flex-col bg-white"
+        className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-white"
       >
         <header className="sticky top-0 z-20 flex items-center bg-white px-6 pt-10 pb-4 shadow-sm">
           <Link
@@ -175,7 +175,7 @@ export default function CustomerEditProfilePage() {
           </h1>
         </header>
 
-        <div className="flex-1 space-y-6 overflow-y-auto px-6 py-6 pb-32 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-6 py-6 pb-48 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <div className="mb-6 flex flex-col items-center justify-center">
             <label className="group relative flex h-24 w-24 cursor-pointer items-center justify-center overflow-hidden rounded-full border-4 border-white bg-emerald-50 text-emerald-600 shadow-md">
               {avatarPreview ? (

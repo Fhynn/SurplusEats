@@ -109,7 +109,7 @@ export function CustomerHomeScreen() {
   }, [activeCategory, allFoods]);
 
   return (
-    <div className="flex flex-1 flex-col overflow-y-auto pb-24 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <div className="flex h-full min-h-0 flex-1 flex-col overflow-y-auto pb-28 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       <header className="sticky top-0 z-20 rounded-b-3xl bg-white px-6 pt-8 pb-4 shadow-[0_4px_20px_rgba(0,0,0,0.03)]">
         <div className="mb-5 flex items-center justify-between">
           <div className="flex flex-col">

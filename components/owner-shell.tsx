@@ -5,6 +5,7 @@ import {
   BarChart3,
   Bell,
   LayoutDashboard,
+  LogOut,
   Search,
   Settings,
   ShoppingBag,
@@ -76,7 +77,20 @@ export function OwnerShell({
   const searchParams = useSearchParams();
   const dashboardTab = searchParams.get("tab");
   const [shellQuery, setShellQuery] = useState("");
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const shouldUseShell = shellRoutes.has(pathname) || pathname.startsWith("/owner/orders/");
+
+  const handleLogout = async () => {
+    setIsLoggingOut(true);
+
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+      router.push("/");
+      router.refresh();
+    } finally {
+      setIsLoggingOut(false);
+    }
+  };
 
   const handleShellSearch = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -178,6 +192,15 @@ export function OwnerShell({
               />
               Pengaturan Restoran
             </Link>
+            <button
+              type="button"
+              onClick={handleLogout}
+              disabled={isLoggingOut}
+              className="mt-2 flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold text-gray-500 transition-colors hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:text-gray-300"
+            >
+              <LogOut size={20} className="text-gray-400" />
+              {isLoggingOut ? "Keluar..." : "Keluar Akun"}
+            </button>
           </div>
         </aside>
 
@@ -224,6 +247,15 @@ export function OwnerShell({
                   <Store size={20} />
                 </div>
               </Link>
+              <button
+                type="button"
+                onClick={handleLogout}
+                disabled={isLoggingOut}
+                className="flex h-10 w-10 items-center justify-center rounded-xl border border-red-100 bg-red-50 text-red-600 transition-colors hover:bg-red-100 disabled:cursor-not-allowed disabled:text-red-300"
+                aria-label="Keluar akun owner"
+              >
+                <LogOut size={18} />
+              </button>
             </div>
           </header>
 

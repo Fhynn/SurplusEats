@@ -175,7 +175,7 @@ export default function CustomerAccountSettingsPage() {
 
   return (
     <MobileDeviceFrame backgroundClassName="bg-[#f8fafc]">
-      <div className="relative flex min-h-full flex-1 flex-col bg-[#f8fafc]">
+      <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-[#f8fafc]">
         <header className="sticky top-0 z-20 flex items-center justify-between bg-white px-6 pt-10 pb-4 shadow-sm">
           <div className="flex items-center gap-3">
             <Link
@@ -191,7 +191,7 @@ export default function CustomerAccountSettingsPage() {
           </div>
         </header>
 
-        <div className="flex-1 space-y-6 overflow-y-auto px-6 py-6 pb-24 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-6 py-6 pb-28 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <section className="rounded-[24px] border border-gray-100 bg-white p-6 shadow-sm">
             <div className="flex items-center gap-4">
               <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full border-2 border-white bg-emerald-50 text-emerald-600 shadow-sm">

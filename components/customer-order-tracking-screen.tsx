@@ -10,7 +10,7 @@ export function CustomerOrderTrackingScreen() {
 
   return (
     <MobileDeviceFrame backgroundClassName="bg-white">
-      <div className="flex min-h-full flex-1 flex-col bg-white px-6 py-10">
+      <div className="flex h-full min-h-0 flex-1 flex-col overflow-y-auto bg-white px-6 py-10 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <button
           type="button"
           onClick={() => router.back()}

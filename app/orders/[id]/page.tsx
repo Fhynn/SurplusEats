@@ -160,7 +160,7 @@ export default function CustomerOrderTrackingPage() {
   if (isLoadingOrder || !order) {
     return (
       <MobileDeviceFrame backgroundClassName="bg-white">
-        <div className="flex min-h-full flex-1 items-center justify-center bg-white px-6 text-center">
+        <div className="flex h-full min-h-0 flex-1 items-center justify-center overflow-y-auto bg-white px-6 text-center [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <div>
             <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
               <Package size={32} />
@@ -204,7 +204,7 @@ export default function CustomerOrderTrackingPage() {
 
   return (
     <MobileDeviceFrame backgroundClassName="bg-white">
-      <div className="relative flex min-h-full flex-1 flex-col overflow-hidden bg-white">
+      <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-white">
         <section className="absolute top-0 h-72 w-full overflow-hidden bg-emerald-50">
           <Image
             src="https://images.unsplash.com/photo-1524661135-423995f22d0b?q=80&w=600&auto=format&fit=crop"
@@ -244,7 +244,7 @@ export default function CustomerOrderTrackingPage() {
           </div>
         </header>
 
-        <div className="relative z-20 mt-12 flex-1 overflow-y-auto px-4 py-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="relative z-20 mt-12 min-h-0 flex-1 overflow-y-auto px-4 py-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <section className="rounded-[32px] border border-gray-100 bg-white p-6 shadow-[0_-10px_40px_rgba(0,0,0,0.05)]">
             <div className="mb-6 text-center">
               <div

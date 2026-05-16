@@ -178,7 +178,7 @@ export function CustomerHistoryScreen() {
   };
 
   return (
-    <div className="relative flex flex-1 flex-col overflow-hidden bg-gray-50">
+    <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-gray-50">
       <header className="sticky top-0 z-20 bg-white px-6 pt-10 pb-4 shadow-[0_4px_20px_rgba(0,0,0,0.03)]">
         <div className="mb-5 flex items-center">
           <button
@@ -214,7 +214,7 @@ export function CustomerHistoryScreen() {
         </div>
       </header>
 
-      <main className="flex-1 space-y-4 overflow-y-auto px-6 pt-6 pb-24 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <main className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 pt-6 pb-28 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {notice ? (
           <div className="rounded-[24px] border border-red-100 bg-red-50 p-4 text-sm font-bold text-red-700">
             {notice}

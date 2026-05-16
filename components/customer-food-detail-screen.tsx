@@ -73,8 +73,8 @@ export function CustomerFoodDetailScreen({
 
   return (
     <MobileDeviceFrame backgroundClassName="bg-gray-50">
-      <div className="relative flex h-full flex-1 flex-col overflow-hidden bg-gray-50">
-        <div className="flex-1 overflow-y-auto pb-44 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-gray-50">
+        <div className="min-h-0 flex-1 overflow-y-auto pb-56 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <section className="relative h-76 w-full shrink-0">
             <button
               type="button"

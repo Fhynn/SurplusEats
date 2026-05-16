@@ -186,8 +186,8 @@ export function CustomerProfileScreen() {
   };
 
   return (
-    <div className="relative flex flex-1 flex-col overflow-hidden bg-gray-50">
-      <div className="flex-1 overflow-y-auto pb-24 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-gray-50">
+      <div className="min-h-0 flex-1 overflow-y-auto pb-28 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <section className="relative overflow-hidden rounded-b-[40px] bg-white px-6 pt-10 pb-8 shadow-[0_4px_20px_rgba(0,0,0,0.03)]">
           <div className="absolute top-0 right-0 -mt-14 -mr-14 h-56 w-56 rounded-full bg-emerald-50 blur-3xl" />
 

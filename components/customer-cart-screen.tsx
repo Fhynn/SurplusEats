@@ -113,7 +113,7 @@ export function CustomerCartScreen() {
 
   if (cart.length === 0) {
     return (
-      <div className="flex flex-1 flex-col overflow-y-auto bg-gray-50 pb-32">
+      <div className="flex h-full min-h-0 flex-1 flex-col overflow-y-auto bg-gray-50 pb-36 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <header className="sticky top-0 z-20 flex items-center bg-white/90 px-6 pt-10 pb-4 shadow-[0_4px_20px_rgba(0,0,0,0.03)] backdrop-blur-md">
           <button
             type="button"
@@ -128,7 +128,7 @@ export function CustomerCartScreen() {
           </h1>
         </header>
 
-        <main className="flex flex-1 flex-col items-center justify-center px-6 text-center">
+        <main className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 text-center">
           <div className="mb-6 flex h-28 w-28 items-center justify-center rounded-[32px] bg-emerald-50 text-emerald-500">
             <ShoppingBag size={46} />
           </div>
@@ -152,7 +152,7 @@ export function CustomerCartScreen() {
   }
 
   return (
-    <div className="relative flex flex-1 flex-col overflow-hidden bg-gray-50">
+    <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-gray-50">
       <header className="sticky top-0 z-20 flex items-center justify-between bg-white/90 px-6 pt-10 pb-4 shadow-[0_4px_20px_rgba(0,0,0,0.03)] backdrop-blur-md">
         <div className="flex items-center">
           <button
@@ -182,7 +182,7 @@ export function CustomerCartScreen() {
         </button>
       </header>
 
-      <main className="flex-1 overflow-y-auto px-6 pt-6 pb-56 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <main className="min-h-0 flex-1 overflow-y-auto px-6 pt-6 pb-64 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <section className="mb-5 rounded-[28px] border border-emerald-100 bg-emerald-50 p-5">
           <div className="mb-4 flex items-center justify-between gap-4">
             <div>

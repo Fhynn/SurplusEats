@@ -132,7 +132,7 @@ export function CustomerCheckoutScreen() {
 
   return (
     <MobileDeviceFrame backgroundClassName="bg-gray-50">
-      <div className="relative flex min-h-full flex-1 flex-col overflow-hidden bg-gray-50">
+      <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-gray-50">
         <header className="sticky top-0 z-20 flex items-center bg-white px-6 pt-10 pb-4 shadow-[0_4px_20px_rgba(0,0,0,0.03)]">
           <button
             type="button"
@@ -150,7 +150,7 @@ export function CustomerCheckoutScreen() {
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto px-6 pt-6 pb-48 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <main className="min-h-0 flex-1 overflow-y-auto px-6 pt-6 pb-64 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {cart.length === 0 ? (
             <div className="rounded-[28px] border border-gray-100 bg-white p-6 text-center shadow-sm">
               <div className="mx-auto mb-5 flex h-20 w-20 items-center justify-center rounded-[26px] bg-emerald-50 text-emerald-600">

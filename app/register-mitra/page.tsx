@@ -89,6 +89,8 @@ type PartnerForm = {
   password: string;
 };
 
+type UploadedDocs = Record<UploadKind, File | null>;
+
 function FieldLabel({ children }: { children: ReactNode }) {
   return (
     <label className="mb-2 block text-sm font-extrabold text-gray-800">
@@ -118,7 +120,12 @@ function UploadBox({
           : "border-gray-300 bg-white hover:border-emerald-300 hover:bg-emerald-50"
       }`}
     >
-      <input type="file" className="sr-only" onChange={onChange} />
+      <input
+        type="file"
+        accept="image/jpeg,image/png,image/webp,application/pdf"
+        className="sr-only"
+        onChange={onChange}
+      />
       <div className="mb-4 flex items-start justify-between gap-4">
         <div
           className={`flex h-14 w-14 items-center justify-center rounded-2xl transition-colors ${
@@ -166,10 +173,10 @@ export default function RegisterMitraPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [notice, setNotice] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [uploadedDocs, setUploadedDocs] = useState<Record<UploadKind, string>>({
-    identity: "",
-    permit: "",
-    storefront: "",
+  const [uploadedDocs, setUploadedDocs] = useState<UploadedDocs>({
+    identity: null,
+    permit: null,
+    storefront: null,
   });
 
   const completion = useMemo(() => {
@@ -182,9 +189,9 @@ export default function RegisterMitraPage() {
       form.pickupWindow,
       form.averageSurplus,
       form.password,
-      uploadedDocs.identity,
-      uploadedDocs.permit,
-      uploadedDocs.storefront,
+      uploadedDocs.identity?.name,
+      uploadedDocs.permit?.name,
+      uploadedDocs.storefront?.name,
     ];
     const completed = requiredItems.filter(Boolean).length;
 
@@ -205,7 +212,7 @@ export default function RegisterMitraPage() {
         return;
       }
 
-      setUploadedDocs((current) => ({ ...current, [key]: file.name }));
+      setUploadedDocs((current) => ({ ...current, [key]: file }));
     };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -214,20 +221,30 @@ export default function RegisterMitraPage() {
     setNotice("");
 
     try {
+      const formData = new FormData();
+
+      formData.set("ownerName", form.ownerName);
+      formData.set("email", form.email);
+      formData.set("phone", form.phone);
+      formData.set("password", form.password);
+      formData.set("storeName", form.storeName);
+      formData.set("businessType", category);
+      formData.set("address", form.address);
+      formData.set("city", "Jakarta");
+      formData.set(
+        "description",
+        `Jam pickup ${form.pickupWindow}. Estimasi surplus ${form.averageSurplus}. Rekening ${form.bankAccount || "belum diisi"}.`,
+      );
+
+      Object.entries(uploadedDocs).forEach(([key, file]) => {
+        if (file) {
+          formData.set(key, file);
+        }
+      });
+
       const response = await fetch("/api/auth/register-owner", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ownerName: form.ownerName,
-          email: form.email,
-          phone: form.phone,
-          password: form.password,
-          storeName: form.storeName,
-          businessType: category,
-          address: form.address,
-          city: "Jakarta",
-          description: `Jam pickup ${form.pickupWindow}. Estimasi surplus ${form.averageSurplus}. Rekening ${form.bankAccount || "belum diisi"}.`,
-        }),
+        body: formData,
       });
       const result = (await response.json()) as {
         ok: boolean;
@@ -532,7 +549,7 @@ export default function RegisterMitraPage() {
                 Verifikasi Dokumen
               </h2>
               <p className="mt-1 text-xs font-medium text-gray-500">
-                File hanya disimulasikan di prototype UI ini.
+                Dokumen dikirim ke admin untuk proses review usaha.
               </p>
             </div>
 
@@ -543,7 +560,7 @@ export default function RegisterMitraPage() {
                   title={item.title}
                   description={item.description}
                   icon={item.icon}
-                  fileName={uploadedDocs[item.id]}
+                  fileName={uploadedDocs[item.id]?.name}
                   onChange={handleUploadChange(item.id)}
                 />
               ))}

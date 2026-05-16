@@ -226,7 +226,7 @@ export default function CustomerNotificationsPage() {
 
   return (
     <MobileDeviceFrame backgroundClassName="bg-[#f8fafc]">
-      <div className="flex min-h-full flex-1 flex-col bg-[#f8fafc]">
+      <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-[#f8fafc]">
         <header className="sticky top-0 z-20 rounded-b-[32px] bg-white px-6 pt-10 pb-5 shadow-[0_4px_20px_rgba(0,0,0,0.03)]">
           <div className="mb-5 flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
@@ -296,7 +296,7 @@ export default function CustomerNotificationsPage() {
           </div>
         </header>
 
-        <div className="flex-1 overflow-y-auto px-6 py-6 pb-24 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6 pb-28 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-sm font-extrabold tracking-wide text-gray-900">
               Hari Ini

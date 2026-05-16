@@ -157,9 +157,13 @@ export async function proxy(request: NextRequest) {
 
   const session = await readSession(request);
   const isPublicPath = publicPaths.has(pathname);
+  const isRegistrationPath =
+    pathname === "/register" || pathname === "/register-mitra";
 
   if (isPublicPath) {
-    return session ? redirectByRole(request, session) : NextResponse.next();
+    return session && !isRegistrationPath
+      ? redirectByRole(request, session)
+      : NextResponse.next();
   }
 
   if (!session) {

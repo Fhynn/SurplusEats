@@ -215,7 +215,7 @@ export default function CustomerRefundRequestPage() {
   if (isLoadingOrder || !order) {
     return (
       <MobileDeviceFrame backgroundClassName="bg-white">
-        <div className="flex min-h-full flex-1 items-center justify-center bg-white px-6 text-center">
+        <div className="flex h-full min-h-0 flex-1 items-center justify-center overflow-y-auto bg-white px-6 text-center [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <div>
             <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-blue-50 text-blue-600">
               <RefreshCcw size={30} />
@@ -243,7 +243,7 @@ export default function CustomerRefundRequestPage() {
   if (isSubmitted) {
     return (
       <MobileDeviceFrame backgroundClassName="bg-emerald-500">
-        <div className="flex min-h-full flex-1 flex-col bg-emerald-500 px-6 py-12 text-white">
+        <div className="flex h-full min-h-0 flex-1 flex-col overflow-y-auto bg-emerald-500 px-6 py-12 text-white [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <div className="flex flex-1 flex-col items-center justify-center text-center">
             <div className="mb-6 flex h-24 w-24 items-center justify-center rounded-full bg-white shadow-[0_18px_40px_rgba(15,23,42,0.18)]">
               <CheckCircle2 size={50} className="text-emerald-500" />
@@ -302,7 +302,7 @@ export default function CustomerRefundRequestPage() {
 
   return (
     <MobileDeviceFrame backgroundClassName="bg-[#f8fafc]">
-      <div className="flex min-h-full flex-1 flex-col bg-[#f8fafc]">
+      <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-[#f8fafc]">
         <header className="sticky top-0 z-20 flex items-center bg-white px-6 pt-10 pb-4 shadow-sm">
           <Link
             href="/orders"
@@ -321,7 +321,7 @@ export default function CustomerRefundRequestPage() {
           </div>
         </header>
 
-        <div className="flex-1 space-y-5 overflow-y-auto px-6 py-6 pb-32 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-6 py-6 pb-48 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {notice ? (
             <div className="rounded-2xl border border-red-100 bg-red-50 p-4 text-sm font-bold text-red-700">
               {notice}

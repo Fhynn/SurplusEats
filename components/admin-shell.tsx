@@ -6,13 +6,15 @@ import {
   Bell,
   FileBadge2,
   LayoutDashboard,
+  LogOut,
   ReceiptText,
   Settings,
   ShieldCheck,
   Users,
 } from "lucide-react";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { ReactNode } from "react";
+import { useState } from "react";
 
 const adminNavItems = [
   {
@@ -113,12 +115,25 @@ const pageLabelByPath = [
 ] as const;
 
 export function AdminShell({ children }: Readonly<{ children: ReactNode }>) {
+  const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const dashboardTab = searchParams.get("tab");
   const pageLabel =
     pageLabelByPath.find((item) => item.test(pathname))?.label ??
     "Admin Console";
+  const handleLogout = async () => {
+    setIsLoggingOut(true);
+
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+      router.push("/");
+      router.refresh();
+    } finally {
+      setIsLoggingOut(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-50 font-[family-name:var(--font-plus-jakarta-sans)] text-gray-900 selection:bg-emerald-200">
@@ -173,6 +188,18 @@ export function AdminShell({ children }: Readonly<{ children: ReactNode }>) {
               );
             })}
           </nav>
+
+          <div className="border-t border-white/10 p-4">
+            <button
+              type="button"
+              onClick={handleLogout}
+              disabled={isLoggingOut}
+              className="flex w-full items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-extrabold text-gray-300 transition-colors hover:bg-red-500/10 hover:text-red-200 disabled:cursor-not-allowed disabled:text-gray-600"
+            >
+              <LogOut size={18} />
+              {isLoggingOut ? "Keluar..." : "Keluar Akun"}
+            </button>
+          </div>
         </aside>
 
         <main className="flex min-w-0 flex-1 flex-col">
@@ -187,14 +214,25 @@ export function AdminShell({ children }: Readonly<{ children: ReactNode }>) {
                 </span>
                 SurplusAdmin
               </Link>
-              <Link
-                href="/admin/notifications"
-                className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-500"
-                aria-label="Buka notifikasi admin"
-              >
-                <Bell size={18} />
-                <span className="absolute top-2.5 right-2.5 h-2 w-2 rounded-full bg-red-500" />
-              </Link>
+              <div className="flex items-center gap-2">
+                <Link
+                  href="/admin/notifications"
+                  className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-500"
+                  aria-label="Buka notifikasi admin"
+                >
+                  <Bell size={18} />
+                  <span className="absolute top-2.5 right-2.5 h-2 w-2 rounded-full bg-red-500" />
+                </Link>
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  disabled={isLoggingOut}
+                  className="flex h-10 w-10 items-center justify-center rounded-xl border border-red-100 bg-red-50 text-red-600 disabled:cursor-not-allowed disabled:text-red-300"
+                  aria-label="Keluar akun admin"
+                >
+                  <LogOut size={18} />
+                </button>
+              </div>
             </div>
             <div className="mt-3 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {adminNavItems.map(({ href, label, match }) => (

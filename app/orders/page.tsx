@@ -137,7 +137,7 @@ export default function CustomerOrdersPage() {
 
   return (
     <MobileDeviceFrame backgroundClassName="bg-[#f8fafc]">
-      <div className="relative flex min-h-full flex-1 flex-col bg-[#f8fafc]">
+      <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-[#f8fafc]">
         <header className="sticky top-0 z-20 bg-white px-6 pt-10 pb-4 shadow-sm">
           <div className="mb-5 flex items-start justify-between gap-4">
             <div>
@@ -206,7 +206,7 @@ export default function CustomerOrdersPage() {
           </div>
         </header>
 
-        <div className="flex-1 space-y-4 overflow-y-auto px-6 py-6 pb-24 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-6 pb-28 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {activeTab === "aktif" ? (
             <section className="rounded-[28px] border border-emerald-100 bg-emerald-50 p-5">
               <div className="mb-4 flex items-start gap-3">

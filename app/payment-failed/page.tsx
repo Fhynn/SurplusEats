@@ -10,7 +10,7 @@ export default function PaymentFailedPage() {
 
   return (
     <MobileDeviceFrame backgroundClassName="bg-red-500">
-      <div className="flex min-h-full flex-1 flex-col overflow-y-auto bg-red-500 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div className="flex h-full min-h-0 flex-1 flex-col overflow-y-auto bg-red-500 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <section className="relative px-6 pt-10 pb-8 text-white">
           <button
             type="button"

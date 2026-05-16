@@ -90,7 +90,7 @@ function PaymentSuccessContent() {
   if (isLoading || !order) {
     return (
       <MobileDeviceFrame backgroundClassName="bg-white">
-        <div className="flex min-h-full flex-1 items-center justify-center bg-white px-6 text-center">
+        <div className="flex h-full min-h-0 flex-1 items-center justify-center overflow-y-auto bg-white px-6 text-center [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <div>
             <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
               <ReceiptText size={30} />
@@ -123,7 +123,7 @@ function PaymentSuccessContent() {
 
   return (
     <MobileDeviceFrame backgroundClassName="bg-emerald-500">
-      <div className="flex min-h-full flex-1 flex-col overflow-y-auto bg-emerald-500 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div className="flex h-full min-h-0 flex-1 flex-col overflow-y-auto bg-emerald-500 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <section className="px-6 pt-12 pb-8 text-center text-white">
           <div className="mx-auto mb-6 flex h-24 w-24 items-center justify-center rounded-full bg-white shadow-[0_18px_40px_rgba(15,23,42,0.18)]">
             <CheckCircle2 size={50} className="text-emerald-500" />
