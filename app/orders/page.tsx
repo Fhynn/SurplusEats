@@ -3,8 +3,11 @@
 import Image from "next/image";
 import {
   AlertCircle,
+  CalendarClock,
   ChevronRight,
+  Clock3,
   MessageSquare,
+  PackageCheck,
   QrCode,
   RefreshCcw,
   Search,
@@ -103,10 +106,26 @@ const statusClassNameByStatus: Record<OrderStatus, string> = {
 export default function CustomerOrdersPage() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<"aktif" | "selesai">("aktif");
+  const [query, setQuery] = useState("");
   const [reviewOrder, setReviewOrder] = useState<CustomerOrder | null>(null);
   const [rating, setRating] = useState(0);
   const [reviewComment, setReviewComment] = useState("");
   const orders = activeTab === "aktif" ? activeOrders : pastOrders;
+  const normalizedQuery = query.trim().toLowerCase();
+  const visibleOrders = orders.filter((order) => {
+    if (!normalizedQuery) {
+      return true;
+    }
+
+    return [order.id, order.resto, order.items, order.statusText]
+      .join(" ")
+      .toLowerCase()
+      .includes(normalizedQuery);
+  });
+  const readyCount = activeOrders.filter((order) => order.status === "ready").length;
+  const preparingCount = activeOrders.filter(
+    (order) => order.status === "preparing",
+  ).length;
 
   const handleOpenOrder = (order: CustomerOrder) => {
     if (order.status === "ready" || order.status === "preparing") {
@@ -131,41 +150,130 @@ export default function CustomerOrdersPage() {
   return (
     <MobileDeviceFrame backgroundClassName="bg-[#f8fafc]">
       <div className="relative flex min-h-full flex-1 flex-col bg-[#f8fafc]">
-        <header className="sticky top-0 z-20 bg-white px-6 pt-10 pb-2 shadow-sm">
-          <h1 className="mb-4 text-xl font-extrabold text-gray-900">
-            Riwayat Pesanan
-          </h1>
+        <header className="sticky top-0 z-20 bg-white px-6 pt-10 pb-4 shadow-sm">
+          <div className="mb-5 flex items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-extrabold tracking-[0.18em] text-emerald-600 uppercase">
+                Order Center
+              </p>
+              <h1 className="mt-1 text-xl font-extrabold text-gray-900">
+                Riwayat Pesanan
+              </h1>
+            </div>
+            <div className="rounded-2xl bg-emerald-50 px-3 py-2 text-right">
+              <p className="text-lg font-extrabold text-emerald-700">
+                {activeOrders.length}
+              </p>
+              <p className="text-[10px] font-bold text-emerald-600">
+                aktif
+              </p>
+            </div>
+          </div>
 
           <div className="flex gap-4 border-b border-gray-100">
             <button
               type="button"
-              onClick={() => setActiveTab("aktif")}
+              onClick={() => {
+                setActiveTab("aktif");
+                setQuery("");
+              }}
               className={`relative pb-3 text-sm font-bold transition-all ${
                 activeTab === "aktif" ? "text-emerald-600" : "text-gray-400"
               }`}
             >
-              Sedang Berjalan
+              Sedang Berjalan ({activeOrders.length})
               {activeTab === "aktif" ? (
                 <span className="absolute bottom-0 left-0 h-1 w-full rounded-t-full bg-emerald-500" />
               ) : null}
             </button>
             <button
               type="button"
-              onClick={() => setActiveTab("selesai")}
+              onClick={() => {
+                setActiveTab("selesai");
+                setQuery("");
+              }}
               className={`relative pb-3 text-sm font-bold transition-all ${
                 activeTab === "selesai" ? "text-gray-900" : "text-gray-400"
               }`}
             >
-              Selesai & Dibatalkan
+              Selesai ({pastOrders.length})
               {activeTab === "selesai" ? (
                 <span className="absolute bottom-0 left-0 h-1 w-full rounded-t-full bg-gray-900" />
               ) : null}
             </button>
           </div>
+
+          <div className="relative mt-4">
+            <Search
+              size={18}
+              className="absolute top-1/2 left-4 -translate-y-1/2 text-gray-400"
+            />
+            <input
+              type="text"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Cari restoran, menu, atau ID..."
+              className="w-full rounded-2xl border border-gray-200 bg-gray-50 py-3.5 pr-4 pl-11 text-sm font-medium text-gray-900 outline-none transition-all placeholder:text-gray-400 focus:border-emerald-500 focus:bg-white"
+            />
+          </div>
         </header>
 
         <div className="flex-1 space-y-4 overflow-y-auto px-6 py-6 pb-24 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          {orders.map((order) => {
+          {activeTab === "aktif" ? (
+            <section className="rounded-[28px] border border-emerald-100 bg-emerald-50 p-5">
+              <div className="mb-4 flex items-start gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white text-emerald-600 shadow-sm">
+                  <PackageCheck size={22} />
+                </div>
+                <div>
+                  <h2 className="text-base font-extrabold text-gray-950">
+                    Pickup hari ini
+                  </h2>
+                  <p className="mt-1 text-xs leading-5 font-semibold text-emerald-800">
+                    Cek status sebelum berangkat agar pesanan tidak melewati jam
+                    pickup.
+                  </p>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-2xl bg-white p-3">
+                  <p className="text-lg font-extrabold text-emerald-700">
+                    {readyCount}
+                  </p>
+                  <p className="text-[11px] font-bold text-gray-500">
+                    siap diambil
+                  </p>
+                </div>
+                <div className="rounded-2xl bg-white p-3">
+                  <p className="text-lg font-extrabold text-blue-600">
+                    {preparingCount}
+                  </p>
+                  <p className="text-[11px] font-bold text-gray-500">
+                    disiapkan
+                  </p>
+                </div>
+              </div>
+            </section>
+          ) : (
+            <section className="rounded-[28px] border border-gray-100 bg-white p-5 shadow-sm">
+              <div className="flex items-start gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gray-50 text-gray-700">
+                  <CalendarClock size={22} />
+                </div>
+                <div>
+                  <h2 className="text-base font-extrabold text-gray-950">
+                    Arsip pesanan
+                  </h2>
+                  <p className="mt-1 text-xs leading-5 font-semibold text-gray-500">
+                    Buka ulasan, refund, atau pesan ulang dari riwayat yang
+                    sudah selesai.
+                  </p>
+                </div>
+              </div>
+            </section>
+          )}
+
+          {visibleOrders.map((order) => {
             const isTrackable =
               order.status === "ready" || order.status === "preparing";
 
@@ -237,13 +345,14 @@ export default function CustomerOrdersPage() {
                 <div className="border-t border-gray-50 pt-4">
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
-                    <p className="mb-0.5 text-[10px] text-gray-400">
-                      {order.time}
-                    </p>
-                    <p className="text-sm font-extrabold text-gray-900">
-                      {formatRp(order.total)}
-                    </p>
-                  </div>
+                      <p className="mb-0.5 flex items-center gap-1 text-[10px] font-semibold text-gray-400">
+                        <Clock3 size={12} />
+                        {order.time}
+                      </p>
+                      <p className="text-sm font-extrabold text-gray-900">
+                        {formatRp(order.total)}
+                      </p>
+                    </div>
 
                     {order.status === "ready" ? (
                       <span className="flex shrink-0 items-center gap-1.5 rounded-xl bg-gray-900 px-4 py-2 text-xs font-bold whitespace-nowrap text-white shadow-sm transition-colors group-hover:bg-emerald-500">
@@ -275,7 +384,7 @@ export default function CustomerOrdersPage() {
                   ) : null}
 
                   {order.status === "completed" ? (
-                    <div className="mt-4 grid grid-cols-3 gap-2">
+                    <div className="mt-4 grid grid-cols-2 gap-2">
                       <button
                         type="button"
                         onClick={(event) => {
@@ -304,7 +413,7 @@ export default function CustomerOrdersPage() {
                           event.stopPropagation();
                           router.push(`/detail/${order.foodId ?? 1}`);
                         }}
-                        className="flex min-h-11 min-w-0 items-center justify-center gap-1 rounded-xl bg-gray-900 px-2 text-[11px] font-extrabold whitespace-nowrap text-white shadow-sm transition-colors hover:bg-emerald-500"
+                        className="col-span-2 flex min-h-11 min-w-0 items-center justify-center gap-1.5 rounded-xl bg-gray-900 px-2 text-[12px] font-extrabold whitespace-nowrap text-white shadow-sm transition-colors hover:bg-emerald-500"
                       >
                         <ShoppingBag size={13} />
                         Pesan Lagi
@@ -316,17 +425,18 @@ export default function CustomerOrdersPage() {
             );
           })}
 
-          {activeTab === "selesai" ? (
-            <div className="relative mt-8">
-              <Search
-                size={18}
-                className="absolute top-1/2 left-4 -translate-y-1/2 text-gray-400"
-              />
-              <input
-                type="text"
-                placeholder="Cari restoran atau menu..."
-                className="w-full rounded-2xl border border-gray-200 bg-white py-3.5 pr-4 pl-11 text-sm font-medium text-gray-900 shadow-sm outline-none focus:border-emerald-500"
-              />
+          {visibleOrders.length === 0 ? (
+            <div className="rounded-[28px] border border-dashed border-gray-200 bg-white p-8 text-center">
+              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-gray-50 text-gray-400">
+                <Search size={24} />
+              </div>
+              <h2 className="text-base font-extrabold text-gray-950">
+                Pesanan tidak ditemukan
+              </h2>
+              <p className="mx-auto mt-2 max-w-[240px] text-sm leading-6 font-medium text-gray-500">
+                Coba cari dengan nama restoran, menu, status, atau ID pesanan
+                lain.
+              </p>
             </div>
           ) : null}
         </div>

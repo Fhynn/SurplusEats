@@ -27,7 +27,9 @@ export function MainShell({
 
       <nav className="absolute right-0 bottom-0 left-0 z-50 flex items-center justify-between rounded-t-[32px] border-t border-gray-100 bg-white/90 px-6 pt-4 pb-6 shadow-[0_-10px_30px_rgba(0,0,0,0.05)] backdrop-blur-xl">
         {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
-          const isActive = pathname === href;
+          const isActive =
+            pathname === href ||
+            (href === "/home" && ["/browse", "/browser"].includes(pathname));
 
           return (
             <Link

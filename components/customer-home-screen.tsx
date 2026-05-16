@@ -4,7 +4,9 @@ import Image from "next/image";
 import {
   Bell,
   ChevronDown,
+  ChevronRight,
   Flame,
+  Gift,
   Leaf,
   MapPin,
   Plus,
@@ -16,6 +18,30 @@ import { useMemo, useState } from "react";
 
 import { useCustomerApp } from "@/components/customer-app-provider";
 import { CATEGORIES, MOCK_FOODS, formatRp } from "@/lib/customer-data";
+
+const quickActions = [
+  {
+    label: "Voucher",
+    value: "5 aktif",
+    route: "/profile/vouchers",
+    icon: Gift,
+    className: "border-blue-100 bg-blue-50 text-blue-700",
+  },
+  {
+    label: "Pickup",
+    value: "2 order",
+    route: "/orders",
+    icon: Flame,
+    className: "border-amber-100 bg-amber-50 text-amber-700",
+  },
+  {
+    label: "Impact",
+    value: "12.5 Kg",
+    route: "/profile",
+    icon: Leaf,
+    className: "border-emerald-100 bg-emerald-50 text-emerald-700",
+  },
+] as const;
 
 export function CustomerHomeScreen() {
   const router = useRouter();
@@ -33,7 +59,7 @@ export function CustomerHomeScreen() {
 
   return (
     <div className="flex flex-1 flex-col overflow-y-auto pb-24 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-      <div className="sticky top-0 z-20 rounded-b-3xl bg-white px-6 pt-8 pb-4 shadow-[0_4px_20px_rgba(0,0,0,0.03)]">
+      <header className="sticky top-0 z-20 rounded-b-3xl bg-white px-6 pt-8 pb-4 shadow-[0_4px_20px_rgba(0,0,0,0.03)]">
         <div className="mb-5 flex items-center justify-between">
           <div className="flex flex-col">
             <span className="mb-0.5 flex items-center gap-1 text-xs font-semibold text-gray-400">
@@ -57,7 +83,12 @@ export function CustomerHomeScreen() {
               <span className="absolute top-2 right-2 h-2.5 w-2.5 rounded-full border-2 border-white bg-red-500" />
             </button>
 
-            <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border-2 border-emerald-500 bg-emerald-100">
+            <button
+              type="button"
+              onClick={() => router.push("/profile")}
+              className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border-2 border-emerald-500 bg-emerald-100"
+              aria-label="Buka profil"
+            >
               <Image
                 src="https://api.dicebear.com/7.x/avataaars/svg?seed=Alfhin"
                 alt="User profile"
@@ -66,43 +97,78 @@ export function CustomerHomeScreen() {
                 unoptimized
                 className="h-full w-full object-cover"
               />
-            </div>
+            </button>
           </div>
         </div>
 
-        <div className="relative flex items-center rounded-2xl border border-transparent bg-gray-100/80 transition-all duration-300 focus-within:border-emerald-500 focus-within:bg-white focus-within:shadow-[0_0_0_4px_rgba(16,185,129,0.1)]">
+        <button
+          type="button"
+          onClick={() => router.push("/browser")}
+          className="relative flex w-full items-center rounded-2xl border border-transparent bg-gray-100/80 text-left transition-all duration-300 hover:border-emerald-500 hover:bg-white hover:shadow-[0_0_0_4px_rgba(16,185,129,0.1)]"
+        >
           <Search size={20} className="absolute left-4 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Cari makan malam hemat..."
-            onFocus={() => router.push("/browse")}
-            className="w-full rounded-2xl bg-transparent py-3.5 pr-4 pl-12 text-sm text-gray-900 outline-none placeholder:text-gray-400"
-          />
-        </div>
-      </div>
+          <span className="w-full rounded-2xl py-3.5 pr-4 pl-12 text-sm text-gray-400">
+            Cari makan malam hemat...
+          </span>
+        </button>
+      </header>
 
-      <div className="mt-6 px-6">
-        <section className="group relative mb-8 flex cursor-pointer items-center justify-between overflow-hidden rounded-3xl bg-emerald-500 p-5 text-white shadow-[0_8px_20px_rgba(16,185,129,0.25)]">
+      <main className="mt-6 px-6">
+        <section className="group relative mb-5 overflow-hidden rounded-3xl bg-emerald-500 p-5 text-white shadow-[0_8px_20px_rgba(16,185,129,0.25)]">
           <div className="absolute top-0 right-0 -mt-4 -mr-4 h-24 w-24 rounded-full bg-white/10 blur-xl transition-transform duration-700 group-hover:scale-150" />
 
-          <div className="relative z-10">
-            <h2 className="mb-1 flex items-center gap-2 text-lg font-extrabold tracking-tight">
-              <Leaf size={18} className="fill-white" />
-              Kamu Food Hero!
-            </h2>
-            <p className="text-xs leading-relaxed font-medium text-emerald-50/90">
-              Bulan ini kamu sudah menyelamatkan
-              <br />
-              <span className="ml-1 rounded-md bg-emerald-600/50 px-1.5 py-0.5 text-sm font-bold text-white">
-                2.5 Kg
-              </span>{" "}
-              makanan lezat.
-            </p>
+          <div className="relative z-10 mb-5 flex items-start justify-between gap-4">
+            <div>
+              <h2 className="mb-1 flex items-center gap-2 text-lg font-extrabold tracking-tight">
+                <Leaf size={18} className="fill-white" />
+                Kamu Food Hero!
+              </h2>
+              <p className="text-xs leading-relaxed font-medium text-emerald-50/90">
+                Bulan ini kamu sudah menyelamatkan makanan lezat.
+              </p>
+            </div>
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-white/30 bg-white/20 backdrop-blur-sm">
+              <Flame size={24} className="fill-amber-300 text-amber-300" />
+            </div>
           </div>
 
-          <div className="relative z-10 flex h-12 w-12 items-center justify-center rounded-2xl border border-white/30 bg-white/20 backdrop-blur-sm">
-            <Flame size={24} className="fill-amber-300 text-amber-300" />
+          <div className="relative z-10 grid grid-cols-3 gap-2">
+            <div className="rounded-2xl bg-emerald-600/45 p-3">
+              <p className="text-[10px] font-bold text-emerald-50">Saved</p>
+              <p className="mt-1 text-sm font-extrabold">2.5 Kg</p>
+            </div>
+            <div className="rounded-2xl bg-emerald-600/45 p-3">
+              <p className="text-[10px] font-bold text-emerald-50">Hemat</p>
+              <p className="mt-1 text-sm font-extrabold">Rp48rb</p>
+            </div>
+            <div className="rounded-2xl bg-emerald-600/45 p-3">
+              <p className="text-[10px] font-bold text-emerald-50">Level</p>
+              <p className="mt-1 text-sm font-extrabold">Hero 2</p>
+            </div>
           </div>
+        </section>
+
+        <section className="mb-6 grid grid-cols-3 gap-3">
+          {quickActions.map((action) => {
+            const Icon = action.icon;
+
+            return (
+              <button
+                key={action.label}
+                type="button"
+                onClick={() => router.push(action.route)}
+                className={`rounded-[20px] border p-3 text-left transition-transform active:scale-[0.98] ${action.className}`}
+              >
+                <Icon size={18} className="mb-2" />
+                <p className="text-[10px] font-extrabold uppercase">
+                  {action.label}
+                </p>
+                <p className="mt-1 text-sm font-extrabold text-gray-950">
+                  {action.value}
+                </p>
+              </button>
+            );
+          })}
         </section>
 
         <section className="-mx-6 flex space-x-3 overflow-x-auto px-6 pb-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -131,73 +197,87 @@ export function CustomerHomeScreen() {
               Makanan terdekat yang segera habis
             </p>
           </div>
-          <button type="button" className="text-xs font-bold text-emerald-600">
+          <button
+            type="button"
+            onClick={() => router.push("/browser")}
+            className="flex items-center gap-1 text-xs font-bold text-emerald-600"
+          >
             Lihat Semua
+            <ChevronRight size={14} />
           </button>
         </section>
 
         <section className="space-y-4">
-          {foods.map((food) => (
-            <article
-              key={food.id}
-              onClick={() => router.push(`/detail/${food.id}`)}
-              className="group flex gap-4 rounded-[24px] border border-gray-100 bg-white p-3 shadow-[0_2px_10px_rgba(0,0,0,0.03)]"
-            >
-              <div className="relative h-28 w-28 shrink-0 overflow-hidden rounded-[18px]">
-                <Image
-                  src={food.image}
-                  alt={food.name}
-                  fill
-                  sizes="112px"
-                  className="object-cover transition-transform duration-500 group-hover:scale-105"
-                />
-                <div className="absolute top-2 left-2 rounded-lg border border-white/20 bg-amber-500/90 px-2 py-1 text-[9px] font-bold text-white backdrop-blur-sm">
-                  Sisa {food.stock}
-                </div>
-              </div>
-              <div className="flex flex-1 flex-col justify-center py-1 pr-2">
-                <h3 className="mb-1 line-clamp-2 text-sm leading-snug font-bold text-gray-900">
-                  {food.name}
-                </h3>
-                <p className="mb-2 text-[11px] font-medium text-gray-500">
-                  {food.restaurant}
-                </p>
-                <div className="mb-3 flex items-center gap-2.5 text-[10px] font-bold text-gray-500">
-                  <span className="flex items-center gap-1 rounded bg-amber-50 px-1.5 py-0.5 text-amber-700">
-                    <Star size={10} className="fill-amber-500 text-amber-500" />
-                    {food.rating}
-                  </span>
-                  <span className="flex items-center gap-1 rounded bg-gray-50 px-1.5 py-0.5">
-                    <MapPin size={10} />
-                    {food.distance}
-                  </span>
-                </div>
-                <div className="mt-auto flex items-end justify-between">
-                  <div>
-                    <p className="mb-0.5 text-[10px] font-medium text-gray-400 line-through decoration-gray-300">
-                      {formatRp(food.originalPrice)}
-                    </p>
-                    <p className="text-sm font-extrabold tracking-tight text-emerald-600">
-                      {formatRp(food.price)}
-                    </p>
+          {foods.map((food) => {
+            const discount = Math.round(
+              ((food.originalPrice - food.price) / food.originalPrice) * 100,
+            );
+
+            return (
+              <article
+                key={food.id}
+                onClick={() => router.push(`/detail/${food.id}`)}
+                className="group flex gap-4 rounded-[24px] border border-gray-100 bg-white p-3 shadow-[0_2px_10px_rgba(0,0,0,0.03)] transition-all hover:border-emerald-100 hover:shadow-md"
+              >
+                <div className="relative h-28 w-28 shrink-0 overflow-hidden rounded-[18px]">
+                  <Image
+                    src={food.image}
+                    alt={food.name}
+                    fill
+                    sizes="112px"
+                    className="object-cover transition-transform duration-500 group-hover:scale-105"
+                  />
+                  <div className="absolute top-2 left-2 rounded-lg border border-white/20 bg-amber-500/90 px-2 py-1 text-[9px] font-bold text-white backdrop-blur-sm">
+                    Sisa {food.stock}
                   </div>
-                  <button
-                    type="button"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      addToCart(food);
-                    }}
-                    className="rounded-xl bg-gray-100 p-2 text-gray-600 transition-colors duration-300 hover:bg-emerald-500 hover:text-white active:scale-95"
-                    aria-label={`Tambah ${food.name} ke keranjang`}
-                  >
-                    <Plus size={16} />
-                  </button>
+                  <div className="absolute right-2 bottom-2 rounded-lg bg-emerald-500 px-2 py-1 text-[9px] font-extrabold text-white">
+                    -{discount}%
+                  </div>
                 </div>
-              </div>
-            </article>
-          ))}
+                <div className="flex min-w-0 flex-1 flex-col justify-center py-1 pr-2">
+                  <h3 className="mb-1 line-clamp-2 text-sm leading-snug font-bold text-gray-900">
+                    {food.name}
+                  </h3>
+                  <p className="mb-2 truncate text-[11px] font-medium text-gray-500">
+                    {food.restaurant}
+                  </p>
+                  <div className="mb-3 flex flex-wrap items-center gap-2 text-[10px] font-bold text-gray-500">
+                    <span className="flex items-center gap-1 rounded bg-amber-50 px-1.5 py-0.5 text-amber-700">
+                      <Star size={10} className="fill-amber-500 text-amber-500" />
+                      {food.rating}
+                    </span>
+                    <span className="flex items-center gap-1 rounded bg-gray-50 px-1.5 py-0.5">
+                      <MapPin size={10} />
+                      {food.distance}
+                    </span>
+                  </div>
+                  <div className="mt-auto flex items-end justify-between gap-3">
+                    <div>
+                      <p className="mb-0.5 text-[10px] font-medium text-gray-400 line-through decoration-gray-300">
+                        {formatRp(food.originalPrice)}
+                      </p>
+                      <p className="text-sm font-extrabold tracking-tight text-emerald-600">
+                        {formatRp(food.price)}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        addToCart(food);
+                      }}
+                      className="rounded-xl bg-gray-100 p-2 text-gray-600 transition-colors duration-300 hover:bg-emerald-500 hover:text-white active:scale-95"
+                      aria-label={`Tambah ${food.name} ke keranjang`}
+                    >
+                      <Plus size={16} />
+                    </button>
+                  </div>
+                </div>
+              </article>
+            );
+          })}
         </section>
-      </div>
+      </main>
     </div>
   );
 }

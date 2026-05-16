@@ -2,117 +2,353 @@
 
 import Image from "next/image";
 import {
-  ChevronLeft,
+  Bell,
+  CheckCircle2,
+  ChevronRight,
   Flame,
+  Gift,
+  HelpCircle,
   History,
   Leaf,
+  LifeBuoy,
   LogOut,
+  MapPin,
   Settings,
+  ShieldCheck,
+  Star,
+  UserRound,
+  WalletCards,
+  X,
+  type LucideIcon,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
+
+const impactStats = [
+  {
+    label: "Food Saved",
+    value: "12.5 Kg",
+    icon: Leaf,
+    className: "border-emerald-100 bg-emerald-50 text-emerald-700",
+  },
+  {
+    label: "Total Order",
+    value: "24 Kali",
+    icon: Flame,
+    className: "border-amber-100 bg-amber-50 text-amber-700",
+  },
+  {
+    label: "Voucher",
+    value: "5 Aktif",
+    icon: Gift,
+    className: "border-blue-100 bg-blue-50 text-blue-700",
+  },
+] as const;
+
+const menuGroups: {
+  title: string;
+  items: {
+    title: string;
+    description: string;
+    route: string;
+    icon: LucideIcon;
+    className: string;
+  }[];
+}[] = [
+  {
+    title: "Akun",
+    items: [
+      {
+        title: "Edit Profil",
+        description: "Nama, foto, email, nomor HP, dan password.",
+        route: "/profile/edit",
+        icon: UserRound,
+        className: "bg-emerald-50 text-emerald-600",
+      },
+      {
+        title: "Pengaturan Akun",
+        description: "Preferensi notifikasi, keamanan, dan privasi.",
+        route: "/profile/settings",
+        icon: Settings,
+        className: "bg-gray-100 text-gray-700",
+      },
+      {
+        title: "Notifikasi",
+        description: "Update order, voucher, refund, dan pickup.",
+        route: "/notifications",
+        icon: Bell,
+        className: "bg-amber-50 text-amber-600",
+      },
+    ],
+  },
+  {
+    title: "Transaksi",
+    items: [
+      {
+        title: "Riwayat Pesanan",
+        description: "Tracking, refund, ulasan, dan pesan lagi.",
+        route: "/orders",
+        icon: History,
+        className: "bg-blue-50 text-blue-600",
+      },
+      {
+        title: "Alamat Tersimpan",
+        description: "Kelola rumah, kantor, kos, dan titik pickup.",
+        route: "/profile/addresses",
+        icon: MapPin,
+        className: "bg-rose-50 text-rose-600",
+      },
+      {
+        title: "Voucher Saya",
+        description: "Klaim, salin, dan gunakan voucher aktif.",
+        route: "/profile/vouchers",
+        icon: Gift,
+        className: "bg-purple-50 text-purple-600",
+      },
+    ],
+  },
+  {
+    title: "Bantuan",
+    items: [
+      {
+        title: "Pusat Bantuan",
+        description: "FAQ pembayaran, pickup, refund, dan akun.",
+        route: "/help",
+        icon: HelpCircle,
+        className: "bg-cyan-50 text-cyan-600",
+      },
+      {
+        title: "Support Customer",
+        description: "Live chat dan email support untuk kendala order.",
+        route: "/support",
+        icon: LifeBuoy,
+        className: "bg-indigo-50 text-indigo-600",
+      },
+    ],
+  },
+];
+
+const accountBadges = [
+  "Email terverifikasi",
+  "Nomor HP aktif",
+  "Refund protection",
+] as const;
 
 export function CustomerProfileScreen() {
   const router = useRouter();
+  const [isLogoutOpen, setIsLogoutOpen] = useState(false);
 
   return (
-    <div className="flex flex-1 flex-col overflow-y-auto bg-gray-50 pb-24">
-      <div className="relative overflow-hidden rounded-b-[40px] bg-white px-6 pt-10 pb-8 shadow-[0_4px_20px_rgba(0,0,0,0.03)]">
-        <div className="absolute top-0 right-0 -mt-10 -mr-10 h-48 w-48 rounded-full bg-emerald-50 blur-3xl" />
+    <div className="relative flex flex-1 flex-col overflow-hidden bg-gray-50">
+      <div className="flex-1 overflow-y-auto pb-24 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <section className="relative overflow-hidden rounded-b-[40px] bg-white px-6 pt-10 pb-8 shadow-[0_4px_20px_rgba(0,0,0,0.03)]">
+          <div className="absolute top-0 right-0 -mt-14 -mr-14 h-56 w-56 rounded-full bg-emerald-50 blur-3xl" />
 
-        <div className="relative z-10 mb-8 flex items-center gap-5 pt-4">
-          <div className="h-20 w-20 shrink-0 overflow-hidden rounded-full border-4 border-white bg-emerald-100 shadow-[0_10px_26px_rgba(15,23,42,0.10)]">
-            <Image
-              src="https://api.dicebear.com/7.x/avataaars/svg?seed=Alfhin"
-              alt="User avatar"
-              width={80}
-              height={80}
-              unoptimized
-              className="h-full w-full object-cover"
-            />
+          <div className="relative z-10 mb-7 flex items-start justify-between gap-4 pt-4">
+            <div className="flex min-w-0 items-center gap-4">
+              <div className="h-20 w-20 shrink-0 overflow-hidden rounded-[28px] border-4 border-white bg-emerald-100 shadow-[0_10px_26px_rgba(15,23,42,0.10)]">
+                <Image
+                  src="https://api.dicebear.com/7.x/avataaars/svg?seed=Alfhin"
+                  alt="User avatar"
+                  width={80}
+                  height={80}
+                  unoptimized
+                  className="h-full w-full object-cover"
+                />
+              </div>
+              <div className="min-w-0">
+                <div className="mb-2 inline-flex items-center gap-1 rounded-full bg-emerald-500 px-2 py-0.5 text-[10px] font-bold text-white">
+                  <Leaf size={10} />
+                  Food Hero Level 2
+                </div>
+                <h1 className="truncate text-2xl font-extrabold tracking-tight text-gray-900">
+                  Alfhin
+                </h1>
+                <p className="truncate text-sm font-medium text-gray-500">
+                  alfhin@email.com
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => router.push("/profile/edit")}
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gray-50 text-gray-600 transition-colors hover:bg-emerald-50 hover:text-emerald-600"
+              aria-label="Edit profil"
+            >
+              <UserRound size={18} />
+            </button>
           </div>
-          <div>
-            <h2 className="mb-0.5 text-2xl font-extrabold tracking-tight text-gray-900">
-              Alfhin
-            </h2>
-            <p className="text-sm font-medium text-gray-500">
-              alfhin@email.com
-            </p>
-            <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-emerald-500 px-2 py-0.5 text-[10px] font-bold text-white">
-              <Leaf size={10} />
-              Food Hero Level 2
+
+          <div className="relative z-10 mb-5 grid grid-cols-3 gap-3">
+            {impactStats.map((stat) => {
+              const Icon = stat.icon;
+
+              return (
+                <div
+                  key={stat.label}
+                  className={`rounded-[20px] border p-3 ${stat.className}`}
+                >
+                  <Icon size={19} className="mb-2" />
+                  <p className="text-[9px] font-extrabold tracking-wider uppercase">
+                    {stat.label}
+                  </p>
+                  <p className="mt-1 text-sm font-extrabold text-gray-950">
+                    {stat.value}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="relative z-10 rounded-[24px] border border-gray-100 bg-gray-50 p-4">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <ShieldCheck size={18} className="text-emerald-600" />
+                <p className="text-sm font-extrabold text-gray-950">
+                  Keamanan Akun
+                </p>
+              </div>
+              <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-extrabold text-emerald-600">
+                Aman
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {accountBadges.map((badge) => (
+                <span
+                  key={badge}
+                  className="inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-gray-500"
+                >
+                  <CheckCircle2 size={12} className="text-emerald-500" />
+                  {badge}
+                </span>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="space-y-6 px-6 pt-6">
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => router.push("/profile/vouchers")}
+              className="rounded-[24px] border border-emerald-100 bg-emerald-50 p-4 text-left transition-colors hover:bg-emerald-100"
+            >
+              <WalletCards size={22} className="mb-3 text-emerald-600" />
+              <p className="text-sm font-extrabold text-emerald-950">
+                Hemat Rp 48rb
+              </p>
+              <p className="mt-1 text-xs font-medium text-emerald-700">
+                dari voucher aktif
+              </p>
+            </button>
+            <button
+              type="button"
+              onClick={() => router.push("/orders")}
+              className="rounded-[24px] border border-amber-100 bg-amber-50 p-4 text-left transition-colors hover:bg-amber-100"
+            >
+              <Star size={22} className="mb-3 text-amber-600" />
+              <p className="text-sm font-extrabold text-amber-950">
+                Rating 4.9
+              </p>
+              <p className="mt-1 text-xs font-medium text-amber-700">
+                dari pickup selesai
+              </p>
+            </button>
+          </div>
+
+          {menuGroups.map((group) => (
+            <div key={group.title}>
+              <h2 className="mb-3 px-1 text-xs font-extrabold tracking-[0.18em] text-gray-400 uppercase">
+                {group.title}
+              </h2>
+              <div className="space-y-3">
+                {group.items.map((item) => {
+                  const Icon = item.icon;
+
+                  return (
+                    <button
+                      key={item.route}
+                      type="button"
+                      onClick={() => router.push(item.route)}
+                      className="group flex w-full items-center gap-3 rounded-[24px] border border-gray-100 bg-white p-4 text-left shadow-sm transition-all hover:border-emerald-100 hover:shadow-md active:scale-[0.99]"
+                    >
+                      <span
+                        className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${item.className}`}
+                      >
+                        <Icon size={21} />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-sm font-extrabold text-gray-950">
+                          {item.title}
+                        </span>
+                        <span className="mt-0.5 line-clamp-2 text-xs leading-5 font-medium text-gray-500">
+                          {item.description}
+                        </span>
+                      </span>
+                      <ChevronRight
+                        size={18}
+                        className="shrink-0 text-gray-300 transition-colors group-hover:text-emerald-500"
+                      />
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+
+          <button
+            type="button"
+            onClick={() => setIsLogoutOpen(true)}
+            className="flex w-full items-center justify-center gap-2 rounded-2xl border border-red-100 bg-red-50 p-4 text-sm font-extrabold text-red-600 transition-transform active:scale-[0.98]"
+          >
+            <LogOut size={18} />
+            Keluar Akun
+          </button>
+        </section>
+      </div>
+
+      {isLogoutOpen ? (
+        <div className="absolute inset-0 z-50 flex items-end bg-gray-950/30 backdrop-blur-sm">
+          <div className="w-full rounded-t-[36px] bg-white px-6 pt-5 pb-8 shadow-[0_-24px_70px_rgba(15,23,42,0.22)]">
+            <div className="mx-auto mb-5 h-1.5 w-12 rounded-full bg-gray-200" />
+            <div className="mb-6 flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-extrabold text-gray-950">
+                  Keluar dari akun?
+                </h2>
+                <p className="mt-2 text-sm leading-6 font-medium text-gray-500">
+                  Kamu tetap bisa login kembali dan melihat riwayat pesanan yang
+                  tersimpan di prototype ini.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsLogoutOpen(false)}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-500 transition-colors hover:bg-red-50 hover:text-red-500"
+                aria-label="Tutup modal logout"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setIsLogoutOpen(false)}
+                className="rounded-2xl border border-gray-200 bg-white py-3.5 text-sm font-extrabold text-gray-700 transition-colors hover:bg-gray-50"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={() => router.push("/")}
+                className="rounded-2xl bg-red-500 py-3.5 text-sm font-extrabold text-white transition-colors hover:bg-red-600"
+              >
+                Keluar
+              </button>
             </div>
           </div>
         </div>
-
-        <div className="relative z-10 grid grid-cols-2 gap-4">
-          <div className="relative overflow-hidden rounded-[20px] border border-emerald-100/50 bg-emerald-50 p-4">
-            <Leaf size={24} className="absolute right-2 bottom-2 text-emerald-500/20" />
-            <p className="mb-1 text-[10px] font-extrabold tracking-wider text-emerald-800 uppercase">
-              Food Saved
-            </p>
-            <p className="text-xl font-extrabold tracking-tight text-gray-900">
-              12.5 <span className="text-sm font-medium text-gray-500">Kg</span>
-            </p>
-          </div>
-          <div className="relative overflow-hidden rounded-[20px] border border-amber-100/50 bg-amber-50 p-4">
-            <Flame size={24} className="absolute right-2 bottom-2 text-amber-500/20" />
-            <p className="mb-1 text-[10px] font-extrabold tracking-wider text-amber-800 uppercase">
-              Total Order
-            </p>
-            <p className="text-xl font-extrabold tracking-tight text-gray-900">
-              24{" "}
-              <span className="text-sm font-medium text-gray-500">Kali</span>
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <div className="mt-6 space-y-3 px-6">
-        <button
-          type="button"
-          onClick={() => router.push("/orders")}
-          className="group flex w-full items-center justify-between rounded-2xl border border-gray-100 bg-white p-4 shadow-[0_2px_10px_rgba(0,0,0,0.02)] transition-all hover:border-emerald-200 active:scale-[0.98]"
-        >
-          <span className="flex items-center gap-3">
-            <span className="rounded-xl bg-gray-50 p-2.5 transition-colors group-hover:bg-emerald-50">
-              <History size={20} className="text-gray-700 group-hover:text-emerald-600" />
-            </span>
-            <span className="text-sm font-bold text-gray-900">
-              Riwayat Pesanan
-            </span>
-          </span>
-          <ChevronLeft size={18} className="rotate-180 text-gray-400 group-hover:text-emerald-500" />
-        </button>
-
-        <button
-          type="button"
-          onClick={() => router.push("/profile/settings")}
-          className="group flex w-full items-center justify-between rounded-2xl border border-gray-100 bg-white p-4 shadow-[0_2px_10px_rgba(0,0,0,0.02)] transition-all hover:border-gray-200 active:scale-[0.98]"
-        >
-          <span className="flex items-center gap-3">
-            <span className="rounded-xl bg-gray-50 p-2.5">
-              <Settings size={20} className="text-gray-700" />
-            </span>
-            <span className="text-sm font-bold text-gray-900">
-              Pengaturan Akun
-            </span>
-          </span>
-          <ChevronLeft size={18} className="rotate-180 text-gray-400" />
-        </button>
-
-        <button
-          type="button"
-          onClick={() => router.push("/")}
-          className="mt-4 flex w-full items-center justify-center rounded-2xl border border-red-100 bg-red-50 p-4 transition-transform active:scale-[0.98]"
-        >
-          <span className="flex items-center gap-2">
-            <span className="rounded-xl bg-red-100 p-2">
-              <LogOut size={18} className="text-red-600" />
-            </span>
-            <span className="text-sm font-bold text-red-600">Keluar Akun</span>
-          </span>
-        </button>
-      </div>
+      ) : null}
     </div>
   );
 }

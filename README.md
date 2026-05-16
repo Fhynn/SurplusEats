@@ -36,6 +36,7 @@ Public deployment / Deployment publik:
 | Customer Home | https://surplus-eats.vercel.app/home |
 | Customer Notifications | https://surplus-eats.vercel.app/notifications |
 | Browse Food | https://surplus-eats.vercel.app/browse |
+| Browse Food Alias | https://surplus-eats.vercel.app/browser |
 | Cart | https://surplus-eats.vercel.app/cart |
 | Checkout | https://surplus-eats.vercel.app/checkout |
 | Payment Success | https://surplus-eats.vercel.app/payment-success |
@@ -145,17 +146,18 @@ Yang belum final:
 #### Customer App
 
 - Login customer dengan akun demo, remember me, lupa password, link daftar mitra, dan register interaktif dengan preferensi makanan, validasi password, serta persetujuan layanan.
-- Reset password customer.
-- Home makanan surplus.
-- Browse / pencarian makanan.
-- Detail makanan.
-- Cart / keranjang.
-- Checkout.
-- Payment success dan payment failed flow dengan retry metode pembayaran dan bantuan support.
+- Reset password customer dengan step indicator, OTP, countdown kirim ulang, validasi password, konfirmasi password, dan success state.
+- Home makanan surplus dengan search ke browser, impact card, quick actions, kategori, flash rescue list, diskon, stok, dan quick add to cart.
+- Browse / pencarian makanan dengan query aktif, kategori, sorting, filter modal, statistik hasil, empty state, dan quick add to cart.
+- Detail makanan dengan hero visual, favorit, quantity selector, harga hemat, pickup info, dampak food rescue, ketentuan pickup, ulasan ringkas, add to cart, dan checkout cepat.
+- Cart / keranjang dengan impact food rescue, kontrol qty, hapus item, voucher, catatan pickup, ringkasan harga, dan konfirmasi kosongkan keranjang.
+- Checkout dengan lokasi pickup, waktu pickup, item pesanan, catatan restoran, voucher, metode pembayaran, ringkasan harga, persetujuan pickup, dan simulasi payment failed.
+- Payment success dengan receipt, QR pickup, timeline status, download/share simulasi, tracking, dan payment failed flow dengan retry metode pembayaran serta bantuan support.
+- Riwayat pesanan customer dengan tab aktif/selesai, search, ringkasan pickup hari ini, card status, ulasan, refund, dan pesan lagi.
 - Tracking pesanan dengan map, QR pickup, timeline status, lokasi, dan chat restoran.
 - Riwayat pesanan legacy dengan pencarian, ulasan, refund, dan pesan lagi.
 - Modal ulasan restoran dengan star rating.
-- Profile customer.
+- Profile customer sebagai hub akun dengan statistik food rescue, keamanan akun, voucher, riwayat, alamat, bantuan, support, dan logout confirmation.
 - Pengaturan akun customer dengan preferensi dan keamanan.
 - Edit profil customer dengan preview foto dan ubah password.
 - Kelola alamat tersimpan customer.
@@ -237,22 +239,23 @@ http://localhost:3000
 | Route | Deskripsi |
 | --- | --- |
 | `/` | Login customer dengan akun demo, remember me, lupa password, dan link daftar mitra |
-| `/forgot-password` | Reset password customer |
+| `/forgot-password` | Reset password customer dengan OTP, countdown kirim ulang, validasi password, dan success state |
 | `/register` | Register customer interaktif dengan preferensi makanan dan validasi password |
-| `/home` | Home customer |
+| `/home` | Home customer dengan search ke browser, impact card, quick actions, kategori, flash rescue, dan quick add |
 | `/notifications` | Notifikasi customer |
-| `/browse` | Browse / hasil pencarian |
-| `/detail/[id]` | Detail makanan |
-| `/cart` | Keranjang |
-| `/checkout` | Checkout |
-| `/payment-success` | Pembayaran berhasil dan struk pesanan |
-| `/orders` | Riwayat pesanan dengan tab status |
+| `/browse` | Browse makanan dengan UI seirama home, query aktif, kategori, sorting, filter modal, empty state, dan quick add |
+| `/browser` | Alias browse makanan dengan UI seirama home |
+| `/detail/[id]` | Detail makanan dengan favorit, quantity selector, pickup info, food rescue impact, ulasan, add to cart, dan checkout cepat |
+| `/cart` | Keranjang dengan impact food rescue, kontrol qty, voucher, ringkasan harga, dan konfirmasi kosongkan |
+| `/checkout` | Checkout dengan lokasi pickup, waktu pickup, item pesanan, voucher, payment method, summary, dan simulasi payment failed |
+| `/payment-success` | Pembayaran berhasil dengan receipt, QR pickup, timeline status, download/share simulasi, dan tracking |
+| `/orders` | Riwayat pesanan dengan tab aktif/selesai, search, ringkasan pickup, ulasan, refund, dan pesan lagi |
 | `/orders/[id]` | Live tracking pesanan dengan QR pickup |
 | `/orders/[id]/refund` | Pengajuan refund pesanan |
 | `/payment-failed` | Pembayaran gagal dengan retry metode pembayaran dan bantuan support |
 | `/tracking` | Tracking pesanan dengan map, QR pickup, timeline status, lokasi, dan chat restoran |
 | `/history` | Riwayat pesanan legacy dengan pencarian, ulasan, refund, dan pesan lagi |
-| `/profile` | Profile customer |
+| `/profile` | Hub profile customer dengan statistik, keamanan akun, voucher, riwayat, alamat, bantuan, dan logout confirmation |
 | `/profile/settings` | Pengaturan akun customer |
 | `/profile/edit` | Ubah profil customer |
 | `/profile/addresses` | Alamat tersimpan |
@@ -361,17 +364,18 @@ Not final yet:
 #### Customer App
 
 - Customer login with demo accounts, remember me, forgot password, partner signup link, and interactive registration with food preferences, password validation, and terms agreement.
-- Customer password reset.
-- Surplus food home screen.
-- Food browse / search page.
-- Food detail page.
-- Cart.
-- Checkout.
-- Payment success and payment failed flows with payment retry and support help.
+- Customer password reset with step indicator, OTP, resend countdown, password validation, password confirmation, and success state.
+- Surplus food home screen with browser search, impact card, quick actions, categories, flash rescue list, discount, stock, and quick add to cart.
+- Food browse / search page with active query, categories, sorting, filter modal, result stats, empty state, and quick add to cart.
+- Food detail page with visual hero, favorite action, quantity selector, savings price, pickup info, food rescue impact, pickup terms, review highlights, add to cart, and quick checkout.
+- Cart with food rescue impact, quantity controls, remove item, voucher, pickup notes, price summary, and clear-cart confirmation.
+- Checkout with pickup location, pickup time, order items, restaurant note, voucher, payment methods, price summary, pickup agreement, and payment failed simulation.
+- Payment success with receipt, pickup QR, status timeline, simulated download/share, tracking, and payment failed flow with payment retry plus support help.
+- Customer order history with active/completed tabs, search, today's pickup summary, status cards, reviews, refunds, and reorder actions.
 - Order tracking with map, pickup QR, status timeline, location, and restaurant chat.
 - Legacy order history with search, review, refund, and reorder actions.
 - Restaurant review modal with star rating.
-- Customer profile.
+- Customer profile hub with food rescue stats, account security, vouchers, orders, addresses, help, support, and logout confirmation.
 - Customer account settings with preferences and security.
 - Customer profile editing with photo preview and password change.
 - Saved address management.
@@ -453,22 +457,23 @@ http://localhost:3000
 | Route | Description |
 | --- | --- |
 | `/` | Customer login with demo accounts, remember me, forgot password, and partner signup link |
-| `/forgot-password` | Customer password reset |
+| `/forgot-password` | Customer password reset with OTP, resend countdown, password validation, and success state |
 | `/register` | Interactive customer registration with food preferences and password validation |
-| `/home` | Customer home |
+| `/home` | Customer home with browser search, impact card, quick actions, categories, flash rescue, and quick add |
 | `/notifications` | Customer notifications |
-| `/browse` | Browse / search result |
-| `/detail/[id]` | Food detail |
-| `/cart` | Cart |
-| `/checkout` | Checkout |
-| `/payment-success` | Payment success and order receipt |
-| `/orders` | Order history with status tabs |
+| `/browse` | Food browse with home-style UI, active query, categories, sorting, filter modal, empty state, and quick add |
+| `/browser` | Food browse alias with home-style UI |
+| `/detail/[id]` | Food detail with favorite action, quantity selector, pickup info, food rescue impact, reviews, add to cart, and quick checkout |
+| `/cart` | Cart with food rescue impact, quantity controls, voucher, price summary, and clear-cart confirmation |
+| `/checkout` | Checkout with pickup location, pickup time, order items, voucher, payment method, summary, and payment failed simulation |
+| `/payment-success` | Payment success with receipt, pickup QR, status timeline, simulated download/share, and tracking |
+| `/orders` | Order history with active/completed tabs, search, pickup summary, reviews, refunds, and reorder actions |
 | `/orders/[id]` | Live order tracking with pickup QR |
 | `/orders/[id]/refund` | Order refund request |
 | `/payment-failed` | Payment failed with payment retry and support help |
 | `/tracking` | Order tracking with map, pickup QR, status timeline, location, and restaurant chat |
 | `/history` | Legacy order history with search, review, refund, and reorder actions |
-| `/profile` | Customer profile |
+| `/profile` | Customer profile hub with stats, account security, vouchers, orders, addresses, help, and logout confirmation |
 | `/profile/settings` | Customer account settings |
 | `/profile/edit` | Edit customer profile |
 | `/profile/addresses` | Saved addresses |
