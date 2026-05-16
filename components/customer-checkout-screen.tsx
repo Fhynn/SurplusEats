@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle2, ChevronLeft, CreditCard, Wallet } from "lucide-react";
+import { ChevronLeft, CreditCard, Wallet } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
@@ -34,39 +34,8 @@ export function CustomerCheckoutScreen() {
   const [paymentMethod, setPaymentMethod] =
     useState<(typeof PAYMENT_OPTIONS)[number]["id"]>("gopay");
   const [notes, setNotes] = useState("");
-  const [isSuccess, setIsSuccess] = useState(false);
   const serviceFee = 2000;
   const grandTotal = cartTotal + serviceFee;
-
-  if (isSuccess) {
-    return (
-      <MobileDeviceFrame backgroundClassName="bg-emerald-500">
-        <div className="flex flex-1 flex-col items-center justify-center bg-emerald-500 px-6">
-          <div className="mb-6 flex h-24 w-24 animate-bounce items-center justify-center rounded-full bg-white shadow-[0_18px_40px_rgba(15,23,42,0.18)]">
-            <CheckCircle2 size={48} className="text-emerald-500" />
-          </div>
-          <h1 className="mb-2 text-center text-2xl font-extrabold text-white">
-            Yey! Pembayaran
-            <br />
-            Berhasil
-          </h1>
-          <p className="mb-10 text-center text-sm text-emerald-50">
-            Pesananmu akan segera disiapkan oleh restoran.
-          </p>
-          <button
-            type="button"
-            onClick={() => {
-              clearCart();
-              router.push("/tracking");
-            }}
-            className="w-full rounded-2xl bg-white px-8 py-4 font-bold text-emerald-600 shadow-[0_12px_26px_rgba(15,23,42,0.14)] transition-all active:scale-95"
-          >
-            Lanjut Tracking Pesanan
-          </button>
-        </div>
-      </MobileDeviceFrame>
-    );
-  }
 
   return (
     <MobileDeviceFrame backgroundClassName="bg-gray-50">
@@ -196,7 +165,10 @@ export function CustomerCheckoutScreen() {
             </div>
             <button
               type="button"
-              onClick={() => setIsSuccess(true)}
+              onClick={() => {
+                clearCart();
+                router.push("/payment-success");
+              }}
               className="w-full rounded-2xl bg-gray-900 py-4 font-bold text-white shadow-[0_12px_26px_rgba(15,23,42,0.14)] transition-all duration-300 hover:bg-emerald-500 active:scale-[0.98]"
             >
               Bayar Sekarang

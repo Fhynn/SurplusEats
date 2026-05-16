@@ -70,7 +70,7 @@ export function CustomerProfileScreen() {
       <div className="mt-6 space-y-3 px-6">
         <button
           type="button"
-          onClick={() => router.push("/history")}
+          onClick={() => router.push("/orders")}
           className="group flex w-full items-center justify-between rounded-2xl border border-gray-100 bg-white p-4 shadow-[0_2px_10px_rgba(0,0,0,0.02)] transition-all hover:border-emerald-200 active:scale-[0.98]"
         >
           <span className="flex items-center gap-3">
@@ -86,6 +86,7 @@ export function CustomerProfileScreen() {
 
         <button
           type="button"
+          onClick={() => router.push("/profile/settings")}
           className="group flex w-full items-center justify-between rounded-2xl border border-gray-100 bg-white p-4 shadow-[0_2px_10px_rgba(0,0,0,0.02)] transition-all hover:border-gray-200 active:scale-[0.98]"
         >
           <span className="flex items-center gap-3">

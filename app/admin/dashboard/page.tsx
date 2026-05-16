@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import {
   AlertTriangle,
   ArrowUpRight,
@@ -534,13 +535,13 @@ function AdminDashboardPage() {
           </nav>
 
           <div className="border-t border-white/10 p-4">
-            <button
-              type="button"
+            <Link
+              href="/admin/settings"
               className="flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold text-gray-400 transition-all hover:bg-emerald-500/10 hover:text-white"
             >
               <Settings size={20} className="text-gray-500" />
               Pengaturan Admin
-            </button>
+            </Link>
           </div>
         </aside>
 
@@ -558,21 +559,21 @@ function AdminDashboardPage() {
                   className="h-12 w-full rounded-2xl border border-gray-200 bg-gray-50 pr-4 pl-12 text-sm font-semibold text-gray-900 outline-none transition-all placeholder:text-gray-400 focus:border-emerald-300 focus:bg-white focus:ring-4 focus:ring-emerald-500/10"
                 />
               </div>
-              <button
-                type="button"
+              <Link
+                href="/admin/notifications"
                 className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-gray-200 bg-white text-gray-500 shadow-sm transition-colors hover:bg-gray-50"
                 title="Notifikasi"
               >
                 <Bell size={20} />
                 <span className="absolute top-3 right-3 h-2.5 w-2.5 rounded-full border-2 border-white bg-red-500" />
-              </button>
-              <button
-                type="button"
+              </Link>
+              <Link
+                href="/admin/settings"
                 className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-gray-200 bg-white text-gray-500 shadow-sm transition-colors hover:bg-gray-50"
                 title="Pengaturan"
               >
                 <Settings size={20} />
-              </button>
+              </Link>
             </div>
           </header>
 
@@ -672,7 +673,7 @@ function AdminDashboardPage() {
                         </p>
                       </div>
                       <div className="overflow-x-auto">
-                        <table className="w-full min-w-[620px] border-collapse text-left">
+                        <table className="w-full min-w-[760px] border-collapse text-left">
                           <thead>
                             <tr className="border-b border-gray-100 text-xs font-extrabold tracking-wider text-gray-400 uppercase">
                               <th className="px-6 py-4">ID</th>
@@ -680,6 +681,7 @@ function AdminDashboardPage() {
                               <th className="px-6 py-4">Restoran</th>
                               <th className="px-6 py-4">Total</th>
                               <th className="px-6 py-4">Status</th>
+                              <th className="px-6 py-4 text-right">Aksi</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-100">
@@ -704,6 +706,15 @@ function AdminDashboardPage() {
                                   <span className="rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-xs font-extrabold text-gray-600">
                                     {transaction.status}
                                   </span>
+                                </td>
+                                <td className="px-6 py-4 text-right">
+                                  <Link
+                                    href={`/admin/transactions/${transaction.id}`}
+                                    className="inline-flex items-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-extrabold text-gray-700 transition-colors hover:bg-gray-50"
+                                  >
+                                    Detail
+                                    <ArrowUpRight size={16} />
+                                  </Link>
                                 </td>
                               </tr>
                             ))}
@@ -783,25 +794,34 @@ function AdminDashboardPage() {
                               <UserStatus user={user} />
                             </td>
                             <td className="px-6 py-5 text-right">
-                              {user.status === "active" ? (
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenBanModal(user)}
-                                  className="inline-flex items-center gap-2 rounded-2xl border border-red-200 bg-white px-4 py-2.5 text-sm font-extrabold text-red-600 transition-colors hover:bg-red-50"
+                              <div className="flex justify-end gap-2">
+                                <Link
+                                  href={`/admin/users/${user.id}`}
+                                  className="inline-flex items-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-extrabold text-gray-700 transition-colors hover:bg-gray-50"
                                 >
-                                  <UserX size={16} />
-                                  Ban / Suspend
-                                </button>
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => handleRevokeBan(user.id)}
-                                  className="inline-flex items-center gap-2 rounded-2xl bg-emerald-500 px-4 py-2.5 text-sm font-extrabold text-white shadow-[0_8px_20px_rgba(16,185,129,0.22)] transition-colors hover:bg-emerald-600"
-                                >
-                                  <UserCheck size={16} />
-                                  Cabut Ban
-                                </button>
-                              )}
+                                  Detail
+                                  <ArrowUpRight size={16} />
+                                </Link>
+                                {user.status === "active" ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenBanModal(user)}
+                                    className="inline-flex items-center gap-2 rounded-2xl border border-red-200 bg-white px-4 py-2.5 text-sm font-extrabold text-red-600 transition-colors hover:bg-red-50"
+                                  >
+                                    <UserX size={16} />
+                                    Ban / Suspend
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRevokeBan(user.id)}
+                                    className="inline-flex items-center gap-2 rounded-2xl bg-emerald-500 px-4 py-2.5 text-sm font-extrabold text-white shadow-[0_8px_20px_rgba(16,185,129,0.22)] transition-colors hover:bg-emerald-600"
+                                  >
+                                    <UserCheck size={16} />
+                                    Cabut Ban
+                                  </button>
+                                )}
+                              </div>
                             </td>
                           </tr>
                         ))}
@@ -882,13 +902,22 @@ function AdminDashboardPage() {
                               <StatusBadge />
                             </td>
                             <td className="px-6 py-5 text-right">
-                              <button
-                                type="button"
-                                onClick={() => setSelectedStore(store)}
-                                className="rounded-2xl bg-gray-900 px-4 py-2.5 text-sm font-extrabold text-white shadow-sm transition-colors hover:bg-emerald-500"
-                              >
-                                Review Dokumen
-                              </button>
+                              <div className="flex justify-end gap-2">
+                                <Link
+                                  href={`/admin/verifications/${store.id}`}
+                                  className="inline-flex items-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-extrabold text-gray-700 transition-colors hover:bg-gray-50"
+                                >
+                                  Detail
+                                  <ArrowUpRight size={16} />
+                                </Link>
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedStore(store)}
+                                  className="rounded-2xl bg-gray-900 px-4 py-2.5 text-sm font-extrabold text-white shadow-sm transition-colors hover:bg-emerald-500"
+                                >
+                                  Review Cepat
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         ))}
@@ -966,13 +995,13 @@ function AdminDashboardPage() {
                                 >
                                   <X size={17} />
                                 </button>
-                                <button
-                                  type="button"
+                                <Link
+                                  href={`/admin/refunds/${dispute.orderId}`}
                                   className="inline-flex items-center gap-2 rounded-2xl bg-emerald-500 px-4 py-2.5 text-sm font-extrabold text-white shadow-[0_8px_20px_rgba(16,185,129,0.22)] transition-colors hover:bg-emerald-600"
                                 >
                                   <RefreshCcw size={16} />
-                                  Proses Refund
-                                </button>
+                                  Review Detail
+                                </Link>
                               </div>
                             </td>
                           </tr>

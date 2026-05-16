@@ -31,22 +31,45 @@ Public deployment / Deployment publik:
 | Page / Halaman | Public URL |
 | --- | --- |
 | Main / Login | https://surplus-eats.vercel.app/ |
+| Forgot Password | https://surplus-eats.vercel.app/forgot-password |
 | Customer Register | https://surplus-eats.vercel.app/register |
 | Customer Home | https://surplus-eats.vercel.app/home |
+| Customer Notifications | https://surplus-eats.vercel.app/notifications |
 | Browse Food | https://surplus-eats.vercel.app/browse |
 | Cart | https://surplus-eats.vercel.app/cart |
 | Checkout | https://surplus-eats.vercel.app/checkout |
+| Payment Success | https://surplus-eats.vercel.app/payment-success |
+| Payment Failed | https://surplus-eats.vercel.app/payment-failed |
+| Customer Orders | https://surplus-eats.vercel.app/orders |
+| Live Order Tracking | https://surplus-eats.vercel.app/orders/SFM-99A2X |
+| Refund Request | https://surplus-eats.vercel.app/orders/SFM-77C0Z/refund |
 | Order Tracking | https://surplus-eats.vercel.app/tracking |
 | Order History | https://surplus-eats.vercel.app/history |
 | Customer Profile | https://surplus-eats.vercel.app/profile |
+| Account Settings | https://surplus-eats.vercel.app/profile/settings |
+| Edit Profile | https://surplus-eats.vercel.app/profile/edit |
+| Saved Addresses | https://surplus-eats.vercel.app/profile/addresses |
+| Customer Vouchers | https://surplus-eats.vercel.app/profile/vouchers |
+| Help Center | https://surplus-eats.vercel.app/help |
+| Customer Support | https://surplus-eats.vercel.app/support |
 | Daftar Usaha / Partner Registration | https://surplus-eats.vercel.app/register-mitra |
 | Owner Dashboard | https://surplus-eats.vercel.app/owner/dashboard |
 | Owner Menu Management | https://surplus-eats.vercel.app/owner/menu |
+| Owner Order Detail | https://surplus-eats.vercel.app/owner/orders/SFM-99A2X |
+| Owner Wallet / Saldo | https://surplus-eats.vercel.app/owner/wallet |
+| Owner Analytics | https://surplus-eats.vercel.app/owner/analytics |
+| Owner Reviews | https://surplus-eats.vercel.app/owner/reviews |
 | Owner Notifications | https://surplus-eats.vercel.app/owner/notifications |
 | Owner Settings | https://surplus-eats.vercel.app/owner/settings |
 | Owner Verification | https://surplus-eats.vercel.app/owner/verify |
 | Owner Banned Page | https://surplus-eats.vercel.app/owner/banned |
 | Admin Dashboard | https://surplus-eats.vercel.app/admin/dashboard |
+| Admin Notifications | https://surplus-eats.vercel.app/admin/notifications |
+| Admin User Detail | https://surplus-eats.vercel.app/admin/users/USR-10481 |
+| Admin Verification Detail | https://surplus-eats.vercel.app/admin/verifications/UMKM-24081 |
+| Admin Transaction Detail | https://surplus-eats.vercel.app/admin/transactions/TRX-78291 |
+| Admin Refund Detail | https://surplus-eats.vercel.app/admin/refunds/SE-8821 |
+| Admin Settings | https://surplus-eats.vercel.app/admin/settings |
 
 ---
 
@@ -121,17 +144,24 @@ Yang belum final:
 
 #### Customer App
 
-- Login dan register customer.
+- Login customer dengan akun demo, remember me, lupa password, link daftar mitra, dan register interaktif dengan preferensi makanan, validasi password, serta persetujuan layanan.
+- Reset password customer.
 - Home makanan surplus.
 - Browse / pencarian makanan.
 - Detail makanan.
 - Cart / keranjang.
 - Checkout.
-- Payment success dan payment failed screen.
-- Tracking pesanan.
-- Riwayat pesanan.
+- Payment success dan payment failed flow dengan retry metode pembayaran dan bantuan support.
+- Tracking pesanan dengan map, QR pickup, timeline status, lokasi, dan chat restoran.
+- Riwayat pesanan legacy dengan pencarian, ulasan, refund, dan pesan lagi.
 - Modal ulasan restoran dengan star rating.
 - Profile customer.
+- Pengaturan akun customer dengan preferensi dan keamanan.
+- Edit profil customer dengan preview foto dan ubah password.
+- Kelola alamat tersimpan customer.
+- Klaim, detail, dan status voucher customer.
+- Pusat bantuan dengan pencarian FAQ dan detail jawaban.
+- Live chat dan email support customer.
 
 #### Owner Dashboard
 
@@ -141,22 +171,29 @@ Yang belum final:
 - Tambah makanan.
 - Edit makanan dengan data pre-filled.
 - Hapus makanan dengan modal konfirmasi.
-- Pendaftaran mitra/toko.
-- Menunggu verifikasi.
-- Akun dibekukan / banned.
-- Notifikasi owner.
-- Pengaturan toko.
+- Pendaftaran mitra/toko dengan progress kelengkapan, kategori usaha, data operasional, upload dokumen, dan status verifikasi.
+- Menunggu verifikasi owner dengan progress timeline, checklist dokumen, estimasi review, dan action support.
+- Akun owner dibekukan dengan alasan, dampak akses, timeline review, dan jalur banding/support.
+- Notifikasi owner dengan filter, status dibaca, dan action link.
+- Pengaturan toko interaktif untuk profil, lokasi pickup, jam buka, dan preferensi operasional.
+- Detail pesanan owner dengan chat customer, status order, dan flow tolak order.
+- Analitik performa toko dengan periode 7/30/90 hari, KPI, grafik pendapatan, menu terlaris, jam pickup, dan dampak food rescue.
 
 #### Admin Dashboard
 
 - Sidebar admin dark mode.
 - Statistik operasional.
+- Notifikasi prioritas admin.
 - Kelola pengguna.
+- Detail akun pengguna untuk audit admin.
 - Ban / suspend user.
 - Verifikasi restoran / UMKM.
+- Detail verifikasi restoran / UMKM.
 - Modal review dokumen.
 - Kelola transaksi dan refund.
+- Detail transaksi, payment, pickup, dan settlement.
 - Laporan analitik.
+- Pengaturan admin, keamanan, notifikasi operasional, dan role akses.
 
 ### Tech Stack
 
@@ -199,35 +236,57 @@ http://localhost:3000
 
 | Route | Deskripsi |
 | --- | --- |
-| `/` | Login customer |
-| `/register` | Register customer |
+| `/` | Login customer dengan akun demo, remember me, lupa password, dan link daftar mitra |
+| `/forgot-password` | Reset password customer |
+| `/register` | Register customer interaktif dengan preferensi makanan dan validasi password |
 | `/home` | Home customer |
+| `/notifications` | Notifikasi customer |
 | `/browse` | Browse / hasil pencarian |
 | `/detail/[id]` | Detail makanan |
 | `/cart` | Keranjang |
 | `/checkout` | Checkout |
-| `/payment-failed` | Pembayaran gagal |
-| `/tracking` | Tracking pesanan |
-| `/history` | Riwayat pesanan dan ulasan |
+| `/payment-success` | Pembayaran berhasil dan struk pesanan |
+| `/orders` | Riwayat pesanan dengan tab status |
+| `/orders/[id]` | Live tracking pesanan dengan QR pickup |
+| `/orders/[id]/refund` | Pengajuan refund pesanan |
+| `/payment-failed` | Pembayaran gagal dengan retry metode pembayaran dan bantuan support |
+| `/tracking` | Tracking pesanan dengan map, QR pickup, timeline status, lokasi, dan chat restoran |
+| `/history` | Riwayat pesanan legacy dengan pencarian, ulasan, refund, dan pesan lagi |
 | `/profile` | Profile customer |
+| `/profile/settings` | Pengaturan akun customer |
+| `/profile/edit` | Ubah profil customer |
+| `/profile/addresses` | Alamat tersimpan |
+| `/profile/vouchers` | Voucher customer |
+| `/help` | Pusat bantuan customer |
+| `/support` | Live chat dan email support customer |
 
 ### Route Owner
 
 | Route | Deskripsi |
 | --- | --- |
-| `/register-mitra` | Form pendaftaran mitra |
+| `/register-mitra` | Form pendaftaran mitra dengan progress, data operasional, dan upload dokumen |
 | `/owner/dashboard` | Dashboard owner |
 | `/owner/menu` | Kelola menu |
+| `/owner/orders/[id]` | Detail pesanan owner |
+| `/owner/wallet` | Saldo dan pencairan dana |
+| `/owner/analytics` | Analitik performa toko dengan periode 7/30/90 hari |
+| `/owner/reviews` | Ulasan dan rating customer |
 | `/owner/notifications` | Notifikasi owner |
 | `/owner/settings` | Pengaturan toko |
-| `/owner/verify` | Menunggu verifikasi |
-| `/owner/banned` | Akun owner dibekukan |
+| `/owner/verify` | Menunggu verifikasi owner dengan timeline dan checklist dokumen |
+| `/owner/banned` | Akun owner dibekukan dengan alasan, dampak akses, timeline review, dan banding |
 
 ### Route Admin
 
 | Route | Deskripsi |
 | --- | --- |
 | `/admin/dashboard` | Dashboard admin |
+| `/admin/notifications` | Notifikasi prioritas admin |
+| `/admin/users/[id]` | Detail akun pengguna admin |
+| `/admin/verifications/[id]` | Detail verifikasi restoran / UMKM |
+| `/admin/transactions/[id]` | Detail transaksi admin |
+| `/admin/refunds/[id]` | Detail review refund admin |
+| `/admin/settings` | Pengaturan admin |
 
 ### Struktur Folder
 
@@ -301,17 +360,24 @@ Not final yet:
 
 #### Customer App
 
-- Customer login and registration.
+- Customer login with demo accounts, remember me, forgot password, partner signup link, and interactive registration with food preferences, password validation, and terms agreement.
+- Customer password reset.
 - Surplus food home screen.
 - Food browse / search page.
 - Food detail page.
 - Cart.
 - Checkout.
-- Payment success and payment failed screens.
-- Order tracking.
-- Order history.
+- Payment success and payment failed flows with payment retry and support help.
+- Order tracking with map, pickup QR, status timeline, location, and restaurant chat.
+- Legacy order history with search, review, refund, and reorder actions.
 - Restaurant review modal with star rating.
 - Customer profile.
+- Customer account settings with preferences and security.
+- Customer profile editing with photo preview and password change.
+- Saved address management.
+- Customer voucher claim, detail, and status flow.
+- Help center with FAQ search and answer detail.
+- Customer live chat and email support.
 
 #### Owner Dashboard
 
@@ -321,22 +387,29 @@ Not final yet:
 - Add food modal.
 - Edit food modal with pre-filled data.
 - Delete food confirmation modal.
-- Partner / store registration.
-- Waiting for verification page.
-- Banned owner account page.
-- Owner notifications.
-- Store settings.
+- Partner / store registration with completion progress, business category, operational data, document uploads, and verification status.
+- Owner verification waiting page with progress timeline, document checklist, review estimate, and support action.
+- Banned owner account page with restriction reason, locked access impact, review timeline, and appeal/support path.
+- Owner notifications with filters, read state, and action links.
+- Interactive store settings for profile, pickup location, hours, and operational preferences.
+- Owner order detail with customer chat, order status, and reject order flow.
+- Store performance analytics with 7/30/90 day periods, KPI cards, revenue chart, best sellers, pickup windows, and food rescue impact.
 
 #### Admin Dashboard
 
 - Dark admin sidebar.
 - Operational statistics.
+- Priority admin notifications.
 - User management.
+- Admin user account detail.
 - Ban / suspend user flow.
 - Restaurant / UMKM verification.
+- Restaurant / UMKM verification detail.
 - Document review modal.
 - Transaction and refund management.
+- Transaction, payment, pickup, and settlement detail.
 - Analytics report simulation.
+- Admin settings, security, operational notifications, and access roles.
 
 ### Tech Stack
 
@@ -379,35 +452,57 @@ http://localhost:3000
 
 | Route | Description |
 | --- | --- |
-| `/` | Customer login |
-| `/register` | Customer registration |
+| `/` | Customer login with demo accounts, remember me, forgot password, and partner signup link |
+| `/forgot-password` | Customer password reset |
+| `/register` | Interactive customer registration with food preferences and password validation |
 | `/home` | Customer home |
+| `/notifications` | Customer notifications |
 | `/browse` | Browse / search result |
 | `/detail/[id]` | Food detail |
 | `/cart` | Cart |
 | `/checkout` | Checkout |
-| `/payment-failed` | Payment failed |
-| `/tracking` | Order tracking |
-| `/history` | Order history and review |
+| `/payment-success` | Payment success and order receipt |
+| `/orders` | Order history with status tabs |
+| `/orders/[id]` | Live order tracking with pickup QR |
+| `/orders/[id]/refund` | Order refund request |
+| `/payment-failed` | Payment failed with payment retry and support help |
+| `/tracking` | Order tracking with map, pickup QR, status timeline, location, and restaurant chat |
+| `/history` | Legacy order history with search, review, refund, and reorder actions |
 | `/profile` | Customer profile |
+| `/profile/settings` | Customer account settings |
+| `/profile/edit` | Edit customer profile |
+| `/profile/addresses` | Saved addresses |
+| `/profile/vouchers` | Customer vouchers |
+| `/help` | Customer help center |
+| `/support` | Customer live chat and email support |
 
 ### Owner Routes
 
 | Route | Description |
 | --- | --- |
-| `/register-mitra` | Partner / store registration form |
+| `/register-mitra` | Partner / store registration form with progress, operational data, and document uploads |
 | `/owner/dashboard` | Owner dashboard |
 | `/owner/menu` | Menu management |
+| `/owner/orders/[id]` | Owner order detail |
+| `/owner/wallet` | Wallet and withdrawal |
+| `/owner/analytics` | Store performance analytics with 7/30/90 day periods |
+| `/owner/reviews` | Customer reviews and ratings |
 | `/owner/notifications` | Owner notifications |
 | `/owner/settings` | Store settings |
-| `/owner/verify` | Waiting for verification |
-| `/owner/banned` | Banned owner account |
+| `/owner/verify` | Owner verification waiting page with timeline and document checklist |
+| `/owner/banned` | Banned owner account with restriction reason, locked access impact, review timeline, and appeal |
 
 ### Admin Routes
 
 | Route | Description |
 | --- | --- |
 | `/admin/dashboard` | Admin dashboard |
+| `/admin/notifications` | Priority admin notifications |
+| `/admin/users/[id]` | Admin user account detail |
+| `/admin/verifications/[id]` | Restaurant / UMKM verification detail |
+| `/admin/transactions/[id]` | Admin transaction detail |
+| `/admin/refunds/[id]` | Admin refund review detail |
+| `/admin/settings` | Admin settings |
 
 ### Project Structure
 

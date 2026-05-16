@@ -1,7 +1,16 @@
 "use client";
 
 import Image from "next/image";
-import { ChevronDown, Flame, Leaf, MapPin, Plus, Search, Star } from "lucide-react";
+import {
+  Bell,
+  ChevronDown,
+  Flame,
+  Leaf,
+  MapPin,
+  Plus,
+  Search,
+  Star,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
@@ -37,15 +46,27 @@ export function CustomerHomeScreen() {
             </div>
           </div>
 
-          <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border-2 border-emerald-500 bg-emerald-100">
-            <Image
-              src="https://api.dicebear.com/7.x/avataaars/svg?seed=Alfhin"
-              alt="User profile"
-              width={40}
-              height={40}
-              unoptimized
-              className="h-full w-full object-cover"
-            />
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => router.push("/notifications")}
+              className="relative flex h-10 w-10 items-center justify-center rounded-full bg-gray-50 text-gray-600 transition-colors hover:bg-emerald-50 hover:text-emerald-600"
+              aria-label="Buka notifikasi"
+            >
+              <Bell size={19} />
+              <span className="absolute top-2 right-2 h-2.5 w-2.5 rounded-full border-2 border-white bg-red-500" />
+            </button>
+
+            <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border-2 border-emerald-500 bg-emerald-100">
+              <Image
+                src="https://api.dicebear.com/7.x/avataaars/svg?seed=Alfhin"
+                alt="User profile"
+                width={40}
+                height={40}
+                unoptimized
+                className="h-full w-full object-cover"
+              />
+            </div>
           </div>
         </div>
 

@@ -1,33 +1,26 @@
 "use client";
 
-import Image from "next/image";
-import Link from "next/link";
 import {
   AlertCircle,
   ArrowUpRight,
-  Bell,
   Check,
   CheckCircle2,
   ChefHat,
   Clock,
   Coffee,
-  LayoutDashboard,
+  Eye,
   Leaf,
   PackageCheck,
   PackagePlus,
   Plus,
-  Search,
-  Settings,
   ShoppingBag,
-  Store,
   TrendingUp,
   UtensilsCrossed,
   X,
   XCircle,
 } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
-
-import { OwnerMenuManagement } from "@/components/owner-menu-management";
 
 const formatRp = (amount: number) =>
   new Intl.NumberFormat("id-ID", {
@@ -106,7 +99,7 @@ const recentOrders = [
   },
 ] as const;
 
-type OwnerTab = "dashboard" | "orders" | "menu";
+type OwnerTab = "dashboard" | "orders";
 
 type OrderStatus = "new" | "preparing" | "ready" | "completed";
 
@@ -119,12 +112,6 @@ type KanbanOrder = {
   total: number;
   status: OrderStatus;
 };
-
-const navItems = [
-  { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, badge: undefined },
-  { id: "orders", label: "Pesanan", icon: ShoppingBag, badge: "3 Baru" },
-  { id: "menu", label: "Kelola Menu", icon: UtensilsCrossed, badge: undefined },
-] as const;
 
 const initialKanbanOrders: KanbanOrder[] = [
   {
@@ -257,10 +244,12 @@ function OrderCard({
   order,
   onAdvance,
   onReject,
+  onOpenDetail,
 }: {
   order: KanbanOrder;
   onAdvance: (orderId: string) => void;
   onReject: (orderId: string) => void;
+  onOpenDetail: (orderId: string) => void;
 }) {
   return (
     <article className="group rounded-[24px] border border-transparent bg-white p-5 shadow-[0_4px_20px_rgba(15,23,42,0.04)] transition-all hover:border-emerald-100 hover:shadow-[0_12px_32px_rgba(15,23,42,0.07)]">
@@ -310,7 +299,16 @@ function OrderCard({
         </span>
       </div>
 
-      <div className="mt-5">
+      <button
+        type="button"
+        onClick={() => onOpenDetail(order.id)}
+        className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm font-extrabold text-gray-600 transition-colors hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-600"
+      >
+        <Eye size={16} />
+        Detail Order
+      </button>
+
+      <div className="mt-3">
         {order.status === "new" ? (
           <div className="grid grid-cols-2 gap-2">
             <button
@@ -370,8 +368,11 @@ function OrderCard({
 }
 
 export default function OwnerDashboardPage() {
-  const [activeTab, setActiveTab] = useState<OwnerTab>("dashboard");
+  const router = useRouter();
   const [orders, setOrders] = useState<KanbanOrder[]>(initialKanbanOrders);
+  const searchParams = useSearchParams();
+  const dashboardTab = searchParams.get("tab");
+  const activeTab: OwnerTab = dashboardTab === "orders" ? "orders" : "dashboard";
 
   const ordersByStatus = useMemo(() => {
     return orderColumns.reduce(
@@ -407,353 +408,247 @@ export default function OwnerDashboardPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 font-[family-name:var(--font-plus-jakarta-sans)] selection:bg-emerald-200">
-      <div className="flex min-h-screen">
-        <aside className="hidden w-64 shrink-0 flex-col border-r border-gray-100 bg-white shadow-[4px_0_24px_rgba(0,0,0,0.02)] md:flex">
-          <div className="border-b border-gray-50 p-6">
-            <div className="flex items-center gap-2">
-              <div className="rounded-xl bg-emerald-500 p-2">
-                <Store size={20} className="text-white" />
-              </div>
-              <span className="text-xl font-extrabold tracking-tight text-gray-900">
-                Surplus<span className="text-emerald-500">Owner</span>
-              </span>
+    <div
+      className={
+        activeTab === "orders"
+          ? "h-[calc(100vh-9rem)]"
+          : "mx-auto max-w-7xl space-y-8"
+      }
+    >
+      {activeTab === "dashboard" ? (
+        <>
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <h2 className="text-2xl font-extrabold tracking-tight text-gray-900">
+                Halo, Bakehouse Bakery!
+              </h2>
+              <p className="mt-1 flex items-center gap-1.5 text-sm text-gray-500">
+                <CheckCircle2 size={14} className="text-emerald-500" />
+                Restoran Terverifikasi
+              </p>
             </div>
+            <button
+              type="button"
+              className="inline-flex items-center gap-2 self-start rounded-2xl bg-emerald-500 px-5 py-2.5 text-sm font-bold text-white shadow-[0_4px_15px_rgba(16,185,129,0.3)] transition-all hover:bg-emerald-600 active:scale-95"
+            >
+              <Plus size={18} />
+              Tambah Makanan
+            </button>
           </div>
 
-          <nav className="flex-1 space-y-1.5 p-4">
-            <p className="mt-4 mb-3 px-3 text-xs font-bold tracking-wider text-gray-400 uppercase">
-              Menu Utama
-            </p>
-
-            {navItems.map(({ id, label, icon: Icon, badge }) => {
-              const isActive = activeTab === id;
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
+            {stats.map((stat) => {
+              const Icon = stat.icon;
 
               return (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => setActiveTab(id)}
-                  className={`flex w-full items-center ${
-                    badge ? "justify-between" : "gap-3"
-                  } rounded-2xl px-4 py-3.5 text-sm font-bold transition-all duration-200 ${
-                    isActive
-                      ? "bg-emerald-50 text-emerald-600 shadow-[0_0_0_1px_rgba(16,185,129,0.1)]"
-                      : "text-gray-500 hover:bg-gray-50 hover:text-gray-900"
-                  }`}
+                <div
+                  key={stat.label}
+                  className="group relative overflow-hidden rounded-[24px] border border-gray-100 bg-white p-6 shadow-[0_2px_15px_rgba(0,0,0,0.03)] transition-colors hover:border-emerald-200"
                 >
-                  <span className="flex items-center gap-3">
-                    <Icon
-                      size={20}
-                      className={isActive ? "text-emerald-500" : "text-gray-400"}
-                    />
-                    {label}
-                  </span>
-
-                  {badge ? (
-                    <span className="rounded-md bg-red-500 px-2 py-0.5 text-[10px] font-extrabold text-white">
-                      {badge}
-                    </span>
-                  ) : null}
-                </button>
+                  <div
+                    className={`mb-4 flex h-12 w-12 items-center justify-center rounded-[16px] ${stat.iconWrapClassName}`}
+                  >
+                    <Icon size={24} className={stat.iconClassName} />
+                  </div>
+                  <p className="mb-1 text-sm font-bold text-gray-500">
+                    {stat.label}
+                  </p>
+                  <h3 className="text-2xl font-extrabold tracking-tight text-gray-900">
+                    {stat.value}
+                  </h3>
+                  <div className="absolute top-6 right-6 flex items-center rounded-md bg-emerald-50 px-2 py-1 text-xs font-bold text-emerald-600">
+                    <ArrowUpRight size={12} className="mr-0.5" />
+                    {stat.trend}
+                  </div>
+                </div>
               );
             })}
-          </nav>
-
-          <div className="border-t border-gray-50 p-4">
-            <Link
-              href="/owner/settings"
-              className="flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-900"
-            >
-              <Settings size={20} className="text-gray-400" />
-              Pengaturan Restoran
-            </Link>
           </div>
-        </aside>
 
-        <main className="flex h-screen min-w-0 flex-1 flex-col overflow-hidden">
-          <header className="flex h-20 shrink-0 items-center justify-between border-b border-gray-100 bg-white px-8 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
-            <div className="relative hidden w-96 md:block">
-              <Search
-                size={18}
-                className="absolute top-1/2 left-4 -translate-y-1/2 text-gray-400"
-              />
-              <input
-                type="text"
-                placeholder="Cari order ID atau menu..."
-                className="w-full rounded-xl border border-gray-200 bg-gray-50 py-2.5 pr-4 pl-12 text-sm font-medium text-gray-900 transition-all outline-none focus:bg-white focus:ring-2 focus:ring-emerald-500/20"
-              />
-            </div>
-
-            <div className="ml-auto flex items-center gap-4">
-              <Link
-                href="/owner/notifications"
-                className="relative rounded-xl p-2.5 text-gray-500 transition-colors hover:bg-gray-50"
+          <div className="overflow-hidden rounded-[24px] border border-gray-100 bg-white shadow-[0_2px_15px_rgba(0,0,0,0.03)]">
+            <div className="flex items-center justify-between border-b border-gray-50 bg-gray-50/50 p-6">
+              <h3 className="text-lg font-extrabold text-gray-900">
+                Pesanan Terbaru
+              </h3>
+              <button
+                type="button"
+                onClick={() => router.replace("/owner/dashboard?tab=orders")}
+                className="text-sm font-bold text-emerald-600 hover:underline"
               >
-                <Bell size={20} />
-                <div className="absolute top-2 right-2 h-2 w-2 rounded-full border-2 border-white bg-red-500" />
-              </Link>
-              <div className="h-8 w-px bg-gray-200" />
-              <div className="group flex cursor-pointer items-center gap-3">
-                <div className="hidden text-right md:block">
-                  <p className="text-sm leading-tight font-extrabold text-gray-900">
-                    Bakehouse Bakery
-                  </p>
-                  <p className="text-xs font-medium text-gray-500">Owner</p>
-                </div>
-                <div className="h-10 w-10 overflow-hidden rounded-xl border-2 border-transparent bg-emerald-100 transition-all group-hover:border-emerald-500">
-                  <Image
-                    src="https://images.unsplash.com/photo-1583338917451-face2751d8d5?q=80&w=150&auto=format&fit=crop"
-                    alt="Shop avatar"
-                    width={40}
-                    height={40}
-                    className="h-full w-full object-cover"
-                  />
-                </div>
-              </div>
+                Lihat Semua
+              </button>
             </div>
-          </header>
 
-          <div
-            className={`flex-1 bg-slate-50 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${
-              activeTab === "orders"
-                ? "min-h-0 overflow-hidden p-0"
-                : "overflow-y-auto p-8"
-            }`}
-          >
-            <div className={activeTab === "orders" ? "h-full" : "mx-auto max-w-7xl"}>
-              {activeTab === "dashboard" ? (
-                <div className="space-y-8">
-                  <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-                    <div>
-                      <h2 className="text-2xl font-extrabold tracking-tight text-gray-900">
-                        Halo, Bakehouse Bakery! 👋
-                      </h2>
-                      <p className="mt-1 flex items-center gap-1.5 text-sm text-gray-500">
-                        <CheckCircle2
-                          size={14}
-                          className="text-emerald-500"
-                        />
-                        Restoran Terverifikasi
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      className="inline-flex items-center gap-2 self-start rounded-2xl bg-emerald-500 px-5 py-2.5 text-sm font-bold text-white shadow-[0_4px_15px_rgba(16,185,129,0.3)] transition-all hover:bg-emerald-600 active:scale-95"
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-left">
+                <thead>
+                  <tr className="border-b border-gray-100 text-xs font-bold tracking-wider text-gray-400 uppercase">
+                    <th className="p-5">Order ID</th>
+                    <th className="p-5">Customer & Items</th>
+                    <th className="p-5">Waktu</th>
+                    <th className="p-5">Total</th>
+                    <th className="p-5">Status</th>
+                    <th className="p-5">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {recentOrders.map((order) => (
+                    <tr
+                      key={order.id}
+                      className="transition-colors hover:bg-gray-50"
                     >
-                      <Plus size={18} />
-                      Tambah Makanan
-                    </button>
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
-                    {stats.map((stat) => {
-                      const Icon = stat.icon;
-
-                      return (
-                        <div
-                          key={stat.label}
-                          className="group relative overflow-hidden rounded-[24px] border border-gray-100 bg-white p-6 shadow-[0_2px_15px_rgba(0,0,0,0.03)] transition-colors hover:border-emerald-200"
-                        >
-                          <div
-                            className={`mb-4 flex h-12 w-12 items-center justify-center rounded-[16px] ${stat.iconWrapClassName}`}
+                      <td className="p-5 font-mono text-sm font-bold text-gray-900">
+                        {order.id}
+                      </td>
+                      <td className="p-5">
+                        <p className="text-sm font-bold text-gray-900">
+                          {order.customer}
+                        </p>
+                        <p className="mt-0.5 text-xs text-gray-500">
+                          {order.items}
+                        </p>
+                      </td>
+                      <td className="p-5">
+                        <span className="flex items-center gap-1.5 text-sm font-bold text-gray-500">
+                          <Clock size={14} />
+                          {order.time}
+                        </span>
+                      </td>
+                      <td className="p-5 text-sm font-extrabold text-emerald-600">
+                        {formatRp(order.total)}
+                      </td>
+                      <td className="p-5">{getStatusBadge(order.status)}</td>
+                      <td className="p-5">
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => router.push(`/owner/orders/${order.id}`)}
+                            className="rounded-xl border border-gray-200 bg-white px-3 py-1.5 text-xs font-bold text-gray-700 transition-colors hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-600"
                           >
-                            <Icon size={24} className={stat.iconClassName} />
-                          </div>
-                          <p className="mb-1 text-sm font-bold text-gray-500">
-                            {stat.label}
-                          </p>
-                          <h3 className="text-2xl font-extrabold tracking-tight text-gray-900">
-                            {stat.value}
-                          </h3>
-                          <div className="absolute top-6 right-6 flex items-center rounded-md bg-emerald-50 px-2 py-1 text-xs font-bold text-emerald-600">
-                            <ArrowUpRight size={12} className="mr-0.5" />
-                            {stat.trend}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                            Detail
+                          </button>
 
-                  <div className="overflow-hidden rounded-[24px] border border-gray-100 bg-white shadow-[0_2px_15px_rgba(0,0,0,0.03)]">
-                    <div className="flex items-center justify-between border-b border-gray-50 bg-gray-50/50 p-6">
-                      <h3 className="text-lg font-extrabold text-gray-900">
-                        Pesanan Terbaru
-                      </h3>
-                      <button
-                        type="button"
-                        onClick={() => setActiveTab("orders")}
-                        className="text-sm font-bold text-emerald-600 hover:underline"
-                      >
-                        Lihat Semua
-                      </button>
-                    </div>
-
-                    <div className="overflow-x-auto">
-                      <table className="w-full border-collapse text-left">
-                        <thead>
-                          <tr className="border-b border-gray-100 text-xs font-bold tracking-wider text-gray-400 uppercase">
-                            <th className="p-5">Order ID</th>
-                            <th className="p-5">Customer & Items</th>
-                            <th className="p-5">Waktu</th>
-                            <th className="p-5">Total</th>
-                            <th className="p-5">Status</th>
-                            <th className="p-5">Aksi</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-50">
-                          {recentOrders.map((order) => (
-                            <tr
-                              key={order.id}
-                              className="transition-colors hover:bg-gray-50"
+                          {order.status === "pending" ? (
+                            <>
+                            <button
+                              type="button"
+                              className="rounded-xl bg-emerald-50 p-2 text-emerald-600 transition-colors hover:bg-emerald-500 hover:text-white"
+                              title="Terima"
                             >
-                              <td className="p-5 font-mono text-sm font-bold text-gray-900">
-                                {order.id}
-                              </td>
-                              <td className="p-5">
-                                <p className="text-sm font-bold text-gray-900">
-                                  {order.customer}
-                                </p>
-                                <p className="mt-0.5 text-xs text-gray-500">
-                                  {order.items}
-                                </p>
-                              </td>
-                              <td className="p-5">
-                                <span className="flex items-center gap-1.5 text-sm font-bold text-gray-500">
-                                  <Clock size={14} />
-                                  {order.time}
-                                </span>
-                              </td>
-                              <td className="p-5 text-sm font-extrabold text-emerald-600">
-                                {formatRp(order.total)}
-                              </td>
-                              <td className="p-5">{getStatusBadge(order.status)}</td>
-                              <td className="p-5">
-                                {order.status === "pending" ? (
-                                  <div className="flex gap-2">
-                                    <button
-                                      type="button"
-                                      className="rounded-xl bg-emerald-50 p-2 text-emerald-600 transition-colors hover:bg-emerald-500 hover:text-white"
-                                      title="Terima"
-                                    >
-                                      <CheckCircle2 size={16} />
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="rounded-xl bg-red-50 p-2 text-red-600 transition-colors hover:bg-red-500 hover:text-white"
-                                      title="Tolak"
-                                    >
-                                      <XCircle size={16} />
-                                    </button>
-                                  </div>
-                                ) : null}
+                              <CheckCircle2 size={16} />
+                            </button>
+                            <button
+                              type="button"
+                              className="rounded-xl bg-red-50 p-2 text-red-600 transition-colors hover:bg-red-500 hover:text-white"
+                              title="Tolak"
+                            >
+                              <XCircle size={16} />
+                            </button>
+                            </>
+                          ) : null}
 
-                                {order.status === "preparing" ? (
-                                  <button
-                                    type="button"
-                                    className="rounded-xl bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700 transition-colors hover:bg-blue-100"
-                                  >
-                                    Tandai Siap
-                                  </button>
-                                ) : null}
-
-                                {order.status === "ready" ? (
-                                  <button
-                                    type="button"
-                                    className="rounded-xl bg-emerald-500 px-3 py-1.5 text-xs font-bold text-white shadow-[0_4px_12px_rgba(16,185,129,0.2)] transition-colors hover:bg-emerald-600"
-                                  >
-                                    Konfirmasi Pickup
-                                  </button>
-                                ) : null}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                </div>
-              ) : null}
-
-              {activeTab === "menu" ? (
-                <OwnerMenuManagement />
-              ) : null}
-
-              {activeTab === "orders" ? (
-                <div className="flex h-full flex-col overflow-hidden bg-[#f8fafc] px-8 py-6">
-                  <div className="mb-5 flex shrink-0 flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
-                    <div>
-                      <p className="text-sm font-extrabold text-emerald-600">
-                        Manajemen Pesanan
-                      </p>
-                      <h2 className="mt-1 text-2xl font-extrabold tracking-tight text-gray-950">
-                        Papan Kanban Order
-                      </h2>
-                    </div>
-                    <div className="inline-flex w-fit items-center gap-2 rounded-full border border-emerald-100 bg-white px-4 py-2 text-sm font-bold text-gray-600 shadow-sm">
-                      <ShoppingBag size={16} className="text-emerald-500" />
-                      {orders.length} pesanan aktif
-                    </div>
-                  </div>
-
-                  <div className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden pb-2">
-                    <div className="flex h-full min-w-max gap-5">
-                      {orderColumns.map((column) => {
-                        const Icon = column.icon;
-                        const columnOrders = ordersByStatus[column.id];
-
-                        return (
-                          <section
-                            key={column.id}
-                            className="flex h-full min-w-[300px] max-w-[340px] flex-1 flex-col rounded-[32px] border border-white/80 bg-gray-50/50 p-4 shadow-[0_4px_20px_rgba(15,23,42,0.03)]"
+                          {order.status === "preparing" ? (
+                          <button
+                            type="button"
+                            className="rounded-xl bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700 transition-colors hover:bg-blue-100"
                           >
-                            <div className="mb-4 flex shrink-0 items-center justify-between gap-3 px-1">
-                              <div className="flex min-w-0 items-center gap-3">
-                                <div
-                                  className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ring-1 ${column.accentClassName}`}
-                                >
-                                  <Icon size={20} />
-                                </div>
-                                <h3 className="truncate text-base font-extrabold text-gray-950">
-                                  {column.title}
-                                </h3>
-                              </div>
-                              <span
-                                className={`shrink-0 rounded-full px-3 py-1 text-xs font-extrabold ${column.badgeClassName}`}
-                              >
-                                {columnOrders.length}
-                              </span>
-                            </div>
+                            Tandai Siap
+                          </button>
+                          ) : null}
 
-                            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                              {columnOrders.length > 0 ? (
-                                columnOrders.map((order) => (
-                                  <OrderCard
-                                    key={order.id}
-                                    order={order}
-                                    onAdvance={handleAdvanceOrder}
-                                    onReject={handleRejectOrder}
-                                  />
-                                ))
-                              ) : (
-                                <div className="flex h-40 items-center justify-center rounded-[24px] border border-dashed border-gray-200 bg-white/70 p-5 text-center">
-                                  <p className="text-sm font-bold text-gray-400">
-                                    Belum ada pesanan di kolom ini.
-                                  </p>
-                                </div>
-                              )}
-                            </div>
-                          </section>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-              ) : null}
+                          {order.status === "ready" ? (
+                          <button
+                            type="button"
+                            className="rounded-xl bg-emerald-500 px-3 py-1.5 text-xs font-bold text-white shadow-[0_4px_12px_rgba(16,185,129,0.2)] transition-colors hover:bg-emerald-600"
+                          >
+                            Konfirmasi Pickup
+                          </button>
+                          ) : null}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
-        </main>
-      </div>
+        </>
+      ) : null}
+
+      {activeTab === "orders" ? (
+        <div className="flex h-full flex-col overflow-hidden">
+          <div className="mb-5 flex shrink-0 flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <p className="text-sm font-extrabold text-emerald-600">
+                Manajemen Pesanan
+              </p>
+              <h2 className="mt-1 text-2xl font-extrabold tracking-tight text-gray-950">
+                Papan Kanban Order
+              </h2>
+            </div>
+            <div className="inline-flex w-fit items-center gap-2 rounded-full border border-emerald-100 bg-white px-4 py-2 text-sm font-bold text-gray-600 shadow-sm">
+              <ShoppingBag size={16} className="text-emerald-500" />
+              {orders.length} pesanan aktif
+            </div>
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden pb-2">
+            <div className="flex h-full min-w-max gap-5">
+              {orderColumns.map((column) => {
+                const Icon = column.icon;
+                const columnOrders = ordersByStatus[column.id];
+
+                return (
+                  <section
+                    key={column.id}
+                    className="flex h-full min-w-[300px] max-w-[340px] flex-1 flex-col rounded-[32px] border border-white/80 bg-gray-50/50 p-4 shadow-[0_4px_20px_rgba(15,23,42,0.03)]"
+                  >
+                    <div className="mb-4 flex shrink-0 items-center justify-between gap-3 px-1">
+                      <div className="flex min-w-0 items-center gap-3">
+                        <div
+                          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ring-1 ${column.accentClassName}`}
+                        >
+                          <Icon size={20} />
+                        </div>
+                        <h3 className="truncate text-base font-extrabold text-gray-950">
+                          {column.title}
+                        </h3>
+                      </div>
+                      <span
+                        className={`shrink-0 rounded-full px-3 py-1 text-xs font-extrabold ${column.badgeClassName}`}
+                      >
+                        {columnOrders.length}
+                      </span>
+                    </div>
+
+                    <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                      {columnOrders.length > 0 ? (
+                        columnOrders.map((order) => (
+                          <OrderCard
+                            key={order.id}
+                            order={order}
+                            onAdvance={handleAdvanceOrder}
+                            onReject={handleRejectOrder}
+                            onOpenDetail={(orderId) =>
+                              router.push(`/owner/orders/${orderId}`)
+                            }
+                          />
+                        ))
+                      ) : (
+                        <div className="flex h-40 items-center justify-center rounded-[24px] border border-dashed border-gray-200 bg-white/70 p-5 text-center">
+                          <p className="text-sm font-bold text-gray-400">
+                            Belum ada pesanan di kolom ini.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </section>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
