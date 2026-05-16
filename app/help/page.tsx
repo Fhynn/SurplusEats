@@ -70,7 +70,7 @@ const faqs: FaqItem[] = [
     title: "Cara klaim voucher promo",
     category: "Voucher",
     answer:
-      "Buka Voucher Saya, masukkan kode promo yang dibuat admin, lalu tekan Klaim. Voucher yang aktif akan mengikuti data dari database.",
+      "Buka Voucher Saya, masukkan kode promo yang dibuat admin, lalu tekan Klaim. Voucher yang aktif akan tampil di akun kamu.",
     actionLabel: "Buka Voucher",
     actionHref: "/profile/vouchers",
   },

@@ -178,7 +178,7 @@ export default function AdminVerificationDetailPage() {
 
       {isLoading ? (
         <div className="rounded-[28px] border border-gray-100 bg-white p-10 text-center text-sm font-bold text-gray-500 shadow-sm">
-          Memuat pengajuan dari database...
+          Memuat pengajuan...
         </div>
       ) : application ? (
         <section className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">

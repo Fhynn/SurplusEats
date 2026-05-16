@@ -100,7 +100,7 @@ function PaymentSuccessContent() {
             </h1>
             <p className="mt-2 text-sm leading-6 font-medium text-gray-500">
               {isLoading
-                ? "Struk diambil dari database order."
+                ? "Struk pesanan sedang dimuat."
                 : "Buka halaman pesanan untuk melihat order yang berhasil dibuat."}
             </p>
             {!isLoading ? (
@@ -245,7 +245,7 @@ function PaymentSuccessContent() {
                   Status Pesanan
                 </h2>
                 <p className="mt-1 text-xs font-medium text-gray-500">
-                  Status terbaru mengikuti database order.
+                  Status terbaru mengikuti pesanan.
                 </p>
               </div>
               <PackageCheck size={22} className="text-emerald-500" />

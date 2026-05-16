@@ -643,7 +643,7 @@ function AdminDashboardPage() {
                 <div className="mb-6 rounded-[24px] border border-gray-100 bg-white p-6 text-center shadow-[0_4px_20px_rgba(0,0,0,0.03)]">
                   <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-emerald-100 border-t-emerald-500" />
                   <p className="text-sm font-extrabold text-gray-950">
-                    Memuat data admin dari database
+                    Memuat data admin
                   </p>
                 </div>
               ) : null}
@@ -1102,7 +1102,7 @@ function AdminDashboardPage() {
                           Grafik Penjualan
                         </h2>
                         <p className="mt-1 text-sm font-medium text-gray-500">
-                          Performa transaksi mingguan dari database.
+                          Performa transaksi mingguan terbaru.
                         </p>
                       </div>
                       <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-50">

@@ -310,7 +310,7 @@ export function CustomerRegisterScreen() {
               />
               <span className="text-xs leading-5 font-medium text-gray-500">
                 Saya setuju dengan ketentuan layanan, kebijakan privasi, dan
-                memahami bahwa fitur ini masih prototype UI.
+                penggunaan akun SurplusEats.
               </span>
             </label>
 

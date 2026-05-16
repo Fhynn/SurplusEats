@@ -646,7 +646,7 @@ export default function OwnerDashboardPage() {
                         colSpan={6}
                         className="p-8 text-center text-sm font-bold text-gray-400"
                       >
-                        Memuat pesanan dari database...
+                        Memuat pesanan...
                       </td>
                     </tr>
                   ) : recentOrders.length > 0 ? (

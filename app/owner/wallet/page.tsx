@@ -91,7 +91,7 @@ export default function OwnerWalletPage() {
           Saldo Restoran
         </h1>
         <p className="mt-2 text-sm font-medium text-gray-500">
-          Semua nominal mengikuti transaksi wallet di database.
+          Semua nominal mengikuti transaksi wallet terbaru.
         </p>
       </header>
 

@@ -297,7 +297,7 @@ export default function OwnerOrderDetailPage() {
           Memuat detail pesanan
         </h1>
         <p className="mt-2 text-sm font-medium text-gray-500">
-          Data diambil dari database order restoran.
+          Detail pesanan sedang dimuat.
         </p>
       </div>
     );

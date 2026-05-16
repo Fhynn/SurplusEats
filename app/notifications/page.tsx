@@ -311,7 +311,7 @@ export default function CustomerNotificationsPage() {
             {isLoadingNotifications ? (
               <div className="rounded-[24px] border border-gray-100 bg-white p-8 text-center shadow-sm">
                 <h3 className="text-base font-extrabold text-gray-950">
-                  Memuat notifikasi database...
+                  Memuat notifikasi...
                 </h3>
                 <p className="mx-auto mt-2 max-w-[240px] text-sm leading-6 font-medium text-gray-500">
                   Notifikasi diambil sesuai session akun yang sedang login.

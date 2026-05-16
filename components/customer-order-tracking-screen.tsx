@@ -28,7 +28,7 @@ export function CustomerOrderTrackingScreen() {
             Pilih Pesanan Aktif
           </h1>
           <p className="mt-3 text-sm leading-6 font-medium text-gray-500">
-            Tracking hanya menampilkan data order asli dari database. Buka
+            Tracking menampilkan order aktif dari akun kamu. Buka
             halaman pesanan lalu pilih order yang sedang berjalan.
           </p>
           <button

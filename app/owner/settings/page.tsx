@@ -89,7 +89,7 @@ export default function OwnerSettingsPage() {
           Pengaturan Restoran
         </h1>
         <p className="mt-2 text-sm font-medium text-gray-500">
-          Data owner dan restoran diambil dari database.
+          Data owner dan restoran mengikuti profil terbaru.
         </p>
       </header>
 

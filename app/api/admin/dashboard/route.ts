@@ -189,7 +189,7 @@ export async function GET() {
     attentionItems: [
       {
         title: `${refundRequests.length} refund perlu review`,
-        meta: "Berdasarkan refund pending/reviewing di database",
+        meta: "Berdasarkan refund pending/reviewing terbaru",
         level: refundRequests.length > 0 ? "Tinggi" : "Aman",
       },
       {
@@ -199,7 +199,7 @@ export async function GET() {
       },
       {
         title: `${orders.length} transaksi tercatat`,
-        meta: "Data order terbaru dari database",
+        meta: "Data order terbaru",
         level: "Pantau",
       },
     ],

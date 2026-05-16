@@ -90,7 +90,7 @@ export default function CustomerSupportPage() {
         id: currentMessages.length + 2,
         source: "agent",
         name: "SurplusEats Care",
-        text: "Pesan sudah kami terima. Tim support akan membantu mengecek detailnya di prototype UI ini.",
+        text: "Pesan sudah kami terima. Tim support akan membantu mengecek detailnya.",
         time: "Sekarang",
       },
     ]);

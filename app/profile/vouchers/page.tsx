@@ -110,7 +110,7 @@ export default function CustomerVouchersPage() {
     if (!voucher) {
       setFeedback({
         type: "error",
-        message: "Kode promo tidak ditemukan di database atau sudah tidak berlaku.",
+        message: "Kode promo tidak ditemukan atau sudah tidak berlaku.",
       });
       return;
     }
@@ -235,7 +235,7 @@ export default function CustomerVouchersPage() {
                 Memuat voucher
               </p>
               <p className="mt-1 text-xs font-medium text-gray-500">
-                Data diambil dari voucher aktif di database.
+                Voucher aktif sedang dimuat.
               </p>
             </div>
           ) : null}
@@ -335,7 +335,7 @@ export default function CustomerVouchersPage() {
                 Belum ada voucher aktif
               </p>
               <p className="mt-1 text-xs font-medium text-gray-500">
-                Voucher akan tampil otomatis saat tersedia di database.
+                Voucher akan tampil otomatis saat tersedia.
               </p>
             </div>
           ) : null}

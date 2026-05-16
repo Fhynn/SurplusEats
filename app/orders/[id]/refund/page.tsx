@@ -224,7 +224,7 @@ export default function CustomerRefundRequestPage() {
               {isLoadingOrder ? "Memuat order..." : "Order tidak ditemukan"}
             </h1>
             <p className="mt-2 text-sm leading-6 font-medium text-gray-500">
-              {notice || "Refund hanya bisa diajukan dari order asli di database."}
+              {notice || "Refund hanya bisa diajukan dari order asli akun kamu."}
             </p>
             {!isLoadingOrder ? (
               <Link

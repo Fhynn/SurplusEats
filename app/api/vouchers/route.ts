@@ -60,7 +60,7 @@ export async function GET() {
       terms: [
         "Berlaku untuk akun customer yang sedang login.",
         "Tidak bisa digabung dengan voucher lain pada order yang sama.",
-        "Kuota dan masa berlaku mengikuti data voucher di database.",
+        "Kuota dan masa berlaku mengikuti data voucher terbaru.",
       ],
       status: voucher.redemptions.length > 0 ? "used" : "available",
     })),

@@ -126,7 +126,7 @@ export default function AdminNotificationsPage() {
               Belum ada notifikasi
             </h2>
             <p className="mt-2 text-sm font-medium text-gray-500">
-              Notifikasi akan muncul setelah ada aktivitas real di database.
+              Notifikasi akan muncul setelah ada aktivitas baru.
             </p>
           </div>
         ) : (

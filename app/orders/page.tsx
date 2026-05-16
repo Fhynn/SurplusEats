@@ -264,7 +264,7 @@ export default function CustomerOrdersPage() {
           {isLoadingOrders ? (
             <div className="rounded-[28px] border border-gray-100 bg-white p-8 text-center shadow-sm">
               <h2 className="text-base font-extrabold text-gray-950">
-                Memuat pesanan database...
+                Memuat pesanan...
               </h2>
               <p className="mt-2 text-sm leading-6 font-medium text-gray-500">
                 Riwayat akan muncul sesuai session akun yang sedang login.

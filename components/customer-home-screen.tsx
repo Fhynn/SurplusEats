@@ -260,7 +260,7 @@ export function CustomerHomeScreen() {
         <section className="space-y-4">
           {isLoadingFoods ? (
             <div className="rounded-[24px] border border-gray-100 bg-white p-6 text-center text-sm font-bold text-gray-500 shadow-sm">
-              Memuat menu dari database...
+              Memuat menu...
             </div>
           ) : null}
           {foods.map((food) => {
@@ -338,7 +338,7 @@ export function CustomerHomeScreen() {
               </h3>
               <p className="mt-2 text-sm leading-6 font-medium text-gray-500">
                 Menu akan tampil otomatis setelah owner menambahkan produk aktif
-                di database.
+                saat tersedia.
               </p>
             </div>
           ) : null}

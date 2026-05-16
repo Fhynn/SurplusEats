@@ -102,7 +102,7 @@ export default function AdminSettingsPage() {
           Pengaturan Admin
         </h1>
         <p className="mt-2 text-sm font-medium text-gray-500">
-          Tidak ada data contoh. Profil dan audit log diambil dari database.
+          Profil dan audit log mengikuti aktivitas admin terbaru.
         </p>
       </header>
 

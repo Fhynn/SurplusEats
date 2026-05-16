@@ -116,6 +116,7 @@ export function CustomerProfileScreen() {
   const router = useRouter();
   const [isLogoutOpen, setIsLogoutOpen] = useState(false);
   const [user, setUser] = useState<{ name: string; email: string } | null>(null);
+  const [isLoadingProfile, setIsLoadingProfile] = useState(true);
   const [orderCount, setOrderCount] = useState(0);
   const [voucherCount, setVoucherCount] = useState(0);
 
@@ -123,28 +124,36 @@ export function CustomerProfileScreen() {
     let ignore = false;
 
     async function loadProfileData() {
-      const [meResponse, ordersResponse, vouchersResponse] = await Promise.all([
-        fetch("/api/auth/me", { cache: "no-store" }),
-        fetch("/api/orders", { cache: "no-store" }),
-        fetch("/api/vouchers", { cache: "no-store" }),
-      ]);
-      const meData = (await meResponse.json()) as {
-        ok: boolean;
-        user?: { name: string; email: string };
-      };
-      const ordersData = (await ordersResponse.json()) as {
-        ok: boolean;
-        orders?: unknown[];
-      };
-      const vouchersData = (await vouchersResponse.json()) as {
-        ok: boolean;
-        vouchers?: unknown[];
-      };
+      setIsLoadingProfile(true);
 
-      if (!ignore) {
-        setUser(meData.user ?? null);
-        setOrderCount(ordersData.orders?.length ?? 0);
-        setVoucherCount(vouchersData.vouchers?.length ?? 0);
+      try {
+        const [meResponse, ordersResponse, vouchersResponse] = await Promise.all([
+          fetch("/api/auth/me", { cache: "no-store" }),
+          fetch("/api/orders", { cache: "no-store" }),
+          fetch("/api/vouchers", { cache: "no-store" }),
+        ]);
+        const meData = (await meResponse.json()) as {
+          ok: boolean;
+          user?: { name: string; email: string };
+        };
+        const ordersData = (await ordersResponse.json()) as {
+          ok: boolean;
+          orders?: unknown[];
+        };
+        const vouchersData = (await vouchersResponse.json()) as {
+          ok: boolean;
+          vouchers?: unknown[];
+        };
+
+        if (!ignore) {
+          setUser(meData.user ?? null);
+          setOrderCount(ordersData.orders?.length ?? 0);
+          setVoucherCount(vouchersData.vouchers?.length ?? 0);
+        }
+      } finally {
+        if (!ignore) {
+          setIsLoadingProfile(false);
+        }
       }
     }
 
@@ -184,6 +193,10 @@ export function CustomerProfileScreen() {
     router.push("/");
     router.refresh();
   };
+  const displayName = isLoadingProfile ? "Memuat profil" : user?.name || "Customer";
+  const displayEmail = isLoadingProfile
+    ? "Menyinkronkan akun..."
+    : user?.email || "Akun belum tersedia";
 
   return (
     <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-gray-50">
@@ -202,10 +215,10 @@ export function CustomerProfileScreen() {
                   Food Hero
                 </div>
                 <h1 className="truncate text-2xl font-extrabold tracking-tight text-gray-900">
-                  {user?.name || "Customer"}
+                  {displayName}
                 </h1>
                 <p className="truncate text-sm font-medium text-gray-500">
-                  {user?.email || "Belum login"}
+                  {displayEmail}
                 </p>
               </div>
             </div>
@@ -358,7 +371,7 @@ export function CustomerProfileScreen() {
                 </h2>
                 <p className="mt-2 text-sm leading-6 font-medium text-gray-500">
                   Kamu tetap bisa login kembali dan melihat riwayat pesanan yang
-                  tersimpan di prototype ini.
+                  tersimpan di akun kamu.
                 </p>
               </div>
               <button

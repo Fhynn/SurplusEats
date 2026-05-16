@@ -170,7 +170,7 @@ export default function CustomerOrderTrackingPage() {
             </h1>
             <p className="mt-2 text-sm leading-6 font-medium text-gray-500">
               {isLoadingOrder
-                ? "Data tracking diambil dari database."
+                ? "Data tracking sedang dimuat."
                 : "Cek kembali ID pesanan atau buka riwayat pesanan."}
             </p>
             {!isLoadingOrder ? (

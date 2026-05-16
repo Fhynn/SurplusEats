@@ -119,7 +119,7 @@ export default function CustomerEditProfilePage() {
       return;
     }
 
-    setProfileNotice("Perubahan profil berhasil disimpan di prototype UI.");
+    setProfileNotice("Perubahan profil berhasil disimpan.");
   };
 
   const handlePasswordChange = (key: keyof PasswordForm, value: string) => {
@@ -138,7 +138,7 @@ export default function CustomerEditProfilePage() {
       return;
     }
 
-    setPasswordNotice("Password berhasil diperbarui di prototype UI.");
+    setPasswordNotice("Password berhasil diperbarui.");
     setPasswordForm({
       currentPassword: "",
       newPassword: "",

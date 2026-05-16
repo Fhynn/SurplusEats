@@ -197,7 +197,7 @@ export default function AdminRefundDetailPage() {
 
       {isLoading ? (
         <div className="rounded-[28px] border border-gray-100 bg-white p-10 text-center text-sm font-bold text-gray-500 shadow-sm">
-          Memuat refund dari database...
+          Memuat refund...
         </div>
       ) : refund ? (
         <section className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">

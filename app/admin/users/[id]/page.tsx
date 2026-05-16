@@ -163,7 +163,7 @@ export default function AdminUserDetailPage() {
 
       {isLoading ? (
         <div className="rounded-[28px] border border-gray-100 bg-white p-10 text-center text-sm font-bold text-gray-500 shadow-sm">
-          Memuat data user dari database...
+          Memuat data user...
         </div>
       ) : user ? (
         <>
@@ -230,7 +230,7 @@ export default function AdminUserDetailPage() {
               <div className="mb-5 flex items-center gap-2">
                 <Activity size={20} className="text-emerald-600" />
                 <h2 className="text-lg font-extrabold text-gray-950">
-                  Aktivitas Database
+                  Aktivitas Akun
                 </h2>
               </div>
 

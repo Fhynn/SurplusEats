@@ -65,7 +65,7 @@ function mapApiOrderToHistory(order: ApiOrder): HistoryOrder | null {
     foodId: card.foodId,
     note:
       card.status === "completed"
-        ? "Pickup selesai dan order tercatat di database."
+        ? "Pickup selesai dan order sudah tercatat."
         : "Order dibatalkan atau pembayaran tidak berhasil.",
   };
 }
@@ -166,7 +166,7 @@ export function CustomerHistoryScreen() {
         throw new Error(data.message || "Ulasan gagal disimpan.");
       }
 
-      setNotice("Ulasan berhasil disimpan ke database.");
+      setNotice("Ulasan berhasil disimpan.");
       handleCloseReview();
     } catch (error) {
       setNotice(

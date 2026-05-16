@@ -46,7 +46,7 @@ export default function PaymentFailedPage() {
             </h2>
             <p className="mt-2 text-sm leading-6 font-medium text-gray-500">
               Halaman ini tidak menampilkan data contoh. Jika order benar-benar
-              gagal dibuat, database tidak menyimpan invoice pembayaran.
+              gagal dibuat, invoice pembayaran tidak akan tersimpan.
             </p>
           </div>
 

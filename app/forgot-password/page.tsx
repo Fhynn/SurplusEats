@@ -453,7 +453,7 @@ export default function ForgotPasswordPage() {
                 </h2>
                 <p className="mt-2 text-sm leading-6 font-medium text-gray-600">
                   Password untuk {email || "akun kamu"} sudah berhasil
-                  diperbarui di prototype UI.
+                  diperbarui.
                 </p>
               </div>
 

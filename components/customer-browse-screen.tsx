@@ -247,7 +247,7 @@ export function CustomerBrowseScreen() {
         {isLoadingFoods ? (
           <section className="rounded-[28px] border border-gray-100 bg-white p-8 text-center shadow-sm">
             <h2 className="text-lg font-extrabold text-gray-950">
-              Memuat menu database...
+              Memuat menu...
             </h2>
             <p className="mt-2 text-sm leading-6 font-medium text-gray-500">
               Sistem mengambil menu aktif dari restoran yang sudah approved.

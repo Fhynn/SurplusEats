@@ -463,8 +463,8 @@ export function OwnerMenuManagement() {
       handleCloseModal();
       setMenuNotice(
         editingItem
-          ? "Perubahan menu berhasil disimpan ke database."
-          : "Menu baru berhasil dipublish dari database.",
+          ? "Perubahan menu berhasil disimpan."
+          : "Menu baru berhasil dipublish.",
       );
     } catch (error) {
       setMenuNotice(
@@ -500,7 +500,7 @@ export function OwnerMenuManagement() {
         current.filter((item) => item.id !== deletingItem.id),
       );
       setDeletingItem(null);
-      setMenuNotice("Menu berhasil dihapus dari database.");
+      setMenuNotice("Menu berhasil dihapus.");
     } catch (error) {
       setMenuNotice(
         error instanceof Error ? error.message : "Menu gagal dihapus.",
@@ -636,7 +636,7 @@ export function OwnerMenuManagement() {
           <div className="rounded-[28px] border border-gray-100 bg-white p-10 text-center">
             <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-4 border-emerald-100 border-t-emerald-500" />
             <h3 className="text-lg font-extrabold text-gray-950">
-              Memuat menu dari database
+              Memuat menu
             </h3>
             <p className="mt-2 text-sm font-medium text-gray-500">
               Data yang tampil diambil dari restoran owner yang sedang login.

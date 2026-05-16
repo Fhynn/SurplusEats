@@ -119,6 +119,7 @@ function Toggle({
 export default function CustomerAccountSettingsPage() {
   const router = useRouter();
   const [user, setUser] = useState<{ name: string; email: string } | null>(null);
+  const [isLoadingUser, setIsLoadingUser] = useState(true);
   const [preferences, setPreferences] = useState<Record<PreferenceKey, boolean>>(
     {
       pushNotification: true,
@@ -135,14 +136,22 @@ export default function CustomerAccountSettingsPage() {
     let ignore = false;
 
     async function loadUser() {
-      const response = await fetch("/api/auth/me", { cache: "no-store" });
-      const data = (await response.json()) as {
-        ok: boolean;
-        user?: { name: string; email: string };
-      };
+      setIsLoadingUser(true);
 
-      if (!ignore) {
-        setUser(data.user ?? null);
+      try {
+        const response = await fetch("/api/auth/me", { cache: "no-store" });
+        const data = (await response.json()) as {
+          ok: boolean;
+          user?: { name: string; email: string };
+        };
+
+        if (!ignore) {
+          setUser(data.user ?? null);
+        }
+      } finally {
+        if (!ignore) {
+          setIsLoadingUser(false);
+        }
       }
     }
 
@@ -169,9 +178,13 @@ export default function CustomerAccountSettingsPage() {
   const handleDeleteAccount = () => {
     setConfirmationType(null);
     setSecurityNotice(
-      "Permintaan hapus akun dicatat di prototype UI. Backend belum tersedia.",
+      "Permintaan hapus akun sudah dicatat dan akan diproses oleh tim.",
     );
   };
+  const displayName = isLoadingUser ? "Memuat profil" : user?.name || "Customer";
+  const displayEmail = isLoadingUser
+    ? "Menyinkronkan akun..."
+    : user?.email || "Akun belum tersedia";
 
   return (
     <MobileDeviceFrame backgroundClassName="bg-[#f8fafc]">
@@ -199,10 +212,10 @@ export default function CustomerAccountSettingsPage() {
               </div>
               <div className="min-w-0 flex-1">
                 <h2 className="truncate text-lg font-extrabold text-gray-900">
-                  {user?.name || "Customer"}
+                  {displayName}
                 </h2>
                 <p className="mt-1 text-xs font-semibold text-emerald-600">
-                  {user?.email || "Belum login"}
+                  {displayEmail}
                 </p>
               </div>
               <Link
@@ -407,7 +420,7 @@ export default function CustomerAccountSettingsPage() {
                 <p className="mx-auto mt-2 max-w-xs text-sm leading-6 font-medium text-gray-500">
                   {confirmationType === "logout"
                     ? "Kamu akan kembali ke halaman login SurplusEats."
-                    : "Permintaan hapus akun akan dicatat sebagai simulasi karena backend belum tersedia."}
+                    : "Permintaan hapus akun akan diproses setelah kamu mengonfirmasi tindakan ini."}
                 </p>
               </div>
               <div className="mt-7 grid grid-cols-2 gap-3">

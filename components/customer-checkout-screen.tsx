@@ -321,8 +321,7 @@ export function CustomerCheckoutScreen() {
                   </div>
                 </div>
                 <p className="text-xs leading-5 font-medium text-gray-500">
-                  Voucher diterapkan dari keranjang jika kode voucher valid dari
-                  database.
+                  Voucher diterapkan dari keranjang jika kode voucher masih valid.
                 </p>
               </section>
 

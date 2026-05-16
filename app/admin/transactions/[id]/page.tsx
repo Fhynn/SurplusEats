@@ -163,7 +163,7 @@ export default function AdminTransactionDetailPage() {
 
       {isLoading ? (
         <div className="rounded-[28px] border border-gray-100 bg-white p-10 text-center text-sm font-bold text-gray-500 shadow-sm">
-          Memuat transaksi dari database...
+          Memuat transaksi...
         </div>
       ) : order ? (
         <>
