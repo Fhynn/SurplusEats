@@ -52,6 +52,8 @@ export function CustomerRegisterScreen() {
     phone: "",
     password: "",
   });
+  const [notice, setNotice] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const passwordScore = useMemo(() => {
     let score = 0;
@@ -93,14 +95,44 @@ export function CustomerRegisterScreen() {
     );
   };
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
     if (!isFormReady) {
+      setNotice("Lengkapi data wajib dan setujui ketentuan layanan.");
       return;
     }
 
-    router.push("/home");
+    setIsSubmitting(true);
+    setNotice("");
+
+    try {
+      const response = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...form,
+          preferences: selectedPreferences,
+        }),
+      });
+      const result = (await response.json()) as {
+        ok: boolean;
+        message?: string;
+        redirectTo?: string;
+      };
+
+      if (!response.ok || !result.ok || !result.redirectTo) {
+        setNotice(result.message || "Pendaftaran gagal. Coba lagi.");
+        return;
+      }
+
+      router.push(result.redirectTo);
+      router.refresh();
+    } catch {
+      setNotice("Pendaftaran gagal karena koneksi bermasalah.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -282,13 +314,19 @@ export function CustomerRegisterScreen() {
               </span>
             </label>
 
+            {notice ? (
+              <div className="rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-xs leading-5 font-bold text-amber-700">
+                {notice}
+              </div>
+            ) : null}
+
             <button
               type="submit"
-              disabled={!isFormReady}
+              disabled={!isFormReady || isSubmitting}
               className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gray-900 py-4 text-sm font-extrabold text-white shadow-[0_12px_26px_rgba(15,23,42,0.14)] transition-all hover:bg-emerald-500 active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-gray-300 disabled:shadow-none"
             >
               <HeartHandshake size={18} />
-              Daftar Sekarang
+              {isSubmitting ? "Mendaftarkan Akun..." : "Daftar Sekarang"}
             </button>
           </form>
 

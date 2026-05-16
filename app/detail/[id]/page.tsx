@@ -1,7 +1,8 @@
 import { notFound } from "next/navigation";
 
 import { CustomerFoodDetailScreen } from "@/components/customer-food-detail-screen";
-import { MOCK_FOODS } from "@/lib/customer-data";
+import { menuItemToFood, type ApiMenuItem } from "@/lib/food-mapper";
+import { prisma } from "@/lib/prisma";
 
 interface DetailPageProps {
   params: Promise<{
@@ -11,11 +12,18 @@ interface DetailPageProps {
 
 export default async function DetailPage({ params }: DetailPageProps) {
   const { id } = await params;
-  const food = MOCK_FOODS.find((item) => item.id === Number(id));
+  const menuItem = await prisma.menuItem.findUnique({
+    where: { id },
+    include: {
+      restaurant: true,
+    },
+  });
 
-  if (!food) {
+  if (!menuItem || menuItem.status !== "ACTIVE") {
     notFound();
   }
+
+  const food = menuItemToFood(menuItem satisfies ApiMenuItem);
 
   return <CustomerFoodDetailScreen food={food} />;
 }

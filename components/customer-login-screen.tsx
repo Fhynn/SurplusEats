@@ -10,7 +10,6 @@ import {
   Leaf,
   Lock,
   Mail,
-  ShieldCheck,
   Store,
   TicketPercent,
 } from "lucide-react";
@@ -18,21 +17,6 @@ import { useRouter } from "next/navigation";
 import { type FormEvent, useState } from "react";
 
 import { MobileDeviceFrame } from "@/components/mobile-device-frame";
-
-const demoAccounts = [
-  {
-    label: "Customer",
-    email: "customer@surpluseats.id",
-    password: "demo123",
-    route: "/home",
-  },
-  {
-    label: "Owner",
-    email: "owner@surpluseats.id",
-    password: "owner123",
-    route: "/owner/dashboard",
-  },
-] as const;
 
 const trustItems = [
   "Pickup QR aman",
@@ -49,10 +33,12 @@ export function CustomerLoginScreen() {
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(true);
   const [notice, setNotice] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const isReady = email.includes("@") && password.length >= 4;
+  const normalizedEmail = email.trim().toLowerCase();
+  const isReady = normalizedEmail.includes("@") && password.length >= 4;
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
     if (!isReady) {
@@ -60,19 +46,43 @@ export function CustomerLoginScreen() {
       return;
     }
 
-    router.push("/home");
-  };
+    setIsSubmitting(true);
+    setNotice("");
 
-  const handleUseDemo = (account: (typeof demoAccounts)[number]) => {
-    setEmail(account.email);
-    setPassword(account.password);
-    setNotice(`Demo ${account.label} siap digunakan.`);
+    try {
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: normalizedEmail,
+          password,
+          rememberMe,
+        }),
+      });
+      const result = (await response.json()) as {
+        ok: boolean;
+        message?: string;
+        redirectTo?: string;
+      };
+
+      if (!response.ok || !result.ok || !result.redirectTo) {
+        setNotice(result.message || "Login gagal. Cek email dan password.");
+        return;
+      }
+
+      router.push(result.redirectTo);
+      router.refresh();
+    } catch {
+      setNotice("Login gagal karena koneksi bermasalah.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
     <MobileDeviceFrame backgroundClassName="bg-white">
-      <div className="flex min-h-full flex-1 flex-col bg-white">
-        <section className="relative h-[38%] min-h-[270px] w-full shrink-0">
+      <div className="flex h-full min-h-0 flex-col overflow-y-auto bg-white">
+        <section className="relative h-[34%] min-h-[230px] w-full shrink-0 md:min-h-[250px]">
           <Image
             src="https://images.unsplash.com/photo-1598514982205-f36b96d1e8d4?q=80&w=1200&auto=format&fit=crop"
             alt="Healthy food for SurplusEats login"
@@ -98,24 +108,24 @@ export function CustomerLoginScreen() {
             </div>
           </div>
 
-          <div className="absolute right-6 bottom-8 left-6 z-10">
-            <h1 className="text-3xl leading-tight font-extrabold tracking-tight text-white">
+          <div className="absolute right-6 bottom-7 left-6 z-10">
+            <h1 className="text-[27px] leading-tight font-extrabold tracking-tight text-white md:text-3xl">
               Masuk dan mulai selamatkan makanan hari ini.
             </h1>
-            <p className="mt-3 text-sm leading-6 font-medium text-emerald-50/95">
+            <p className="mt-2 text-sm leading-6 font-medium text-emerald-50/95">
               Cari makanan surplus terdekat, ambil dengan QR pickup, dan lacak
               semua pesanan dari satu akun.
             </p>
           </div>
         </section>
 
-        <section className="relative z-20 -mt-8 flex flex-1 flex-col rounded-t-[32px] bg-white px-6 pt-7 pb-6 shadow-[0_-15px_40px_rgba(0,0,0,0.15)]">
-          <div className="mx-auto mb-6 h-1.5 w-12 rounded-full bg-gray-200" />
+        <section className="relative z-20 -mt-7 flex flex-1 flex-col rounded-t-[32px] bg-white px-6 pt-6 pb-8 shadow-[0_-15px_40px_rgba(0,0,0,0.15)]">
+          <div className="mx-auto mb-5 h-1.5 w-12 rounded-full bg-gray-200" />
 
           <form className="flex flex-1 flex-col" onSubmit={handleSubmit}>
-            <div className="flex-1 space-y-5">
-              <div className="rounded-[24px] border border-emerald-100 bg-emerald-50 p-4">
-                <div className="mb-3 flex items-center gap-2">
+            <div className="flex-1 space-y-4">
+              <div className="rounded-[22px] border border-emerald-100 bg-emerald-50 p-4">
+                <div className="mb-2.5 flex items-center gap-2">
                   <TicketPercent size={17} className="text-emerald-600" />
                   <p className="text-sm font-extrabold text-emerald-950">
                     Benefit akun
@@ -160,9 +170,11 @@ export function CustomerLoginScreen() {
                     value={email}
                     onChange={(event) => setEmail(event.target.value)}
                     placeholder="nama@email.com"
+                    autoCapitalize="none"
+                    autoComplete="username"
                     onFocus={() => setEmailFocus(true)}
                     onBlur={() => setEmailFocus(false)}
-                    className="w-full rounded-2xl bg-transparent py-4 pr-4 pl-12 text-sm font-semibold text-gray-900 outline-none placeholder:text-gray-400"
+                    className="w-full rounded-2xl bg-transparent py-3.5 pr-4 pl-12 text-sm font-semibold text-gray-900 outline-none placeholder:text-gray-400"
                   />
                 </div>
               </div>
@@ -201,9 +213,10 @@ export function CustomerLoginScreen() {
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
                     placeholder="Masukkan password"
+                    autoComplete="current-password"
                     onFocus={() => setPassFocus(true)}
                     onBlur={() => setPassFocus(false)}
-                    className="w-full rounded-2xl bg-transparent py-4 pr-12 pl-12 text-sm font-semibold text-gray-900 outline-none placeholder:text-gray-400"
+                    className="w-full rounded-2xl bg-transparent py-3.5 pr-12 pl-12 text-sm font-semibold text-gray-900 outline-none placeholder:text-gray-400"
                   />
                   <button
                     type="button"
@@ -245,39 +258,21 @@ export function CustomerLoginScreen() {
 
               <button
                 type="submit"
-                disabled={!isReady}
-                className="group relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-2xl bg-emerald-500 py-4 text-sm font-extrabold text-white shadow-[0_8px_20px_rgba(16,185,129,0.25)] transition-all duration-200 hover:shadow-[0_8px_25px_rgba(16,185,129,0.4)] active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-gray-300 disabled:shadow-none"
+                disabled={!isReady || isSubmitting}
+                className="group relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-2xl bg-emerald-500 py-3.5 text-sm font-extrabold text-white shadow-[0_8px_20px_rgba(16,185,129,0.25)] transition-all duration-200 hover:shadow-[0_8px_25px_rgba(16,185,129,0.4)] active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-gray-300 disabled:shadow-none"
               >
-                <span className="relative z-10">Masuk Sekarang</span>
+                <span className="relative z-10">
+                  {isSubmitting ? "Memeriksa Akun..." : "Masuk Sekarang"}
+                </span>
                 <ArrowRight
                   size={18}
                   className="relative z-10 transition-transform group-hover:translate-x-1"
                 />
               </button>
 
-              <div className="rounded-[24px] border border-gray-100 bg-gray-50 p-4">
-                <div className="mb-3 flex items-center gap-2">
-                  <ShieldCheck size={17} className="text-gray-500" />
-                  <p className="text-sm font-extrabold text-gray-900">
-                    Akun demo
-                  </p>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  {demoAccounts.map((account) => (
-                    <button
-                      key={account.label}
-                      type="button"
-                      onClick={() => handleUseDemo(account)}
-                      className="rounded-2xl bg-white px-3 py-3 text-xs font-extrabold text-gray-700 shadow-sm transition-colors hover:bg-emerald-50 hover:text-emerald-700"
-                    >
-                      {account.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
             </div>
 
-            <p className="mt-8 pb-2 text-center text-sm text-gray-500">
+            <p className="mt-6 pb-2 text-center text-sm text-gray-500">
               Belum punya akun?{" "}
               <Link
                 href="/register"

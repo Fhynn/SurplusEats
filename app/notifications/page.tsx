@@ -7,18 +7,21 @@ import {
   ChevronLeft,
   Clock,
   Gift,
+  MailCheck,
   ReceiptText,
   RefreshCcw,
   ShoppingBag,
+  Trash2,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { MobileDeviceFrame } from "@/components/mobile-device-frame";
 
 type NotificationType = "order" | "promo" | "refund" | "system";
+type NotificationFilter = "all" | "unread" | NotificationType;
 
 type CustomerNotification = {
-  id: number;
+  id: string;
   title: string;
   description: string;
   time: string;
@@ -27,47 +30,15 @@ type CustomerNotification = {
   href?: string;
 };
 
-const initialNotifications: CustomerNotification[] = [
-  {
-    id: 1,
-    title: "Pesanan Siap Diambil",
-    description:
-      "Order SFM-99A2X dari Bakehouse Bakery sudah siap. Tunjukkan QR ke kasir sebelum 21:00 WIB.",
-    time: "Baru saja",
-    type: "order",
-    unread: true,
-    href: "/orders/SFM-99A2X",
-  },
-  {
-    id: 2,
-    title: "Voucher Baru Tersedia",
-    description:
-      "Kamu mendapat voucher Diskon Food Hero 50% untuk pickup malam ini.",
-    time: "18 menit lalu",
-    type: "promo",
-    unread: true,
-    href: "/profile/vouchers",
-  },
-  {
-    id: 3,
-    title: "Pembayaran Berhasil",
-    description:
-      "Pembayaran order SFM-99A2X berhasil. Struk pesanan sudah tersedia.",
-    time: "35 menit lalu",
-    type: "system",
-    unread: false,
-    href: "/payment-success",
-  },
-  {
-    id: 4,
-    title: "Refund Diproses",
-    description:
-      "Pengajuan refund order SFM-66D9W sedang direview oleh tim SurplusEats.",
-    time: "Kemarin",
-    type: "refund",
-    unread: false,
-  },
-];
+type ApiNotification = {
+  id: string;
+  title: string;
+  body: string;
+  type: "ORDER" | "PROMO" | "REFUND" | "SYSTEM";
+  href: string | null;
+  readAt: string | null;
+  createdAt: string;
+};
 
 const notificationStyleByType = {
   order: {
@@ -88,17 +59,169 @@ const notificationStyleByType = {
   },
 } as const;
 
+const notificationFilters: Array<{ key: NotificationFilter; label: string }> = [
+  { key: "all", label: "Semua" },
+  { key: "unread", label: "Belum Dibaca" },
+  { key: "order", label: "Order" },
+  { key: "promo", label: "Promo" },
+  { key: "refund", label: "Refund" },
+  { key: "system", label: "Sistem" },
+];
+
+const notificationTypeLabel: Record<NotificationType, string> = {
+  order: "Order",
+  promo: "Promo",
+  refund: "Refund",
+  system: "Sistem",
+};
+
+const apiTypeToUiType: Record<ApiNotification["type"], NotificationType> = {
+  ORDER: "order",
+  PROMO: "promo",
+  REFUND: "refund",
+  SYSTEM: "system",
+};
+
+function relativeTime(value: string) {
+  const diffMs = Date.now() - new Date(value).getTime();
+  const diffMinutes = Math.max(0, Math.round(diffMs / 60000));
+
+  if (diffMinutes < 2) return "Baru saja";
+  if (diffMinutes < 60) return `${diffMinutes} menit lalu`;
+
+  const diffHours = Math.round(diffMinutes / 60);
+
+  if (diffHours < 24) return `${diffHours} jam lalu`;
+
+  return new Intl.DateTimeFormat("id-ID", {
+    day: "2-digit",
+    month: "short",
+  }).format(new Date(value));
+}
+
+function apiNotificationToUi(notification: ApiNotification): CustomerNotification {
+  return {
+    id: notification.id,
+    title: notification.title,
+    description: notification.body,
+    time: relativeTime(notification.createdAt),
+    type: apiTypeToUiType[notification.type],
+    unread: !notification.readAt,
+    href: notification.href || undefined,
+  };
+}
+
 export default function CustomerNotificationsPage() {
-  const [notifications, setNotifications] = useState(initialNotifications);
+  const [notifications, setNotifications] = useState<CustomerNotification[]>([]);
+  const [activeFilter, setActiveFilter] = useState<NotificationFilter>("all");
+  const [isLoadingNotifications, setIsLoadingNotifications] = useState(true);
   const unreadCount = notifications.filter((notification) => notification.unread).length;
 
-  const markAllAsRead = () => {
+  useEffect(() => {
+    let ignore = false;
+
+    async function loadNotifications() {
+      setIsLoadingNotifications(true);
+
+      try {
+        const response = await fetch("/api/notifications", { cache: "no-store" });
+        const result = (await response.json()) as {
+          ok: boolean;
+          notifications?: ApiNotification[];
+        };
+
+        if (!ignore) {
+          setNotifications(
+            result.notifications?.map(apiNotificationToUi) ?? [],
+          );
+        }
+      } catch {
+        if (!ignore) {
+          setNotifications([]);
+        }
+      } finally {
+        if (!ignore) {
+          setIsLoadingNotifications(false);
+        }
+      }
+    }
+
+    loadNotifications();
+
+    return () => {
+      ignore = true;
+    };
+  }, []);
+  const filteredNotifications = useMemo(() => {
+    if (activeFilter === "all") {
+      return notifications;
+    }
+
+    if (activeFilter === "unread") {
+      return notifications.filter((notification) => notification.unread);
+    }
+
+    return notifications.filter(
+      (notification) => notification.type === activeFilter,
+    );
+  }, [activeFilter, notifications]);
+  const filterCounts = useMemo(() => {
+    return notificationFilters.reduce(
+      (counts, filter) => ({
+        ...counts,
+        [filter.key]:
+          filter.key === "all"
+            ? notifications.length
+            : filter.key === "unread"
+              ? unreadCount
+              : notifications.filter(
+                  (notification) => notification.type === filter.key,
+                ).length,
+      }),
+      {} as Record<NotificationFilter, number>,
+    );
+  }, [notifications, unreadCount]);
+
+  const markAllAsRead = async () => {
     setNotifications((currentNotifications) =>
       currentNotifications.map((notification) => ({
         ...notification,
         unread: false,
       })),
     );
+    await fetch("/api/notifications", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ all: true }),
+    });
+  };
+
+  const markAsRead = async (notificationId: string) => {
+    setNotifications((currentNotifications) =>
+      currentNotifications.map((notification) =>
+        notification.id === notificationId
+          ? { ...notification, unread: false }
+          : notification,
+      ),
+    );
+    await fetch("/api/notifications", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: notificationId }),
+    });
+  };
+
+  const removeNotification = async (notificationId: string) => {
+    setNotifications((currentNotifications) =>
+      currentNotifications.filter(
+        (notification) => notification.id !== notificationId,
+      ),
+    );
+    await fetch("/api/notifications", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: notificationId }),
+    });
   };
 
   return (
@@ -143,6 +266,34 @@ export default function CustomerNotificationsPage() {
             <CheckCircle2 size={17} />
             Tandai Semua Dibaca
           </button>
+
+          <div className="mt-4 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {notificationFilters.map((filter) => {
+              const isActive = activeFilter === filter.key;
+
+              return (
+                <button
+                  key={filter.key}
+                  type="button"
+                  onClick={() => setActiveFilter(filter.key)}
+                  className={`shrink-0 rounded-2xl px-3.5 py-2 text-xs font-extrabold transition-colors ${
+                    isActive
+                      ? "bg-gray-950 text-white"
+                      : "bg-gray-50 text-gray-600 hover:bg-gray-100"
+                  }`}
+                >
+                  {filter.label}
+                  <span
+                    className={`ml-2 rounded-full px-1.5 py-0.5 text-[10px] ${
+                      isActive ? "bg-white/15 text-white" : "bg-white text-gray-400"
+                    }`}
+                  >
+                    {filterCounts[filter.key]}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </header>
 
         <div className="flex-1 overflow-y-auto px-6 py-6 pb-24 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -157,16 +308,29 @@ export default function CustomerNotificationsPage() {
           </div>
 
           <section className="space-y-3">
-            {notifications.map((notification) => {
+            {isLoadingNotifications ? (
+              <div className="rounded-[24px] border border-gray-100 bg-white p-8 text-center shadow-sm">
+                <h3 className="text-base font-extrabold text-gray-950">
+                  Memuat notifikasi database...
+                </h3>
+                <p className="mx-auto mt-2 max-w-[240px] text-sm leading-6 font-medium text-gray-500">
+                  Notifikasi diambil sesuai session akun yang sedang login.
+                </p>
+              </div>
+            ) : null}
+
+            {filteredNotifications.map((notification) => {
               const style = notificationStyleByType[notification.type];
               const Icon = style.icon;
-              const content = (
+
+              return (
                 <article
+                  key={notification.id}
                   className={`rounded-[24px] border p-4 shadow-sm transition-all ${
                     notification.unread
                       ? "border-emerald-200 bg-white shadow-[0_10px_24px_rgba(16,185,129,0.06)]"
                       : "border-gray-100 bg-white/80"
-                  } ${notification.href ? "hover:border-emerald-200" : ""}`}
+                  }`}
                 >
                   <div className="flex gap-4">
                     <div
@@ -175,10 +339,22 @@ export default function CustomerNotificationsPage() {
                       <Icon size={21} />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="mb-1 flex items-start justify-between gap-3">
-                        <h3 className="text-sm font-extrabold text-gray-950">
-                          {notification.title}
-                        </h3>
+                      <div className="mb-2 flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="mb-1 flex flex-wrap items-center gap-1.5">
+                            <span className="rounded-full bg-gray-50 px-2.5 py-1 text-[10px] font-extrabold text-gray-500">
+                              {notificationTypeLabel[notification.type]}
+                            </span>
+                            {notification.unread ? (
+                              <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-extrabold text-emerald-700">
+                                Baru
+                              </span>
+                            ) : null}
+                          </div>
+                          <h3 className="text-sm font-extrabold text-gray-950">
+                            {notification.title}
+                          </h3>
+                        </div>
                         {notification.unread ? (
                           <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-emerald-500" />
                         ) : null}
@@ -191,19 +367,55 @@ export default function CustomerNotificationsPage() {
                       </p>
                     </div>
                   </div>
+
+                  <div className="mt-4 grid grid-cols-2 gap-2 border-t border-gray-100 pt-4">
+                    {notification.href ? (
+                      <Link
+                        href={notification.href}
+                        onClick={() => void markAsRead(notification.id)}
+                        className="flex min-h-10 items-center justify-center rounded-xl bg-gray-900 px-3 text-xs font-extrabold text-white transition-colors hover:bg-emerald-500"
+                      >
+                        Buka Detail
+                      </Link>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => void markAsRead(notification.id)}
+                        className="flex min-h-10 items-center justify-center gap-1.5 rounded-xl bg-gray-900 px-3 text-xs font-extrabold text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-gray-200"
+                        disabled={!notification.unread}
+                      >
+                        <MailCheck size={14} />
+                        {notification.unread ? "Tandai Dibaca" : "Dibaca"}
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => void removeNotification(notification.id)}
+                      className="flex min-h-10 items-center justify-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 text-xs font-extrabold text-gray-600 transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600"
+                    >
+                      <Trash2 size={14} />
+                      Hapus
+                    </button>
+                  </div>
                 </article>
               );
-
-              if (notification.href) {
-                return (
-                  <Link key={notification.id} href={notification.href}>
-                    {content}
-                  </Link>
-                );
-              }
-
-              return <div key={notification.id}>{content}</div>;
             })}
+
+            {!isLoadingNotifications && filteredNotifications.length === 0 ? (
+              <div className="rounded-[24px] border border-dashed border-gray-200 bg-white p-8 text-center">
+                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-gray-50 text-gray-400">
+                  <Bell size={24} />
+                </div>
+                <h3 className="text-base font-extrabold text-gray-950">
+                  Tidak ada notifikasi
+                </h3>
+                <p className="mx-auto mt-2 max-w-[240px] text-sm leading-6 font-medium text-gray-500">
+                  Ubah filter atau tunggu update terbaru dari order, promo, dan
+                  refund.
+                </p>
+              </div>
+            ) : null}
           </section>
         </div>
       </div>

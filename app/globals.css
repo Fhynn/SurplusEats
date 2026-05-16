@@ -102,3 +102,27 @@ input {
 .fade-in {
   animation-name: fade-in;
 }
+
+.admin-shell-content > .min-h-screen {
+  min-height: auto;
+  background: transparent;
+}
+
+.admin-shell-content > .min-h-screen > .flex {
+  display: block;
+  min-height: auto;
+}
+
+.admin-shell-content > .min-h-screen > .flex > aside:first-child {
+  display: none !important;
+}
+
+.admin-shell-content > .min-h-screen > .flex > main {
+  min-height: auto;
+  margin-left: 0 !important;
+  width: 100%;
+}
+
+.admin-shell-content .max-w-7xl {
+  max-width: 96rem;
+}

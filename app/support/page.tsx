@@ -40,13 +40,6 @@ const initialMessages: ChatMessage[] = [
     text: "Halo, kami siap bantu. Kalau ini soal pickup, kirim order ID agar kami bisa cek lebih cepat.",
     time: "Baru saja",
   },
-  {
-    id: 2,
-    source: "store",
-    name: "Bakehouse Bakery",
-    text: "Untuk order SFM-99A2X, paket sudah siap diambil sampai pukul 21:00 WIB.",
-    time: "Baru saja",
-  },
 ];
 
 const quickTopics = [
@@ -319,7 +312,7 @@ export default function CustomerSupportPage() {
                     <input
                       id="support-order"
                       type="text"
-                      defaultValue="SFM-99A2X"
+                      placeholder="Masukkan order ID dari riwayat pesanan"
                       className="h-12 w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 text-sm font-bold text-gray-900 outline-none focus:border-emerald-500 focus:bg-white"
                     />
                   </div>
@@ -361,7 +354,7 @@ export default function CustomerSupportPage() {
               Riwayat Order
             </Link>
             <Link
-              href="/orders/SFM-99A2X/refund"
+              href="/orders"
               className="flex items-center justify-center gap-2 rounded-2xl bg-emerald-500 p-4 text-sm font-extrabold text-white shadow-[0_8px_20px_rgba(16,185,129,0.22)] transition-colors hover:bg-emerald-600"
             >
               Refund

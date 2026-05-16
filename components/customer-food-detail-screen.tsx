@@ -35,19 +35,6 @@ const pickupNotes = [
   "Produk surplus layak konsumsi dan stok terbatas.",
 ] as const;
 
-const reviewHighlights = [
-  {
-    name: "Nadia",
-    text: "Pickup cepat, roti masih enak dan packing rapi.",
-    rating: 5,
-  },
-  {
-    name: "Raka",
-    text: "Harga jauh lebih hemat untuk porsi yang masih bagus.",
-    rating: 5,
-  },
-] as const;
-
 export function CustomerFoodDetailScreen({
   food,
 }: CustomerFoodDetailScreenProps) {
@@ -253,7 +240,7 @@ export function CustomerFoodDetailScreen({
                   />
                   <div>
                     <p className="text-xs font-extrabold text-blue-900">
-                      Jl. Sudirman No. 45, Pekanbaru
+                      Alamat restoran mengikuti data toko.
                     </p>
                     <p className="mt-0.5 text-[11px] font-medium text-blue-700">
                       Estimasi {food.distance} dari lokasimu.
@@ -320,25 +307,17 @@ export function CustomerFoodDetailScreen({
                   {food.rating}/5
                 </span>
               </div>
-              <div className="space-y-3">
-                {reviewHighlights.map((review) => (
-                  <article key={review.name} className="rounded-2xl bg-gray-50 p-3">
-                    <div className="mb-1 flex items-center justify-between gap-3">
-                      <p className="text-xs font-extrabold text-gray-950">
-                        {review.name}
-                      </p>
-                      <div className="flex items-center gap-1 text-amber-500">
-                        <Star size={13} className="fill-amber-500" />
-                        <span className="text-[10px] font-extrabold">
-                          {review.rating}
-                        </span>
-                      </div>
-                    </div>
-                    <p className="text-xs leading-5 font-medium text-gray-500">
-                      {review.text}
-                    </p>
-                  </article>
-                ))}
+              <div className="rounded-2xl bg-gray-50 p-4">
+                <div className="mb-1 flex items-center gap-1 text-amber-500">
+                  <Star size={14} className="fill-amber-500" />
+                  <span className="text-xs font-extrabold">
+                    {food.rating}/5 dari {food.reviews} ulasan
+                  </span>
+                </div>
+                <p className="text-xs leading-5 font-medium text-gray-500">
+                  Detail komentar akan muncul setelah customer menyelesaikan
+                  order dan mengirim ulasan.
+                </p>
               </div>
             </section>
           </section>

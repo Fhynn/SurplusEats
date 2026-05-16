@@ -6,7 +6,10 @@ import {
   CheckCircle2,
   ChevronLeft,
   Clock3,
+  Eye,
+  EyeOff,
   FileText,
+  Lock,
   Mail,
   MapPin,
   Phone,
@@ -83,6 +86,7 @@ type PartnerForm = {
   pickupWindow: string;
   averageSurplus: string;
   bankAccount: string;
+  password: string;
 };
 
 function FieldLabel({ children }: { children: ReactNode }) {
@@ -157,7 +161,11 @@ export default function RegisterMitraPage() {
     pickupWindow: "17:00 - 21:00",
     averageSurplus: "",
     bankAccount: "",
+    password: "",
   });
+  const [showPassword, setShowPassword] = useState(false);
+  const [notice, setNotice] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploadedDocs, setUploadedDocs] = useState<Record<UploadKind, string>>({
     identity: "",
     permit: "",
@@ -173,6 +181,7 @@ export default function RegisterMitraPage() {
       form.address,
       form.pickupWindow,
       form.averageSurplus,
+      form.password,
       uploadedDocs.identity,
       uploadedDocs.permit,
       uploadedDocs.storefront,
@@ -199,9 +208,45 @@ export default function RegisterMitraPage() {
       setUploadedDocs((current) => ({ ...current, [key]: file.name }));
     };
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    router.push("/owner/verify");
+    setIsSubmitting(true);
+    setNotice("");
+
+    try {
+      const response = await fetch("/api/auth/register-owner", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ownerName: form.ownerName,
+          email: form.email,
+          phone: form.phone,
+          password: form.password,
+          storeName: form.storeName,
+          businessType: category,
+          address: form.address,
+          city: "Jakarta",
+          description: `Jam pickup ${form.pickupWindow}. Estimasi surplus ${form.averageSurplus}. Rekening ${form.bankAccount || "belum diisi"}.`,
+        }),
+      });
+      const result = (await response.json()) as {
+        ok: boolean;
+        message?: string;
+        redirectTo?: string;
+      };
+
+      if (!response.ok || !result.ok || !result.redirectTo) {
+        setNotice(result.message || "Pendaftaran mitra gagal. Coba lagi.");
+        return;
+      }
+
+      router.push(result.redirectTo);
+      router.refresh();
+    } catch {
+      setNotice("Pendaftaran mitra gagal karena koneksi bermasalah.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -285,7 +330,7 @@ export default function RegisterMitraPage() {
                     type="text"
                     value={form.storeName}
                     onChange={handleInputChange("storeName")}
-                    placeholder="Contoh: Bakehouse Bakery"
+                    placeholder="Nama usaha kamu"
                     className={inputClassName}
                   />
                 </div>
@@ -342,6 +387,34 @@ export default function RegisterMitraPage() {
                     placeholder="08123456789"
                     className={inputClassName}
                   />
+                </div>
+              </div>
+
+              <div className="md:col-span-2">
+                <FieldLabel>Password Owner</FieldLabel>
+                <div className={inputWrapClassName}>
+                  <Lock
+                    size={19}
+                    className="absolute top-1/2 left-4 -translate-y-1/2 text-emerald-500"
+                  />
+                  <input
+                    required
+                    type={showPassword ? "text" : "password"}
+                    value={form.password}
+                    onChange={handleInputChange("password")}
+                    placeholder="Minimal 6 karakter untuk login owner"
+                    className="w-full rounded-2xl bg-transparent py-3.5 pr-12 pl-12 text-sm font-semibold text-gray-900 outline-none placeholder:text-gray-400"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((value) => !value)}
+                    className="absolute top-1/2 right-4 -translate-y-1/2 p-1 text-gray-400 transition-colors hover:text-gray-600"
+                    aria-label={
+                      showPassword ? "Sembunyikan password" : "Lihat password"
+                    }
+                  >
+                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
                 </div>
               </div>
 
@@ -477,13 +550,20 @@ export default function RegisterMitraPage() {
             </div>
           </section>
 
+          {notice ? (
+            <div className="rounded-[24px] border border-amber-100 bg-amber-50 px-5 py-4 text-sm leading-6 font-bold text-amber-700">
+              {notice}
+            </div>
+          ) : null}
+
           <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
             <button
               type="submit"
-              className="flex min-h-14 w-full items-center justify-center gap-2 rounded-2xl bg-gray-900 px-6 py-4 text-sm font-extrabold text-white shadow-[0_12px_30px_rgba(15,23,42,0.18)] transition-colors hover:bg-emerald-500"
+              disabled={isSubmitting || completion < 100}
+              className="flex min-h-14 w-full items-center justify-center gap-2 rounded-2xl bg-gray-900 px-6 py-4 text-sm font-extrabold text-white shadow-[0_12px_30px_rgba(15,23,42,0.18)] transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-gray-300 disabled:shadow-none"
             >
               <Send size={18} />
-              Kirim Pendaftaran
+              {isSubmitting ? "Mengirim Pendaftaran..." : "Kirim Pendaftaran"}
             </button>
             <button
               type="button"

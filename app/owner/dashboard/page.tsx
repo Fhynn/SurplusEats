@@ -13,6 +13,7 @@ import {
   PackageCheck,
   PackagePlus,
   Plus,
+  Search,
   ShoppingBag,
   TrendingUp,
   UtensilsCrossed,
@@ -20,7 +21,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 const formatRp = (amount: number) =>
   new Intl.NumberFormat("id-ID", {
@@ -29,83 +30,25 @@ const formatRp = (amount: number) =>
     maximumFractionDigits: 0,
   }).format(amount);
 
-const stats = [
-  {
-    label: "Pendapatan Hari Ini",
-    value: formatRp(345000),
-    icon: TrendingUp,
-    iconWrapClassName: "bg-emerald-50",
-    iconClassName: "text-emerald-500",
-    trend: "+12.5%",
-  },
-  {
-    label: "Pesanan Masuk",
-    value: "14",
-    icon: ShoppingBag,
-    iconWrapClassName: "bg-blue-50",
-    iconClassName: "text-blue-500",
-    trend: "+2",
-  },
-  {
-    label: "Menu Surplus Aktif",
-    value: "8",
-    icon: UtensilsCrossed,
-    iconWrapClassName: "bg-amber-50",
-    iconClassName: "text-amber-500",
-    trend: "0",
-  },
-  {
-    label: "Food Waste Diselamatkan",
-    value: "4.2 Kg",
-    icon: Leaf,
-    iconWrapClassName: "bg-emerald-50",
-    iconClassName: "text-emerald-500",
-    trend: "+1.2 Kg",
-  },
-] as const;
-
-const recentOrders = [
-  {
-    id: "SFM-99A2X",
-    customer: "Alfhin",
-    items: "1x Roti Sourdough, 2x Croissant",
-    total: 45000,
-    status: "pending",
-    time: "18:30",
-  },
-  {
-    id: "SFM-88B1Y",
-    customer: "Budi Santoso",
-    items: "2x Nasi Ayam Bakar",
-    total: 24000,
-    status: "preparing",
-    time: "18:15",
-  },
-  {
-    id: "SFM-77C0Z",
-    customer: "Siti Aminah",
-    items: "1x Assorted Sushi",
-    total: 35000,
-    status: "ready",
-    time: "18:00",
-  },
-  {
-    id: "SFM-66D9W",
-    customer: "Dina Lorenza",
-    items: "3x Donut Coklat",
-    total: 15000,
-    status: "completed",
-    time: "17:45",
-  },
-] as const;
-
 type OwnerTab = "dashboard" | "orders";
 
 type OrderStatus = "new" | "preparing" | "ready" | "completed";
 
+type ApiOrderStatus =
+  | "PENDING"
+  | "PAYMENT_FAILED"
+  | "PAID"
+  | "CONFIRMED"
+  | "PREPARING"
+  | "READY"
+  | "COMPLETED"
+  | "CANCELLED"
+  | "REFUNDED";
+
 type KanbanOrder = {
   id: string;
   time: string;
+  createdAt: string;
   customer: string;
   items: string[];
   note?: string;
@@ -113,58 +56,25 @@ type KanbanOrder = {
   status: OrderStatus;
 };
 
-const initialKanbanOrders: KanbanOrder[] = [
-  {
-    id: "SFM-99A2X",
-    time: "18:30",
-    customer: "Alfhin Pratama",
-    items: ["1x Roti Sourdough", "2x Croissant Butter"],
-    note: "Tolong pisahkan roti manis dan asin.",
-    total: 45000,
-    status: "new",
-  },
-  {
-    id: "SFM-88B1Y",
-    time: "18:18",
-    customer: "Budi Santoso",
-    items: ["2x Nasi Ayam Bakar", "1x Es Teh"],
-    total: 24000,
-    status: "new",
-  },
-  {
-    id: "SFM-77C0Z",
-    time: "18:02",
-    customer: "Siti Aminah",
-    items: ["1x Assorted Sushi", "1x Miso Soup"],
-    note: "Pickup atas nama Siti, nomor belakang 7721.",
-    total: 35000,
-    status: "preparing",
-  },
-  {
-    id: "SFM-66D9W",
-    time: "17:47",
-    customer: "Dina Lorenza",
-    items: ["3x Donut Cokelat", "1x Cinnamon Roll"],
-    total: 15000,
-    status: "preparing",
-  },
-  {
-    id: "SFM-55E8V",
-    time: "17:20",
-    customer: "Kevin Ardi",
-    items: ["1x Salad Bowl", "1x Cold Brew Latte"],
-    total: 33000,
-    status: "ready",
-  },
-  {
-    id: "SFM-44F7U",
-    time: "16:55",
-    customer: "Maya Lestari",
-    items: ["2x Paket Roti Artisan"],
-    total: 30000,
-    status: "completed",
-  },
-];
+type ApiOwnerOrder = {
+  orderCode: string;
+  createdAt: string;
+  customer: {
+    name: string;
+  };
+  items: {
+    menuNameSnapshot: string;
+    quantity: number;
+  }[];
+  note: string | null;
+  total: number;
+  status: ApiOrderStatus;
+};
+
+type ApiOwnerMenuItem = {
+  status: "ACTIVE" | "HIDDEN" | "SOLD_OUT";
+  soldCount: number;
+};
 
 const orderColumns = [
   {
@@ -209,9 +119,61 @@ const nextStatusByStatus: Partial<Record<OrderStatus, OrderStatus>> = {
   ready: "completed",
 };
 
-function getStatusBadge(status: (typeof recentOrders)[number]["status"]) {
+const apiStatusByKanbanStatus: Record<OrderStatus, ApiOrderStatus> = {
+  new: "CONFIRMED",
+  preparing: "PREPARING",
+  ready: "READY",
+  completed: "COMPLETED",
+};
+
+function mapApiStatusToKanban(status: ApiOrderStatus): OrderStatus | null {
   switch (status) {
-    case "pending":
+    case "PENDING":
+    case "PAID":
+    case "CONFIRMED":
+      return "new";
+    case "PREPARING":
+      return "preparing";
+    case "READY":
+      return "ready";
+    case "COMPLETED":
+      return "completed";
+    default:
+      return null;
+  }
+}
+
+function formatOrderTime(value: string) {
+  return new Intl.DateTimeFormat("id-ID", {
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
+function mapApiOrder(order: ApiOwnerOrder): KanbanOrder | null {
+  const status = mapApiStatusToKanban(order.status);
+
+  if (!status) {
+    return null;
+  }
+
+  return {
+    id: order.orderCode,
+    time: formatOrderTime(order.createdAt),
+    createdAt: order.createdAt,
+    customer: order.customer.name,
+    items: order.items.map(
+      (item) => `${item.quantity}x ${item.menuNameSnapshot}`,
+    ),
+    note: order.note ?? undefined,
+    total: order.total,
+    status,
+  };
+}
+
+function getStatusBadge(status: OrderStatus) {
+  switch (status) {
+    case "new":
       return (
         <span className="rounded-full border border-amber-200 bg-amber-100 px-3 py-1 text-xs font-bold text-amber-700">
           Perlu Konfirmasi
@@ -369,42 +331,221 @@ function OrderCard({
 
 export default function OwnerDashboardPage() {
   const router = useRouter();
-  const [orders, setOrders] = useState<KanbanOrder[]>(initialKanbanOrders);
+  const [orders, setOrders] = useState<KanbanOrder[]>([]);
+  const [restaurantName, setRestaurantName] = useState("Restoran");
+  const [activeMenuCount, setActiveMenuCount] = useState(0);
+  const [rescuedItemCount, setRescuedItemCount] = useState(0);
+  const [isLoadingDashboard, setIsLoadingDashboard] = useState(true);
+  const [dashboardNotice, setDashboardNotice] = useState<string | null>(null);
   const searchParams = useSearchParams();
   const dashboardTab = searchParams.get("tab");
+  const kanbanQuery = searchParams.get("q") ?? "";
   const activeTab: OwnerTab = dashboardTab === "orders" ? "orders" : "dashboard";
+  const normalizedKanbanQuery = kanbanQuery.trim().toLowerCase();
+
+  const loadDashboardData = useCallback(async () => {
+    setIsLoadingDashboard(true);
+
+    try {
+      const [ordersResponse, menuResponse, profileResponse] = await Promise.all([
+        fetch("/api/orders", { cache: "no-store" }),
+        fetch("/api/menu-items?scope=owner", { cache: "no-store" }),
+        fetch("/api/owner/profile", { cache: "no-store" }),
+      ]);
+      const ordersData = (await ordersResponse.json()) as {
+        ok: boolean;
+        message?: string;
+        orders?: ApiOwnerOrder[];
+      };
+      const menuData = (await menuResponse.json()) as {
+        ok: boolean;
+        message?: string;
+        menuItems?: ApiOwnerMenuItem[];
+      };
+      const profileData = (await profileResponse.json()) as {
+        ok: boolean;
+        restaurant?: { name: string } | null;
+      };
+
+      if (!ordersResponse.ok || !ordersData.ok) {
+        throw new Error(ordersData.message || "Pesanan gagal dimuat.");
+      }
+
+      if (!menuResponse.ok || !menuData.ok) {
+        throw new Error(menuData.message || "Menu owner gagal dimuat.");
+      }
+
+      const nextOrders = (ordersData.orders || [])
+        .map(mapApiOrder)
+        .filter((order): order is KanbanOrder => order !== null);
+      const menuItems = menuData.menuItems || [];
+
+      setOrders(nextOrders);
+      setRestaurantName(profileData.restaurant?.name || "Restoran");
+      setActiveMenuCount(
+        menuItems.filter((item) => item.status === "ACTIVE").length,
+      );
+      setRescuedItemCount(
+        menuItems.reduce((total, item) => total + item.soldCount, 0),
+      );
+      setDashboardNotice(null);
+    } catch (error) {
+      setDashboardNotice(
+        error instanceof Error ? error.message : "Dashboard owner gagal dimuat.",
+      );
+    } finally {
+      setIsLoadingDashboard(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadDashboardData();
+  }, [loadDashboardData]);
+
+  const handleKanbanQueryChange = (value: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("tab", "orders");
+
+    if (value.trim()) {
+      params.set("q", value);
+    } else {
+      params.delete("q");
+    }
+
+    router.replace(`/owner/dashboard?${params.toString()}`, { scroll: false });
+  };
+
+  const filteredOrders = useMemo(() => {
+    if (!normalizedKanbanQuery) {
+      return orders;
+    }
+
+    return orders.filter((order) =>
+      [order.id, order.customer, order.items.join(" "), order.note ?? ""]
+        .join(" ")
+        .toLowerCase()
+        .includes(normalizedKanbanQuery),
+    );
+  }, [normalizedKanbanQuery, orders]);
+  const recentOrders = orders.slice(0, 4);
+  const todayRevenue = useMemo(() => {
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+
+    return orders.reduce((total, order) => {
+      const createdAt = new Date(order.createdAt);
+
+      if (createdAt < startOfToday || order.status !== "completed") {
+        return total;
+      }
+
+      return total + order.total;
+    }, 0);
+  }, [orders]);
+  const orderSummary = useMemo(
+    () => ({
+      new: orders.filter((order) => order.status === "new").length,
+      preparing: orders.filter((order) => order.status === "preparing").length,
+      ready: orders.filter((order) => order.status === "ready").length,
+      completed: orders.filter((order) => order.status === "completed").length,
+    }),
+    [orders],
+  );
+  const dashboardStats = [
+    {
+      label: "Pendapatan Hari Ini",
+      value: formatRp(todayRevenue),
+      icon: TrendingUp,
+      iconWrapClassName: "bg-emerald-50",
+      iconClassName: "text-emerald-500",
+      trend: "DB",
+    },
+    {
+      label: "Pesanan Masuk",
+      value: String(orders.length),
+      icon: ShoppingBag,
+      iconWrapClassName: "bg-blue-50",
+      iconClassName: "text-blue-500",
+      trend: "DB",
+    },
+    {
+      label: "Menu Surplus Aktif",
+      value: String(activeMenuCount),
+      icon: UtensilsCrossed,
+      iconWrapClassName: "bg-amber-50",
+      iconClassName: "text-amber-500",
+      trend: "DB",
+    },
+    {
+      label: "Item Diselamatkan",
+      value: String(rescuedItemCount),
+      icon: Leaf,
+      iconWrapClassName: "bg-emerald-50",
+      iconClassName: "text-emerald-500",
+      trend: "DB",
+    },
+  ] as const;
 
   const ordersByStatus = useMemo(() => {
     return orderColumns.reduce(
       (groupedOrders, column) => ({
         ...groupedOrders,
-        [column.id]: orders.filter((order) => order.status === column.id),
+        [column.id]: filteredOrders.filter((order) => order.status === column.id),
       }),
       {} as Record<OrderStatus, KanbanOrder[]>,
     );
-  }, [orders]);
+  }, [filteredOrders]);
 
-  const handleAdvanceOrder = (orderId: string) => {
-    setOrders((currentOrders) =>
-      currentOrders.map((order) => {
-        const nextStatus = nextStatusByStatus[order.status];
+  const updateOrderStatus = async (
+    orderId: string,
+    nextStatus: ApiOrderStatus,
+  ) => {
+    setDashboardNotice(null);
 
-        if (order.id !== orderId || !nextStatus) {
-          return order;
-        }
+    const response = await fetch(`/api/orders/${orderId}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ status: nextStatus }),
+    });
+    const data = (await response.json()) as {
+      ok: boolean;
+      message?: string;
+    };
 
-        return {
-          ...order,
-          status: nextStatus,
-        };
-      }),
-    );
+    if (!response.ok || !data.ok) {
+      throw new Error(data.message || "Status order gagal diperbarui.");
+    }
   };
 
-  const handleRejectOrder = (orderId: string) => {
-    setOrders((currentOrders) =>
-      currentOrders.filter((order) => order.id !== orderId),
-    );
+  const handleAdvanceOrder = async (orderId: string) => {
+    const order = orders.find((item) => item.id === orderId);
+    const nextStatus = order ? nextStatusByStatus[order.status] : null;
+
+    if (!order || !nextStatus) {
+      return;
+    }
+
+    try {
+      await updateOrderStatus(orderId, apiStatusByKanbanStatus[nextStatus]);
+      await loadDashboardData();
+    } catch (error) {
+      setDashboardNotice(
+        error instanceof Error ? error.message : "Status order gagal diperbarui.",
+      );
+    }
+  };
+
+  const handleRejectOrder = async (orderId: string) => {
+    try {
+      await updateOrderStatus(orderId, "CANCELLED");
+      await loadDashboardData();
+    } catch (error) {
+      setDashboardNotice(
+        error instanceof Error ? error.message : "Order gagal ditolak.",
+      );
+    }
   };
 
   return (
@@ -417,10 +558,16 @@ export default function OwnerDashboardPage() {
     >
       {activeTab === "dashboard" ? (
         <>
+          {dashboardNotice ? (
+            <div className="rounded-[22px] border border-red-100 bg-red-50 px-5 py-4 text-sm font-bold text-red-700">
+              {dashboardNotice}
+            </div>
+          ) : null}
+
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <h2 className="text-2xl font-extrabold tracking-tight text-gray-900">
-                Halo, Bakehouse Bakery!
+                Halo, {restaurantName}!
               </h2>
               <p className="mt-1 flex items-center gap-1.5 text-sm text-gray-500">
                 <CheckCircle2 size={14} className="text-emerald-500" />
@@ -429,6 +576,7 @@ export default function OwnerDashboardPage() {
             </div>
             <button
               type="button"
+              onClick={() => router.push("/owner/menu?action=add")}
               className="inline-flex items-center gap-2 self-start rounded-2xl bg-emerald-500 px-5 py-2.5 text-sm font-bold text-white shadow-[0_4px_15px_rgba(16,185,129,0.3)] transition-all hover:bg-emerald-600 active:scale-95"
             >
               <Plus size={18} />
@@ -437,7 +585,7 @@ export default function OwnerDashboardPage() {
           </div>
 
           <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
-            {stats.map((stat) => {
+            {dashboardStats.map((stat) => {
               const Icon = stat.icon;
 
               return (
@@ -492,7 +640,17 @@ export default function OwnerDashboardPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {recentOrders.map((order) => (
+                  {isLoadingDashboard ? (
+                    <tr>
+                      <td
+                        colSpan={6}
+                        className="p-8 text-center text-sm font-bold text-gray-400"
+                      >
+                        Memuat pesanan dari database...
+                      </td>
+                    </tr>
+                  ) : recentOrders.length > 0 ? (
+                  recentOrders.map((order) => (
                     <tr
                       key={order.id}
                       className="transition-colors hover:bg-gray-50"
@@ -505,7 +663,7 @@ export default function OwnerDashboardPage() {
                           {order.customer}
                         </p>
                         <p className="mt-0.5 text-xs text-gray-500">
-                          {order.items}
+                          {order.items.join(", ")}
                         </p>
                       </td>
                       <td className="p-5">
@@ -528,10 +686,11 @@ export default function OwnerDashboardPage() {
                             Detail
                           </button>
 
-                          {order.status === "pending" ? (
+                          {order.status === "new" ? (
                             <>
                             <button
                               type="button"
+                              onClick={() => handleAdvanceOrder(order.id)}
                               className="rounded-xl bg-emerald-50 p-2 text-emerald-600 transition-colors hover:bg-emerald-500 hover:text-white"
                               title="Terima"
                             >
@@ -539,6 +698,7 @@ export default function OwnerDashboardPage() {
                             </button>
                             <button
                               type="button"
+                              onClick={() => handleRejectOrder(order.id)}
                               className="rounded-xl bg-red-50 p-2 text-red-600 transition-colors hover:bg-red-500 hover:text-white"
                               title="Tolak"
                             >
@@ -550,6 +710,7 @@ export default function OwnerDashboardPage() {
                           {order.status === "preparing" ? (
                           <button
                             type="button"
+                            onClick={() => handleAdvanceOrder(order.id)}
                             className="rounded-xl bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700 transition-colors hover:bg-blue-100"
                           >
                             Tandai Siap
@@ -559,6 +720,7 @@ export default function OwnerDashboardPage() {
                           {order.status === "ready" ? (
                           <button
                             type="button"
+                            onClick={() => handleAdvanceOrder(order.id)}
                             className="rounded-xl bg-emerald-500 px-3 py-1.5 text-xs font-bold text-white shadow-[0_4px_12px_rgba(16,185,129,0.2)] transition-colors hover:bg-emerald-600"
                           >
                             Konfirmasi Pickup
@@ -567,7 +729,17 @@ export default function OwnerDashboardPage() {
                         </div>
                       </td>
                     </tr>
-                  ))}
+                  ))
+                  ) : (
+                    <tr>
+                      <td
+                        colSpan={6}
+                        className="p-8 text-center text-sm font-bold text-gray-400"
+                      >
+                        Belum ada pesanan untuk restoran ini.
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -577,7 +749,13 @@ export default function OwnerDashboardPage() {
 
       {activeTab === "orders" ? (
         <div className="flex h-full flex-col overflow-hidden">
-          <div className="mb-5 flex shrink-0 flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
+          {dashboardNotice ? (
+            <div className="mb-4 shrink-0 rounded-[22px] border border-red-100 bg-red-50 px-5 py-4 text-sm font-bold text-red-700">
+              {dashboardNotice}
+            </div>
+          ) : null}
+
+          <div className="mb-5 flex shrink-0 flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <p className="text-sm font-extrabold text-emerald-600">
                 Manajemen Pesanan
@@ -586,9 +764,44 @@ export default function OwnerDashboardPage() {
                 Papan Kanban Order
               </h2>
             </div>
-            <div className="inline-flex w-fit items-center gap-2 rounded-full border border-emerald-100 bg-white px-4 py-2 text-sm font-bold text-gray-600 shadow-sm">
-              <ShoppingBag size={16} className="text-emerald-500" />
-              {orders.length} pesanan aktif
+            <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
+              <div className="grid grid-cols-4 gap-2">
+                {[
+                  ["Baru", orderSummary.new, "text-amber-600"],
+                  ["Siap", orderSummary.ready, "text-purple-600"],
+                  ["Proses", orderSummary.preparing, "text-blue-600"],
+                  ["Selesai", orderSummary.completed, "text-emerald-600"],
+                ].map(([label, value, className]) => (
+                  <div
+                    key={label}
+                    className="min-w-[76px] rounded-2xl border border-gray-100 bg-white px-3 py-2 text-center shadow-sm"
+                  >
+                    <p className={`text-base font-extrabold ${className}`}>
+                      {value}
+                    </p>
+                    <p className="text-[10px] font-bold text-gray-400">
+                      {label}
+                    </p>
+                  </div>
+                ))}
+              </div>
+              <div className="relative w-full xl:w-80">
+                <Search
+                  size={17}
+                  className="absolute top-1/2 left-4 -translate-y-1/2 text-gray-400"
+                />
+                <input
+                  type="text"
+                  value={kanbanQuery}
+                  onChange={(event) => handleKanbanQueryChange(event.target.value)}
+                  placeholder="Cari ID, customer, menu..."
+                  className="h-12 w-full rounded-2xl border border-gray-200 bg-white pr-4 pl-11 text-sm font-semibold text-gray-900 outline-none transition-all placeholder:text-gray-400 focus:border-emerald-300 focus:ring-4 focus:ring-emerald-500/10"
+                />
+              </div>
+              <div className="inline-flex w-fit items-center gap-2 rounded-full border border-emerald-100 bg-white px-4 py-2 text-sm font-bold text-gray-600 shadow-sm">
+                <ShoppingBag size={16} className="text-emerald-500" />
+                {filteredOrders.length} dari {orders.length} pesanan
+              </div>
             </div>
           </div>
 
@@ -622,7 +835,13 @@ export default function OwnerDashboardPage() {
                     </div>
 
                     <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                      {columnOrders.length > 0 ? (
+                      {isLoadingDashboard ? (
+                        <div className="flex h-40 items-center justify-center rounded-[24px] border border-dashed border-gray-200 bg-white/70 p-5 text-center">
+                          <p className="text-sm font-bold text-gray-400">
+                            Memuat pesanan...
+                          </p>
+                        </div>
+                      ) : columnOrders.length > 0 ? (
                         columnOrders.map((order) => (
                           <OrderCard
                             key={order.id}
@@ -637,7 +856,9 @@ export default function OwnerDashboardPage() {
                       ) : (
                         <div className="flex h-40 items-center justify-center rounded-[24px] border border-dashed border-gray-200 bg-white/70 p-5 text-center">
                           <p className="text-sm font-bold text-gray-400">
-                            Belum ada pesanan di kolom ini.
+                            {kanbanQuery
+                              ? "Tidak ada pesanan yang cocok."
+                              : "Belum ada pesanan di kolom ini."}
                           </p>
                         </div>
                       )}

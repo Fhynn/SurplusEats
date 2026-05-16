@@ -6,15 +6,18 @@ import {
   Clock,
   Edit,
   Plus,
+  Search,
+  SlidersHorizontal,
   Trash2,
   UploadCloud,
   X,
 } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
 import type { ChangeEvent, FormEvent } from "react";
-import { useEffect, useId, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
 
 type SurplusMenuItem = {
-  id: number;
+  id: string;
   name: string;
   category: string;
   description: string;
@@ -23,7 +26,9 @@ type SurplusMenuItem = {
   discountPrice: number;
   pickupStart: string;
   pickupEnd: string;
+  imageUrl: string | null;
   image: string;
+  status: "ACTIVE" | "HIDDEN" | "SOLD_OUT";
 };
 
 type MenuFormState = {
@@ -37,93 +42,26 @@ type MenuFormState = {
   pickupEnd: string;
 };
 
+type ApiOwnerMenuItem = {
+  id: string;
+  name: string;
+  category: string;
+  description: string;
+  stock: number;
+  originalPrice: number;
+  discountedPrice: number;
+  pickupStart: string | null;
+  pickupEnd: string | null;
+  imageUrl: string | null;
+  status: "ACTIVE" | "HIDDEN" | "SOLD_OUT";
+};
+
 const formatRp = (amount: number) =>
   new Intl.NumberFormat("id-ID", {
     style: "currency",
     currency: "IDR",
     maximumFractionDigits: 0,
   }).format(amount);
-
-const initialMenuItems: SurplusMenuItem[] = [
-  {
-    id: 1,
-    name: "Paket Roti Artisan",
-    category: "Bakery",
-    description: "Assorted sourdough, focaccia, dan soft roll yang masih fresh untuk pickup malam ini.",
-    stock: 3,
-    originalPrice: 45000,
-    discountPrice: 15000,
-    pickupStart: "19:00",
-    pickupEnd: "21:00",
-    image:
-      "https://images.unsplash.com/photo-1509440159596-0249088772ff?q=80&w=1200&auto=format&fit=crop",
-  },
-  {
-    id: 2,
-    name: "Rice Bowl Chicken Katsu",
-    category: "Rice Bowl",
-    description: "Menu makan malam praktis dengan saus gurih manis dan topping crunchy.",
-    stock: 5,
-    originalPrice: 32000,
-    discountPrice: 17000,
-    pickupStart: "18:30",
-    pickupEnd: "20:30",
-    image:
-      "https://images.unsplash.com/photo-1512058564366-18510be2db19?q=80&w=1200&auto=format&fit=crop",
-  },
-  {
-    id: 3,
-    name: "Baguette Panjang",
-    category: "Bakery",
-    description: "Baguette renyah untuk stok rumah, cocok dipadukan dengan sup atau salad.",
-    stock: 0,
-    originalPrice: 25000,
-    discountPrice: 10000,
-    pickupStart: "19:00",
-    pickupEnd: "21:00",
-    image:
-      "https://images.unsplash.com/photo-1586444248902-2f64eddc13df?q=80&w=1200&auto=format&fit=crop",
-  },
-  {
-    id: 4,
-    name: "Donut Box Cokelat",
-    category: "Dessert",
-    description: "Isi 4 donut glaze cokelat, cocok untuk camilan kantor atau keluarga.",
-    stock: 7,
-    originalPrice: 28000,
-    discountPrice: 12000,
-    pickupStart: "17:30",
-    pickupEnd: "20:00",
-    image:
-      "https://images.unsplash.com/photo-1551024601-bec78aea704b?q=80&w=1200&auto=format&fit=crop",
-  },
-  {
-    id: 5,
-    name: "Fresh Salad Bowl",
-    category: "Healthy Bowl",
-    description: "Mixed greens, roasted vegetables, dan dressing lemon ringan untuk makan cepat.",
-    stock: 4,
-    originalPrice: 34000,
-    discountPrice: 19000,
-    pickupStart: "18:00",
-    pickupEnd: "20:30",
-    image:
-      "https://images.unsplash.com/photo-1546793665-c74683f339c1?q=80&w=1200&auto=format&fit=crop",
-  },
-  {
-    id: 6,
-    name: "Cold Brew Latte",
-    category: "Beverage",
-    description: "Minuman kopi susu dingin dengan stok terbatas untuk penutup hari.",
-    stock: 2,
-    originalPrice: 26000,
-    discountPrice: 14000,
-    pickupStart: "18:00",
-    pickupEnd: "20:00",
-    image:
-      "https://images.unsplash.com/photo-1517701604599-bb29b565090c?q=80&w=1200&auto=format&fit=crop",
-  },
-];
 
 const categoryOptions = [
   "Bakery",
@@ -133,18 +71,8 @@ const categoryOptions = [
   "Beverage",
 ] as const;
 
-const fallbackImageByCategory: Record<string, string> = {
-  Bakery:
-    "https://images.unsplash.com/photo-1509440159596-0249088772ff?q=80&w=1200&auto=format&fit=crop",
-  "Rice Bowl":
-    "https://images.unsplash.com/photo-1512058564366-18510be2db19?q=80&w=1200&auto=format&fit=crop",
-  Dessert:
-    "https://images.unsplash.com/photo-1551024601-bec78aea704b?q=80&w=1200&auto=format&fit=crop",
-  "Healthy Bowl":
-    "https://images.unsplash.com/photo-1546793665-c74683f339c1?q=80&w=1200&auto=format&fit=crop",
-  Beverage:
-    "https://images.unsplash.com/photo-1517701604599-bb29b565090c?q=80&w=1200&auto=format&fit=crop",
-};
+const defaultMenuImage =
+  "https://images.unsplash.com/photo-1509440159596-0249088772ff?q=80&w=1200&auto=format&fit=crop";
 
 const defaultFormState: MenuFormState = {
   name: "",
@@ -178,26 +106,128 @@ function calculateDiscountPercentage(
 }
 
 function formatPickupWindow(start: string, end: string) {
+  if (!start || !end) {
+    return "Belum diatur";
+  }
+
   return `${start} - ${end}`;
+}
+
+function mapOwnerMenuItem(item: ApiOwnerMenuItem): SurplusMenuItem {
+  const imageUrl = item.imageUrl || null;
+
+  return {
+    id: item.id,
+    name: item.name,
+    category: item.category,
+    description: item.description,
+    stock: item.stock,
+    originalPrice: item.originalPrice,
+    discountPrice: item.discountedPrice,
+    pickupStart: item.pickupStart ?? "",
+    pickupEnd: item.pickupEnd ?? "",
+    imageUrl,
+    image: imageUrl ?? defaultMenuImage,
+    status: item.status,
+  };
 }
 
 export function OwnerMenuManagement() {
   const uploadInputId = useId();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<SurplusMenuItem | null>(null);
   const [deletingItem, setDeletingItem] = useState<SurplusMenuItem | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
-  const [menuItems, setMenuItems] = useState(initialMenuItems);
+  const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null);
+  const [menuItems, setMenuItems] = useState<SurplusMenuItem[]>([]);
+  const [isLoadingMenu, setIsLoadingMenu] = useState(true);
+  const [isSavingMenu, setIsSavingMenu] = useState(false);
+  const [isDeletingMenu, setIsDeletingMenu] = useState(false);
+  const [menuNotice, setMenuNotice] = useState<string | null>(null);
   const [formState, setFormState] = useState<MenuFormState>(defaultFormState);
+  const [menuQuery, setMenuQuery] = useState("");
+  const [activeCategory, setActiveCategory] = useState("Semua");
+  const [stockFilter, setStockFilter] = useState<"all" | "active" | "soldout">(
+    "all",
+  );
   const isEditMode = editingItem !== null;
-  const isFoodModalOpen = isModalOpen || isEditMode;
+  const isAddActionOpen = searchParams.get("action") === "add";
+  const isFoodModalOpen = isAddActionOpen || isModalOpen || isEditMode;
+  const activeMenuCount = menuItems.filter((item) => item.stock > 0).length;
+  const soldOutCount = menuItems.length - activeMenuCount;
+  const averageDiscount = Math.round(
+    menuItems.reduce((total, item) => {
+      return (
+        total +
+        calculateDiscountPercentage(item.originalPrice, item.discountPrice)
+      );
+    }, 0) / Math.max(menuItems.length, 1),
+  );
+  const filteredMenuItems = useMemo(() => {
+    const normalizedQuery = menuQuery.trim().toLowerCase();
 
-  const handleCloseModal = () => {
+    return menuItems.filter((item) => {
+      const matchesQuery =
+        !normalizedQuery ||
+        [item.name, item.category, item.description]
+          .join(" ")
+          .toLowerCase()
+          .includes(normalizedQuery);
+      const matchesCategory =
+        activeCategory === "Semua" || item.category === activeCategory;
+      const matchesStock =
+        stockFilter === "all" ||
+        (stockFilter === "active" && item.stock > 0) ||
+        (stockFilter === "soldout" && item.stock === 0);
+
+      return matchesQuery && matchesCategory && matchesStock;
+    });
+  }, [activeCategory, menuItems, menuQuery, stockFilter]);
+
+  const loadMenuItems = useCallback(async () => {
+    setIsLoadingMenu(true);
+
+    try {
+      const response = await fetch("/api/menu-items?scope=owner", {
+        cache: "no-store",
+      });
+      const data = (await response.json()) as {
+        ok: boolean;
+        message?: string;
+        menuItems?: ApiOwnerMenuItem[];
+      };
+
+      if (!response.ok || !data.ok) {
+        throw new Error(data.message || "Menu restoran gagal dimuat.");
+      }
+
+      setMenuItems((data.menuItems || []).map(mapOwnerMenuItem));
+    } catch (error) {
+      setMenuNotice(
+        error instanceof Error ? error.message : "Menu restoran gagal dimuat.",
+      );
+    } finally {
+      setIsLoadingMenu(false);
+    }
+  }, []);
+
+  const handleCloseModal = useCallback(() => {
+    if (isAddActionOpen) {
+      router.replace("/owner/menu", { scroll: false });
+    }
+
     setIsModalOpen(false);
     setEditingItem(null);
     setImagePreview(null);
+    setSelectedImageFile(null);
     setFormState(defaultFormState);
-  };
+  }, [isAddActionOpen, router]);
+
+  useEffect(() => {
+    void loadMenuItems();
+  }, [loadMenuItems]);
 
   useEffect(() => {
     if (!isFoodModalOpen && !deletingItem) {
@@ -220,11 +250,12 @@ export function OwnerMenuManagement() {
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [isFoodModalOpen, deletingItem]);
+  }, [deletingItem, handleCloseModal, isFoodModalOpen]);
 
   const handleOpenModal = () => {
     setEditingItem(null);
     setImagePreview(null);
+    setSelectedImageFile(null);
     setFormState(defaultFormState);
     setIsModalOpen(true);
   };
@@ -232,7 +263,8 @@ export function OwnerMenuManagement() {
   const handleOpenEditModal = (item: SurplusMenuItem) => {
     setIsModalOpen(false);
     setEditingItem(item);
-    setImagePreview(item.image);
+    setImagePreview(item.imageUrl ?? item.image);
+    setSelectedImageFile(null);
     setFormState({
       name: item.name,
       category: item.category,
@@ -262,6 +294,8 @@ export function OwnerMenuManagement() {
       return;
     }
 
+    setSelectedImageFile(file);
+
     const reader = new FileReader();
 
     reader.onload = () => {
@@ -273,48 +307,125 @@ export function OwnerMenuManagement() {
     reader.readAsDataURL(file);
   };
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const uploadSelectedImage = async () => {
+    if (!selectedImageFile) {
+      return editingItem?.imageUrl ?? "";
+    }
+
+    const formData = new FormData();
+    formData.append("file", selectedImageFile);
+    formData.append("folder", "menu-items");
+    formData.append("entityType", "menu_item");
+    formData.append("visibility", "PUBLIC");
+
+    const response = await fetch("/api/uploads", {
+      method: "POST",
+      body: formData,
+    });
+    const data = (await response.json()) as {
+      ok: boolean;
+      message?: string;
+      asset?: { url: string };
+    };
+
+    if (!response.ok || !data.ok || !data.asset?.url) {
+      throw new Error(data.message || "Upload gambar menu gagal.");
+    }
+
+    return data.asset.url;
+  };
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
     const originalPrice = Number(formState.originalPrice);
     const discountPrice = Number(formState.discountPrice);
     const stock = Number(formState.stock);
 
-    const nextMenuItem: SurplusMenuItem = {
-      id: editingItem?.id ?? Date.now(),
-      name: formState.name.trim(),
-      category: formState.category,
-      description: formState.description.trim(),
-      stock,
-      originalPrice,
-      discountPrice,
-      pickupStart: formState.pickupStart,
-      pickupEnd: formState.pickupEnd,
-      image:
-        imagePreview ??
-        fallbackImageByCategory[formState.category] ??
-        initialMenuItems[0].image,
-    };
+    setIsSavingMenu(true);
+    setMenuNotice(null);
 
-    setMenuItems((current) =>
-      editingItem
-        ? current.map((item) =>
-            item.id === editingItem.id ? nextMenuItem : item,
-          )
-        : [nextMenuItem, ...current],
-    );
-    handleCloseModal();
+    try {
+      const imageUrl = await uploadSelectedImage();
+      const payload = {
+        name: formState.name.trim(),
+        category: formState.category,
+        description: formState.description.trim(),
+        originalPrice,
+        discountedPrice: discountPrice,
+        stock,
+        pickupStart: formState.pickupStart,
+        pickupEnd: formState.pickupEnd,
+        imageUrl,
+      };
+      const response = await fetch(
+        editingItem ? `/api/menu-items/${editingItem.id}` : "/api/menu-items",
+        {
+          method: editingItem ? "PATCH" : "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+        },
+      );
+      const data = (await response.json()) as {
+        ok: boolean;
+        message?: string;
+      };
+
+      if (!response.ok || !data.ok) {
+        throw new Error(data.message || "Menu gagal disimpan.");
+      }
+
+      await loadMenuItems();
+      handleCloseModal();
+      setMenuNotice(
+        editingItem
+          ? "Perubahan menu berhasil disimpan ke database."
+          : "Menu baru berhasil dipublish dari database.",
+      );
+    } catch (error) {
+      setMenuNotice(
+        error instanceof Error ? error.message : "Menu gagal disimpan.",
+      );
+    } finally {
+      setIsSavingMenu(false);
+    }
   };
 
-  const handleDeleteMenuItem = () => {
+  const handleDeleteMenuItem = async () => {
     if (!deletingItem) {
       return;
     }
 
-    setMenuItems((current) =>
-      current.filter((item) => item.id !== deletingItem.id),
-    );
-    setDeletingItem(null);
+    setIsDeletingMenu(true);
+    setMenuNotice(null);
+
+    try {
+      const response = await fetch(`/api/menu-items/${deletingItem.id}`, {
+        method: "DELETE",
+      });
+      const data = (await response.json()) as {
+        ok: boolean;
+        message?: string;
+      };
+
+      if (!response.ok || !data.ok) {
+        throw new Error(data.message || "Menu gagal dihapus.");
+      }
+
+      setMenuItems((current) =>
+        current.filter((item) => item.id !== deletingItem.id),
+      );
+      setDeletingItem(null);
+      setMenuNotice("Menu berhasil dihapus dari database.");
+    } catch (error) {
+      setMenuNotice(
+        error instanceof Error ? error.message : "Menu gagal dihapus.",
+      );
+    } finally {
+      setIsDeletingMenu(false);
+    }
   };
 
   return (
@@ -344,8 +455,114 @@ export function OwnerMenuManagement() {
           </button>
         </div>
 
+        {menuNotice ? (
+          <div className="rounded-[22px] border border-emerald-100 bg-emerald-50 px-5 py-4 text-sm font-bold text-emerald-700">
+            {menuNotice}
+          </div>
+        ) : null}
+
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_auto]">
+          <div className="rounded-[28px] border border-gray-100 bg-white p-5 shadow-[0_2px_15px_rgba(0,0,0,0.03)]">
+            <div className="grid gap-4 lg:grid-cols-[1fr_auto]">
+              <div className="relative">
+                <Search
+                  size={18}
+                  className="absolute top-1/2 left-4 -translate-y-1/2 text-gray-400"
+                />
+                <input
+                  type="text"
+                  value={menuQuery}
+                  onChange={(event) => setMenuQuery(event.target.value)}
+                  placeholder="Cari nama menu, kategori, atau deskripsi..."
+                  className="h-12 w-full rounded-2xl border border-gray-200 bg-gray-50 pr-4 pl-11 text-sm font-semibold text-gray-900 outline-none transition-all placeholder:text-gray-400 focus:border-emerald-300 focus:bg-white focus:ring-4 focus:ring-emerald-500/10"
+                />
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                {[
+                  ["all", "Semua Stok"],
+                  ["active", "Aktif"],
+                  ["soldout", "Sold Out"],
+                ].map(([key, label]) => {
+                  const isActive = stockFilter === key;
+
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() =>
+                        setStockFilter(key as "all" | "active" | "soldout")
+                      }
+                      className={`inline-flex h-12 items-center gap-2 rounded-2xl px-4 text-sm font-extrabold transition-colors ${
+                        isActive
+                          ? "bg-gray-950 text-white"
+                          : "bg-gray-50 text-gray-600 hover:bg-gray-100"
+                      }`}
+                    >
+                      {key === "all" ? <SlidersHorizontal size={16} /> : null}
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="mt-4 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              {["Semua", ...categoryOptions].map((category) => {
+                const isActive = activeCategory === category;
+
+                return (
+                  <button
+                    key={category}
+                    type="button"
+                    onClick={() => setActiveCategory(category)}
+                    className={`shrink-0 rounded-2xl px-4 py-2.5 text-sm font-extrabold transition-colors ${
+                      isActive
+                        ? "bg-emerald-500 text-white"
+                        : "bg-gray-50 text-gray-600 hover:bg-gray-100"
+                    }`}
+                  >
+                    {category}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            {[
+              ["Aktif", activeMenuCount, "text-emerald-600"],
+              ["Sold Out", soldOutCount, "text-red-600"],
+              ["Avg Diskon", `${averageDiscount}%`, "text-amber-600"],
+            ].map(([label, value, className]) => (
+              <div
+                key={label}
+                className="min-w-[104px] rounded-[24px] border border-gray-100 bg-white p-4 shadow-[0_2px_15px_rgba(0,0,0,0.03)]"
+              >
+                <p className={`text-xl font-extrabold ${className}`}>
+                  {value}
+                </p>
+                <p className="mt-1 text-[11px] font-extrabold text-gray-400">
+                  {label}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {isLoadingMenu ? (
+          <div className="rounded-[28px] border border-gray-100 bg-white p-10 text-center">
+            <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-4 border-emerald-100 border-t-emerald-500" />
+            <h3 className="text-lg font-extrabold text-gray-950">
+              Memuat menu dari database
+            </h3>
+            <p className="mt-2 text-sm font-medium text-gray-500">
+              Data yang tampil diambil dari restoran owner yang sedang login.
+            </p>
+          </div>
+        ) : (
         <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
-          {menuItems.map((item) => {
+          {filteredMenuItems.map((item) => {
             const discountPercentage = calculateDiscountPercentage(
               item.originalPrice,
               item.discountPrice,
@@ -429,6 +646,22 @@ export function OwnerMenuManagement() {
             );
           })}
         </div>
+        )}
+
+        {!isLoadingMenu && filteredMenuItems.length === 0 ? (
+          <div className="rounded-[28px] border border-dashed border-gray-200 bg-white p-10 text-center">
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-gray-50 text-gray-400">
+              <Search size={24} />
+            </div>
+            <h3 className="text-lg font-extrabold text-gray-950">
+              Menu tidak ditemukan
+            </h3>
+            <p className="mx-auto mt-2 max-w-md text-sm leading-6 font-medium text-gray-500">
+              Ubah kata kunci, kategori, atau filter stok untuk melihat menu
+              lain.
+            </p>
+          </div>
+        ) : null}
       </section>
 
       {isFoodModalOpen ? (
@@ -676,9 +909,14 @@ export function OwnerMenuManagement() {
                   </button>
                   <button
                     type="submit"
-                    className="rounded-2xl bg-gray-900 px-6 py-3 text-sm font-bold text-white shadow-[0_10px_30px_rgba(17,24,39,0.18)] transition-all hover:bg-emerald-500 active:scale-[0.98]"
+                    disabled={isSavingMenu}
+                    className="rounded-2xl bg-gray-900 px-6 py-3 text-sm font-bold text-white shadow-[0_10px_30px_rgba(17,24,39,0.18)] transition-all hover:bg-emerald-500 active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-gray-400"
                   >
-                    {isEditMode ? "Simpan Perubahan" : "Simpan & Publish"}
+                    {isSavingMenu
+                      ? "Menyimpan..."
+                      : isEditMode
+                        ? "Simpan Perubahan"
+                        : "Simpan & Publish"}
                   </button>
                 </div>
               </form>
@@ -726,9 +964,10 @@ export function OwnerMenuManagement() {
               <button
                 type="button"
                 onClick={handleDeleteMenuItem}
-                className="rounded-2xl bg-red-600 px-4 py-3 text-sm font-bold text-white shadow-[0_10px_28px_rgba(220,38,38,0.22)] transition-colors hover:bg-red-700"
+                disabled={isDeletingMenu}
+                className="rounded-2xl bg-red-600 px-4 py-3 text-sm font-bold text-white shadow-[0_10px_28px_rgba(220,38,38,0.22)] transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-red-300"
               >
-                Ya, Hapus
+                {isDeletingMenu ? "Menghapus..." : "Ya, Hapus"}
               </button>
             </div>
           </div>

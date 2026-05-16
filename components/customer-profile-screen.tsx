@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import {
   Bell,
   CheckCircle2,
@@ -22,28 +21,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
-
-const impactStats = [
-  {
-    label: "Food Saved",
-    value: "12.5 Kg",
-    icon: Leaf,
-    className: "border-emerald-100 bg-emerald-50 text-emerald-700",
-  },
-  {
-    label: "Total Order",
-    value: "24 Kali",
-    icon: Flame,
-    className: "border-amber-100 bg-amber-50 text-amber-700",
-  },
-  {
-    label: "Voucher",
-    value: "5 Aktif",
-    icon: Gift,
-    className: "border-blue-100 bg-blue-50 text-blue-700",
-  },
-] as const;
+import { useEffect, useMemo, useState } from "react";
 
 const menuGroups: {
   title: string;
@@ -137,6 +115,75 @@ const accountBadges = [
 export function CustomerProfileScreen() {
   const router = useRouter();
   const [isLogoutOpen, setIsLogoutOpen] = useState(false);
+  const [user, setUser] = useState<{ name: string; email: string } | null>(null);
+  const [orderCount, setOrderCount] = useState(0);
+  const [voucherCount, setVoucherCount] = useState(0);
+
+  useEffect(() => {
+    let ignore = false;
+
+    async function loadProfileData() {
+      const [meResponse, ordersResponse, vouchersResponse] = await Promise.all([
+        fetch("/api/auth/me", { cache: "no-store" }),
+        fetch("/api/orders", { cache: "no-store" }),
+        fetch("/api/vouchers", { cache: "no-store" }),
+      ]);
+      const meData = (await meResponse.json()) as {
+        ok: boolean;
+        user?: { name: string; email: string };
+      };
+      const ordersData = (await ordersResponse.json()) as {
+        ok: boolean;
+        orders?: unknown[];
+      };
+      const vouchersData = (await vouchersResponse.json()) as {
+        ok: boolean;
+        vouchers?: unknown[];
+      };
+
+      if (!ignore) {
+        setUser(meData.user ?? null);
+        setOrderCount(ordersData.orders?.length ?? 0);
+        setVoucherCount(vouchersData.vouchers?.length ?? 0);
+      }
+    }
+
+    void loadProfileData();
+
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
+  const impactStats = useMemo(
+    () => [
+      {
+        label: "Food Saved",
+        value: `${orderCount} Order`,
+        icon: Leaf,
+        className: "border-emerald-100 bg-emerald-50 text-emerald-700",
+      },
+      {
+        label: "Total Order",
+        value: `${orderCount} Kali`,
+        icon: Flame,
+        className: "border-amber-100 bg-amber-50 text-amber-700",
+      },
+      {
+        label: "Voucher",
+        value: `${voucherCount} Aktif`,
+        icon: Gift,
+        className: "border-blue-100 bg-blue-50 text-blue-700",
+      },
+    ],
+    [orderCount, voucherCount],
+  );
+
+  const handleLogout = async () => {
+    await fetch("/api/auth/logout", { method: "POST" });
+    router.push("/");
+    router.refresh();
+  };
 
   return (
     <div className="relative flex flex-1 flex-col overflow-hidden bg-gray-50">
@@ -146,26 +193,19 @@ export function CustomerProfileScreen() {
 
           <div className="relative z-10 mb-7 flex items-start justify-between gap-4 pt-4">
             <div className="flex min-w-0 items-center gap-4">
-              <div className="h-20 w-20 shrink-0 overflow-hidden rounded-[28px] border-4 border-white bg-emerald-100 shadow-[0_10px_26px_rgba(15,23,42,0.10)]">
-                <Image
-                  src="https://api.dicebear.com/7.x/avataaars/svg?seed=Alfhin"
-                  alt="User avatar"
-                  width={80}
-                  height={80}
-                  unoptimized
-                  className="h-full w-full object-cover"
-                />
+              <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-[28px] border-4 border-white bg-emerald-50 text-emerald-600 shadow-[0_10px_26px_rgba(15,23,42,0.10)]">
+                <UserRound size={34} />
               </div>
               <div className="min-w-0">
                 <div className="mb-2 inline-flex items-center gap-1 rounded-full bg-emerald-500 px-2 py-0.5 text-[10px] font-bold text-white">
                   <Leaf size={10} />
-                  Food Hero Level 2
+                  Food Hero
                 </div>
                 <h1 className="truncate text-2xl font-extrabold tracking-tight text-gray-900">
-                  Alfhin
+                  {user?.name || "Customer"}
                 </h1>
                 <p className="truncate text-sm font-medium text-gray-500">
-                  alfhin@email.com
+                  {user?.email || "Belum login"}
                 </p>
               </div>
             </div>
@@ -340,7 +380,7 @@ export function CustomerProfileScreen() {
               </button>
               <button
                 type="button"
-                onClick={() => router.push("/")}
+                onClick={handleLogout}
                 className="rounded-2xl bg-red-500 py-3.5 text-sm font-extrabold text-white transition-colors hover:bg-red-600"
               >
                 Keluar

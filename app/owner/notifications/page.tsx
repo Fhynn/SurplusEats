@@ -13,13 +13,13 @@ import {
   WalletCards,
   type LucideIcon,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 type NotificationType = "order" | "stock" | "wallet" | "review" | "system";
 type FilterKey = "all" | "unread" | NotificationType;
 
 type OwnerNotification = {
-  id: number;
+  id: string;
   title: string;
   description: string;
   time: string;
@@ -29,68 +29,19 @@ type OwnerNotification = {
   href: string;
 };
 
-const initialNotifications: OwnerNotification[] = [
-  {
-    id: 1,
-    title: "Pesanan Baru Masuk",
-    description: "Order SFM-99A2X menunggu konfirmasi dari restoran.",
-    time: "2 menit lalu",
-    type: "order",
-    unread: true,
-    actionLabel: "Buka Order",
-    href: "/owner/orders/SFM-99A2X",
-  },
-  {
-    id: 2,
-    title: "Stok Hampir Habis",
-    description: "Paket Roti Artisan tersisa 2 porsi untuk pickup malam ini.",
-    time: "18 menit lalu",
-    type: "stock",
-    unread: true,
-    actionLabel: "Kelola Menu",
-    href: "/owner/menu",
-  },
-  {
-    id: 3,
-    title: "Saldo Siap Dicairkan",
-    description: "Rp 1.250.000 sudah masuk ke wallet dan bisa dicairkan.",
-    time: "42 menit lalu",
-    type: "wallet",
-    unread: true,
-    actionLabel: "Buka Saldo",
-    href: "/owner/wallet",
-  },
-  {
-    id: 4,
-    title: "Ulasan Baru",
-    description: "Alfhin memberi rating 5 untuk Paket Roti Artisan.",
-    time: "1 jam lalu",
-    type: "review",
-    unread: false,
-    actionLabel: "Lihat Ulasan",
-    href: "/owner/reviews",
-  },
-  {
-    id: 5,
-    title: "Sistem Pembayaran Normal",
-    description: "Gateway pembayaran sudah kembali stabil setelah pemeliharaan.",
-    time: "2 jam lalu",
-    type: "system",
-    unread: false,
-    actionLabel: "Pengaturan",
-    href: "/owner/settings",
-  },
-  {
-    id: 6,
-    title: "Pickup Selesai",
-    description: "Customer sudah mengambil pesanan SFM-44F7U dari toko.",
-    time: "Kemarin",
-    type: "order",
-    unread: false,
-    actionLabel: "Daftar Order",
-    href: "/owner/dashboard?tab=orders",
-  },
-];
+type ApiNotification = {
+  id: string;
+  type: "ORDER" | "PROMO" | "REFUND" | "SYSTEM";
+  title: string;
+  body: string;
+  href: string | null;
+  readAt: string | null;
+  createdAt: string;
+};
+
+type ApiOwnerOrder = {
+  status: string;
+};
 
 const filters: { key: FilterKey; label: string }[] = [
   { key: "all", label: "Semua" },
@@ -143,9 +94,129 @@ const notificationStyleByType: Record<
   },
 };
 
+function formatRelativeTime(value: string) {
+  const diffMs = Date.now() - new Date(value).getTime();
+  const minutes = Math.max(1, Math.floor(diffMs / 60000));
+
+  if (minutes < 60) {
+    return `${minutes} menit lalu`;
+  }
+
+  const hours = Math.floor(minutes / 60);
+
+  if (hours < 24) {
+    return `${hours} jam lalu`;
+  }
+
+  const days = Math.floor(hours / 24);
+
+  return days === 1 ? "Kemarin" : `${days} hari lalu`;
+}
+
+function mapNotificationType(type: ApiNotification["type"]): NotificationType {
+  switch (type) {
+    case "ORDER":
+      return "order";
+    case "REFUND":
+      return "wallet";
+    case "PROMO":
+      return "system";
+    default:
+      return "system";
+  }
+}
+
+function getActionLabel(notification: ApiNotification) {
+  if (notification.href?.includes("/owner/orders")) {
+    return "Buka Order";
+  }
+
+  if (notification.href?.includes("/owner/wallet")) {
+    return "Buka Saldo";
+  }
+
+  if (notification.href?.includes("/owner/menu")) {
+    return "Kelola Menu";
+  }
+
+  return notification.type === "ORDER" ? "Daftar Order" : "Buka Detail";
+}
+
+function mapApiNotification(notification: ApiNotification): OwnerNotification {
+  return {
+    id: notification.id,
+    title: notification.title,
+    description: notification.body,
+    time: formatRelativeTime(notification.createdAt),
+    type: mapNotificationType(notification.type),
+    unread: notification.readAt === null,
+    actionLabel: getActionLabel(notification),
+    href: notification.href || "/owner/dashboard",
+  };
+}
+
 export default function OwnerNotificationsPage() {
-  const [notifications, setNotifications] = useState(initialNotifications);
+  const [notifications, setNotifications] = useState<OwnerNotification[]>([]);
+  const [activeOrderCount, setActiveOrderCount] = useState(0);
+  const [isLoadingNotifications, setIsLoadingNotifications] = useState(true);
+  const [notice, setNotice] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<FilterKey>("all");
+
+  const loadNotifications = useCallback(async () => {
+    setIsLoadingNotifications(true);
+
+    try {
+      const [notificationsResponse, ordersResponse] = await Promise.all([
+        fetch("/api/notifications", { cache: "no-store" }),
+        fetch("/api/orders", { cache: "no-store" }),
+      ]);
+      const notificationsData = (await notificationsResponse.json()) as {
+        ok: boolean;
+        message?: string;
+        notifications?: ApiNotification[];
+      };
+      const ordersData = (await ordersResponse.json()) as {
+        ok: boolean;
+        message?: string;
+        orders?: ApiOwnerOrder[];
+      };
+
+      if (!notificationsResponse.ok || !notificationsData.ok) {
+        throw new Error(
+          notificationsData.message || "Notifikasi owner gagal dimuat.",
+        );
+      }
+
+      if (!ordersResponse.ok || !ordersData.ok) {
+        throw new Error(ordersData.message || "Jumlah order gagal dimuat.");
+      }
+
+      setNotifications(
+        (notificationsData.notifications || []).map(mapApiNotification),
+      );
+      setActiveOrderCount(
+        (ordersData.orders || []).filter(
+          (order) =>
+            !["COMPLETED", "CANCELLED", "REFUNDED", "PAYMENT_FAILED"].includes(
+              order.status,
+            ),
+        ).length,
+      );
+      setNotice(null);
+    } catch (error) {
+      setNotice(
+        error instanceof Error
+          ? error.message
+          : "Notifikasi owner gagal dimuat.",
+      );
+    } finally {
+      setIsLoadingNotifications(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadNotifications();
+  }, [loadNotifications]);
 
   const unreadCount = notifications.filter(
     (notification) => notification.unread,
@@ -170,26 +241,66 @@ export default function OwnerNotificationsPage() {
     );
   }, [activeFilter, notifications]);
 
-  const markAllAsRead = () => {
-    setNotifications((currentNotifications) =>
-      currentNotifications.map((notification) => ({
-        ...notification,
-        unread: false,
-      })),
-    );
+  const markAllAsRead = async () => {
+    try {
+      const response = await fetch("/api/notifications", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ all: true }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Notifikasi gagal diperbarui.");
+      }
+
+      setNotifications((currentNotifications) =>
+        currentNotifications.map((notification) => ({
+          ...notification,
+          unread: false,
+        })),
+      );
+    } catch (error) {
+      setNotice(
+        error instanceof Error
+          ? error.message
+          : "Notifikasi gagal diperbarui.",
+      );
+    }
   };
 
-  const markAsRead = (notificationId: number) => {
-    setNotifications((currentNotifications) =>
-      currentNotifications.map((notification) =>
-        notification.id === notificationId
-          ? {
-              ...notification,
-              unread: false,
-            }
-          : notification,
-      ),
-    );
+  const markAsRead = async (notificationId: string) => {
+    try {
+      const response = await fetch("/api/notifications", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ id: notificationId }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Notifikasi gagal diperbarui.");
+      }
+
+      setNotifications((currentNotifications) =>
+        currentNotifications.map((notification) =>
+          notification.id === notificationId
+            ? {
+                ...notification,
+                unread: false,
+              }
+            : notification,
+        ),
+      );
+    } catch (error) {
+      setNotice(
+        error instanceof Error
+          ? error.message
+          : "Notifikasi gagal diperbarui.",
+      );
+    }
   };
 
   return (
@@ -219,6 +330,12 @@ export default function OwnerNotificationsPage() {
           </button>
         </div>
 
+        {notice ? (
+          <div className="mx-6 mt-6 rounded-[22px] border border-red-100 bg-red-50 px-5 py-4 text-sm font-bold text-red-700">
+            {notice}
+          </div>
+        ) : null}
+
         <div className="grid grid-cols-1 gap-4 border-b border-gray-100 p-6 md:grid-cols-3">
           <div className="rounded-[24px] bg-emerald-50 p-5">
             <Bell size={22} className="mb-4 text-emerald-600" />
@@ -237,7 +354,9 @@ export default function OwnerNotificationsPage() {
           <div className="rounded-[24px] bg-blue-50 p-5">
             <PackageCheck size={22} className="mb-4 text-blue-600" />
             <p className="text-sm font-bold text-blue-700">Order Aktif</p>
-            <p className="mt-1 text-3xl font-extrabold text-blue-900">3</p>
+            <p className="mt-1 text-3xl font-extrabold text-blue-900">
+              {activeOrderCount}
+            </p>
           </div>
         </div>
 
@@ -265,7 +384,17 @@ export default function OwnerNotificationsPage() {
         </div>
 
         <div className="space-y-3 p-5">
-          {filteredNotifications.length > 0 ? (
+          {isLoadingNotifications ? (
+            <div className="rounded-[24px] border border-dashed border-gray-200 bg-gray-50 p-8 text-center">
+              <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-emerald-100 border-t-emerald-500" />
+              <h2 className="text-sm font-extrabold text-gray-950">
+                Memuat notifikasi
+              </h2>
+              <p className="mx-auto mt-2 max-w-sm text-sm leading-6 font-medium text-gray-500">
+                Data diambil dari notifikasi akun owner yang sedang login.
+              </p>
+            </div>
+          ) : filteredNotifications.length > 0 ? (
             filteredNotifications.map((notification) => {
               const style = notificationStyleByType[notification.type];
               const Icon = style.icon;

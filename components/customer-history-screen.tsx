@@ -14,9 +14,10 @@ import {
   X,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { formatRp } from "@/lib/customer-data";
+import { apiOrderToCard, type ApiOrder } from "@/lib/order-mapper";
 
 type HistoryOrderStatus = "completed" | "cancelled";
 
@@ -30,81 +31,106 @@ type HistoryOrder = {
   status: HistoryOrderStatus;
   statusText: string;
   image: string;
-  foodId: number;
+  foodId?: string;
   note: string;
 };
-
-const historyOrders: HistoryOrder[] = [
-  {
-    id: "SFM-77C0Z",
-    restaurant: "Sushi Yay!",
-    item: "Assorted Sushi Surplus",
-    qty: 1,
-    total: 35000,
-    time: "Kemarin, 21:00",
-    status: "completed",
-    statusText: "Selesai",
-    image:
-      "https://images.unsplash.com/photo-1579871494447-9811cf80d66c?q=80&w=300&auto=format&fit=crop",
-    foodId: 3,
-    note: "Pickup selesai tanpa komplain.",
-  },
-  {
-    id: "SFM-99A2X",
-    restaurant: "Bakehouse Bakery",
-    item: "Paket Roti Artisan Sourdough",
-    qty: 1,
-    total: 15000,
-    time: "21 Okt 2023, 19:30",
-    status: "completed",
-    statusText: "Selesai",
-    image:
-      "https://images.unsplash.com/photo-1509440159596-0249088772ff?q=80&w=300&auto=format&fit=crop",
-    foodId: 1,
-    note: "Kamu menyelamatkan sekitar 0.8 kg makanan.",
-  },
-  {
-    id: "SFM-66D9W",
-    restaurant: "Kopi Kenangan Mantan",
-    item: "Roti Coklat + Kopi Susu",
-    qty: 1,
-    total: 20000,
-    time: "18 Okt 2023, 18:00",
-    status: "cancelled",
-    statusText: "Dibatalkan",
-    image:
-      "https://images.unsplash.com/photo-1565299507177-b0ac66763828?q=80&w=300&auto=format&fit=crop",
-    foodId: 2,
-    note: "Pembayaran tidak selesai sebelum batas waktu.",
-  },
-];
 
 const statusClassNameByStatus: Record<HistoryOrderStatus, string> = {
   completed: "border-emerald-100 bg-emerald-50 text-emerald-700",
   cancelled: "border-red-100 bg-red-50 text-red-600",
 };
 
+function mapApiOrderToHistory(order: ApiOrder): HistoryOrder | null {
+  const card = apiOrderToCard(order);
+
+  if (card.status !== "completed" && card.status !== "cancelled") {
+    return null;
+  }
+
+  const totalQuantity = order.items.reduce(
+    (total, item) => total + item.quantity,
+    0,
+  );
+
+  return {
+    id: card.id,
+    restaurant: card.resto,
+    item: card.items,
+    qty: Math.max(totalQuantity, 1),
+    total: card.total,
+    time: card.time,
+    status: card.status,
+    statusText: card.statusText,
+    image: card.image,
+    foodId: card.foodId,
+    note:
+      card.status === "completed"
+        ? "Pickup selesai dan order tercatat di database."
+        : "Order dibatalkan atau pembayaran tidak berhasil.",
+  };
+}
+
 export function CustomerHistoryScreen() {
   const router = useRouter();
+  const [orders, setOrders] = useState<HistoryOrder[]>([]);
   const [reviewOrder, setReviewOrder] = useState<HistoryOrder | null>(null);
   const [rating, setRating] = useState(0);
   const [reviewComment, setReviewComment] = useState("");
   const [query, setQuery] = useState("");
+  const [isLoadingOrders, setIsLoadingOrders] = useState(true);
+  const [isSubmittingReview, setIsSubmittingReview] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const loadOrders = useCallback(async () => {
+    setIsLoadingOrders(true);
+
+    try {
+      const response = await fetch("/api/orders", { cache: "no-store" });
+      const data = (await response.json()) as {
+        ok: boolean;
+        message?: string;
+        orders?: ApiOrder[];
+      };
+
+      if (!response.ok || !data.ok) {
+        throw new Error(data.message || "Riwayat pesanan gagal dimuat.");
+      }
+
+      setOrders(
+        (data.orders || [])
+          .map(mapApiOrderToHistory)
+          .filter((order): order is HistoryOrder => order !== null),
+      );
+      setNotice(null);
+    } catch (error) {
+      setNotice(
+        error instanceof Error
+          ? error.message
+          : "Riwayat pesanan gagal dimuat.",
+      );
+    } finally {
+      setIsLoadingOrders(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadOrders();
+  }, [loadOrders]);
 
   const filteredOrders = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
 
     if (!normalizedQuery) {
-      return historyOrders;
+      return orders;
     }
 
-    return historyOrders.filter((order) =>
+    return orders.filter((order) =>
       [order.restaurant, order.item, order.id]
         .join(" ")
         .toLowerCase()
         .includes(normalizedQuery),
     );
-  }, [query]);
+  }, [orders, query]);
 
   const handleCloseReview = () => {
     setReviewOrder(null);
@@ -112,12 +138,43 @@ export function CustomerHistoryScreen() {
     setReviewComment("");
   };
 
-  const handleSubmitReview = () => {
+  const handleSubmitReview = async () => {
     if (rating <= 0) {
       return;
     }
 
-    handleCloseReview();
+    setIsSubmittingReview(true);
+
+    try {
+      const response = await fetch("/api/reviews", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          orderCode: reviewOrder?.id,
+          rating,
+          comment: reviewComment,
+        }),
+      });
+      const data = (await response.json()) as {
+        ok: boolean;
+        message?: string;
+      };
+
+      if (!response.ok || !data.ok) {
+        throw new Error(data.message || "Ulasan gagal disimpan.");
+      }
+
+      setNotice("Ulasan berhasil disimpan ke database.");
+      handleCloseReview();
+    } catch (error) {
+      setNotice(
+        error instanceof Error ? error.message : "Ulasan gagal disimpan.",
+      );
+    } finally {
+      setIsSubmittingReview(false);
+    }
   };
 
   return (
@@ -158,7 +215,25 @@ export function CustomerHistoryScreen() {
       </header>
 
       <main className="flex-1 space-y-4 overflow-y-auto px-6 pt-6 pb-24 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {filteredOrders.map((order) => (
+        {notice ? (
+          <div className="rounded-[24px] border border-red-100 bg-red-50 p-4 text-sm font-bold text-red-700">
+            {notice}
+          </div>
+        ) : null}
+
+        {isLoadingOrders ? (
+          <div className="rounded-[24px] border border-gray-100 bg-white p-6 text-center shadow-sm">
+            <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-emerald-100 border-t-emerald-500" />
+            <p className="text-sm font-extrabold text-gray-900">
+              Memuat riwayat pesanan
+            </p>
+            <p className="mt-1 text-xs font-medium text-gray-500">
+              Data diambil dari order akun customer.
+            </p>
+          </div>
+        ) : null}
+
+        {!isLoadingOrders && filteredOrders.map((order) => (
           <article
             key={order.id}
             className="rounded-[24px] border border-gray-100 bg-white p-4 shadow-sm"
@@ -248,7 +323,11 @@ export function CustomerHistoryScreen() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => router.push(`/detail/${order.foodId}`)}
+                    onClick={() =>
+                      order.foodId
+                        ? router.push(`/detail/${order.foodId}`)
+                        : router.push("/browse")
+                    }
                     className="flex min-h-11 items-center justify-center gap-1 rounded-xl bg-gray-900 px-2 text-[11px] font-extrabold whitespace-nowrap text-white shadow-sm transition-colors hover:bg-emerald-500"
                   >
                     <ShoppingBag size={13} />
@@ -269,7 +348,7 @@ export function CustomerHistoryScreen() {
           </article>
         ))}
 
-        {filteredOrders.length === 0 ? (
+        {!isLoadingOrders && filteredOrders.length === 0 ? (
           <div className="rounded-[24px] border border-gray-100 bg-white p-6 text-center shadow-sm">
             <p className="text-sm font-extrabold text-gray-900">
               Riwayat tidak ditemukan
@@ -359,10 +438,10 @@ export function CustomerHistoryScreen() {
             <button
               type="button"
               onClick={handleSubmitReview}
-              disabled={rating <= 0}
+              disabled={rating <= 0 || isSubmittingReview}
               className="w-full rounded-2xl bg-emerald-500 py-4 text-sm font-extrabold text-white shadow-[0_12px_26px_rgba(16,185,129,0.2)] transition-all hover:bg-emerald-600 active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-emerald-200 disabled:shadow-none"
             >
-              Kirim Ulasan
+              {isSubmittingReview ? "Menyimpan..." : "Kirim Ulasan"}
             </button>
           </div>
         </div>

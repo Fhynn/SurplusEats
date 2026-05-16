@@ -1,71 +1,125 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   CalendarClock,
   CheckCircle2,
-  ChevronRight,
-  Copy,
-  Download,
   Home,
-  Leaf,
   Navigation,
   PackageCheck,
   QrCode,
   ReceiptText,
-  Share2,
   Store,
 } from "lucide-react";
 
 import { MobileDeviceFrame } from "@/components/mobile-device-frame";
 import { formatRp } from "@/lib/customer-data";
+import type { ApiOrder } from "@/lib/order-mapper";
 
-const orderId = "SFM-99A2X";
-const orderItems = [
-  {
-    name: "Paket Roti Artisan Sourdough",
-    qty: 1,
-    price: 15000,
-  },
-] as const;
+function formatDate(value: string | null) {
+  if (!value) {
+    return "Menunggu jadwal pickup";
+  }
 
-const subtotal = 15000;
-const serviceFee = 2000;
-const voucherDiscount = 5000;
-const total = subtotal + serviceFee - voucherDiscount;
+  return new Intl.DateTimeFormat("id-ID", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
 
-const timeline = [
-  {
-    title: "Pembayaran berhasil",
-    description: "Transaksi sudah tercatat dan restoran menerima order.",
-    time: "19:05",
-    icon: CheckCircle2,
-    isActive: false,
-  },
-  {
-    title: "Pesanan diproses",
-    description: "Owner menyiapkan makanan surplus sesuai detail checkout.",
-    time: "19:10",
-    icon: PackageCheck,
-    isActive: true,
-  },
-  {
-    title: "Pickup dengan QR",
-    description: "Tunjukkan QR ke kasir saat sampai di toko.",
-    time: "19:00 - 20:00",
-    icon: QrCode,
-    isActive: false,
-  },
-] as const;
+function PaymentSuccessContent() {
+  const searchParams = useSearchParams();
+  const orderCode = searchParams.get("order");
+  const [order, setOrder] = useState<ApiOrder | null>(null);
+  const [isLoading, setIsLoading] = useState(Boolean(orderCode));
 
-export default function PaymentSuccessPage() {
-  const [notice, setNotice] = useState("");
+  useEffect(() => {
+    if (!orderCode) {
+      setIsLoading(false);
+      return;
+    }
 
-  const handleAction = (message: string) => {
-    setNotice(message);
-    window.setTimeout(() => setNotice(""), 2000);
-  };
+    let ignore = false;
+
+    async function loadOrder() {
+      setIsLoading(true);
+
+      try {
+        const response = await fetch(`/api/orders/${orderCode}`, {
+          cache: "no-store",
+        });
+        const data = (await response.json()) as {
+          ok: boolean;
+          order?: ApiOrder;
+        };
+
+        if (!ignore) {
+          setOrder(data.order ?? null);
+        }
+      } catch {
+        if (!ignore) {
+          setOrder(null);
+        }
+      } finally {
+        if (!ignore) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    void loadOrder();
+
+    return () => {
+      ignore = true;
+    };
+  }, [orderCode]);
+
+  const itemSubtotal = useMemo(
+    () =>
+      order?.items.reduce(
+        (total, item) => total + item.priceSnapshot * item.quantity,
+        0,
+      ) ?? 0,
+    [order],
+  );
+
+  if (isLoading || !order) {
+    return (
+      <MobileDeviceFrame backgroundClassName="bg-white">
+        <div className="flex min-h-full flex-1 items-center justify-center bg-white px-6 text-center">
+          <div>
+            <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
+              <ReceiptText size={30} />
+            </div>
+            <h1 className="text-xl font-extrabold text-gray-950">
+              {isLoading ? "Memuat struk..." : "Order tidak ditemukan"}
+            </h1>
+            <p className="mt-2 text-sm leading-6 font-medium text-gray-500">
+              {isLoading
+                ? "Struk diambil dari database order."
+                : "Buka halaman pesanan untuk melihat order yang berhasil dibuat."}
+            </p>
+            {!isLoading ? (
+              <Link
+                href="/orders"
+                className="mt-6 inline-flex rounded-2xl bg-emerald-500 px-5 py-3 text-sm font-extrabold text-white"
+              >
+                Buka Pesanan
+              </Link>
+            ) : null}
+          </div>
+        </div>
+      </MobileDeviceFrame>
+    );
+  }
+
+  const mapQuery = encodeURIComponent(
+    `${order.restaurant.name} ${order.restaurant.city}`,
+  );
 
   return (
     <MobileDeviceFrame backgroundClassName="bg-emerald-500">
@@ -83,18 +137,11 @@ export default function PaymentSuccessPage() {
             Berhasil
           </h1>
           <p className="mx-auto mt-3 max-w-xs text-sm leading-6 font-medium text-emerald-50">
-            Pesananmu sudah diteruskan ke restoran. Simpan QR pickup untuk
-            validasi saat ambil makanan.
+            Order sudah tersimpan dan bisa dipantau dari halaman pesanan.
           </p>
         </section>
 
         <section className="flex-1 rounded-t-[40px] bg-[#f8fafc] px-5 pt-6 pb-8">
-          {notice ? (
-            <div className="mb-5 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-center text-xs font-extrabold text-blue-700">
-              {notice}
-            </div>
-          ) : null}
-
           <div className="mb-5 rounded-[28px] border border-emerald-100 bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.06)]">
             <div className="mb-5 flex items-start justify-between gap-4">
               <div className="flex items-center gap-3">
@@ -106,27 +153,9 @@ export default function PaymentSuccessPage() {
                     Struk Pesanan
                   </h2>
                   <p className="font-mono text-[11px] font-bold text-gray-400">
-                    {orderId}
+                    {order.orderCode}
                   </p>
                 </div>
-              </div>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => handleAction("ID order disalin di prototype.")}
-                  className="rounded-xl bg-gray-50 p-2.5 text-gray-500 transition-colors hover:bg-emerald-50 hover:text-emerald-600"
-                  aria-label="Salin ID order"
-                >
-                  <Copy size={18} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleAction("Struk siap diunduh di prototype.")}
-                  className="rounded-xl bg-gray-50 p-2.5 text-gray-500 transition-colors hover:bg-emerald-50 hover:text-emerald-600"
-                  aria-label="Download struk"
-                >
-                  <Download size={18} />
-                </button>
               </div>
             </div>
 
@@ -136,11 +165,10 @@ export default function PaymentSuccessPage() {
                   Pickup QR
                 </p>
                 <h3 className="mt-2 text-lg font-extrabold text-emerald-950">
-                  Tunjukkan ke kasir
+                  {order.pickupCode || "Menunggu kode"}
                 </h3>
                 <p className="mt-1 text-xs leading-5 font-medium text-emerald-700">
-                  QR ini dipakai untuk memvalidasi order saat kamu sampai di
-                  Bakehouse Bakery.
+                  Tunjukkan kode pickup ke kasir saat order sudah siap.
                 </p>
               </div>
               <div className="flex h-24 w-24 items-center justify-center rounded-2xl bg-white text-gray-900 shadow-sm">
@@ -153,21 +181,21 @@ export default function PaymentSuccessPage() {
                 <Store size={18} className="mt-0.5 text-gray-400" />
                 <div>
                   <p className="text-sm font-extrabold text-gray-900">
-                    Bakehouse Bakery
+                    {order.restaurant.name}
                   </p>
                   <p className="mt-0.5 text-xs font-medium text-gray-500">
-                    Pickup di Jl. Sudirman No. 45, Pekanbaru
+                    {order.restaurant.address}, {order.restaurant.city}
                   </p>
                 </div>
               </div>
               <div className="flex items-center gap-3">
                 <CalendarClock size={18} className="text-gray-400" />
                 <p className="text-xs font-bold text-gray-600">
-                  Hari ini, 19:00 - 20:00 WIB
+                  {formatDate(order.pickupTime)}
                 </p>
               </div>
               <a
-                href="https://www.google.com/maps/search/?api=1&query=Bakehouse%20Bakery"
+                href={`https://www.google.com/maps/search/?api=1&query=${mapQuery}`}
                 target="_blank"
                 rel="noreferrer"
                 className="flex items-center justify-center gap-2 rounded-2xl bg-white px-4 py-3 text-xs font-extrabold text-blue-600 transition-colors hover:bg-blue-50"
@@ -178,21 +206,21 @@ export default function PaymentSuccessPage() {
             </div>
 
             <div className="my-5 space-y-3">
-              {orderItems.map((item) => (
+              {order.items.map((item) => (
                 <div
-                  key={item.name}
+                  key={item.menuNameSnapshot}
                   className="flex items-start justify-between gap-4"
                 >
                   <div>
                     <p className="text-sm font-bold text-gray-900">
-                      {item.name}
+                      {item.menuNameSnapshot}
                     </p>
                     <p className="mt-0.5 text-xs font-medium text-gray-400">
-                      Qty {item.qty}
+                      Qty {item.quantity}
                     </p>
                   </div>
                   <p className="shrink-0 text-sm font-extrabold text-gray-900">
-                    {formatRp(item.price)}
+                    {formatRp(item.priceSnapshot * item.quantity)}
                   </p>
                 </div>
               ))}
@@ -201,19 +229,11 @@ export default function PaymentSuccessPage() {
             <div className="space-y-3 border-t border-dashed border-gray-200 pt-4">
               <div className="flex justify-between text-sm font-medium text-gray-500">
                 <span>Subtotal</span>
-                <span>{formatRp(subtotal)}</span>
-              </div>
-              <div className="flex justify-between text-sm font-medium text-gray-500">
-                <span>Biaya Layanan</span>
-                <span>{formatRp(serviceFee)}</span>
-              </div>
-              <div className="flex justify-between text-sm font-medium text-blue-600">
-                <span>Voucher SURPLUS5</span>
-                <span>- {formatRp(voucherDiscount)}</span>
+                <span>{formatRp(itemSubtotal)}</span>
               </div>
               <div className="flex justify-between rounded-2xl bg-emerald-50 px-4 py-3 text-sm font-extrabold text-emerald-700">
                 <span>Total Dibayar</span>
-                <span>{formatRp(total)}</span>
+                <span>{formatRp(order.total)}</span>
               </div>
             </div>
           </div>
@@ -225,102 +245,41 @@ export default function PaymentSuccessPage() {
                   Status Pesanan
                 </h2>
                 <p className="mt-1 text-xs font-medium text-gray-500">
-                  Timeline awal setelah pembayaran berhasil.
+                  Status terbaru mengikuti database order.
                 </p>
               </div>
               <PackageCheck size={22} className="text-emerald-500" />
             </div>
-
-            <div className="relative space-y-4 before:absolute before:top-5 before:bottom-5 before:left-5 before:w-0.5 before:bg-gray-100">
-              {timeline.map((step) => {
-                const Icon = step.icon;
-
-                return (
-                  <div key={step.title} className="relative flex gap-4">
-                    <div
-                      className={`z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-4 border-white shadow-sm ${
-                        step.isActive
-                          ? "bg-emerald-500 text-white"
-                          : "bg-gray-100 text-gray-500"
-                      }`}
-                    >
-                      <Icon size={16} />
-                    </div>
-                    <div
-                      className={`flex-1 rounded-2xl p-4 ${
-                        step.isActive
-                          ? "border border-emerald-100 bg-emerald-50"
-                          : "bg-gray-50"
-                      }`}
-                    >
-                      <div className="mb-1 flex items-center justify-between gap-3">
-                        <h3 className="text-sm font-extrabold text-gray-950">
-                          {step.title}
-                        </h3>
-                        <span className="text-[10px] font-extrabold text-gray-400">
-                          {step.time}
-                        </span>
-                      </div>
-                      <p className="text-xs leading-5 font-medium text-gray-500">
-                        {step.description}
-                      </p>
-                    </div>
-                  </div>
-                );
-              })}
+            <div className="rounded-2xl bg-emerald-50 p-4 text-sm font-extrabold text-emerald-700">
+              {order.status}
             </div>
           </div>
 
-          <div className="mb-5 grid grid-cols-[1fr_auto] gap-3 rounded-[24px] border border-emerald-100 bg-white p-4 shadow-sm">
-            <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
-                <Leaf size={22} />
-              </div>
-              <div>
-                <p className="text-sm font-extrabold text-gray-950">
-                  Food saved tercatat
-                </p>
-                <p className="text-xs font-medium text-gray-500">
-                  Kamu ikut menyelamatkan 0.8 kg makanan dan 1.7 kg CO2e.
-                </p>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => handleAction("Order siap dibagikan di prototype.")}
-              className="self-center rounded-2xl bg-gray-50 p-3 text-gray-600 transition-colors hover:bg-emerald-50 hover:text-emerald-600"
-              aria-label="Bagikan order"
-            >
-              <Share2 size={20} />
-            </button>
-          </div>
-
-          <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
             <Link
-              href={`/orders/${orderId}`}
-              className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gray-900 py-4 text-sm font-extrabold text-white shadow-[0_12px_26px_rgba(15,23,42,0.14)] transition-all hover:bg-emerald-500 active:scale-[0.98]"
+              href={`/orders/${order.orderCode}`}
+              className="rounded-2xl bg-gray-900 px-4 py-3 text-center text-sm font-extrabold text-white"
             >
-              Lanjut Tracking Pesanan
-              <ChevronRight size={18} />
+              Lacak Order
             </Link>
-            <div className="grid grid-cols-2 gap-3">
-              <Link
-                href="/orders"
-                className="rounded-2xl border border-gray-200 bg-white py-3.5 text-center text-sm font-extrabold text-gray-700 transition-colors hover:bg-gray-50"
-              >
-                Riwayat
-              </Link>
-              <Link
-                href="/home"
-                className="flex items-center justify-center gap-2 rounded-2xl border border-emerald-100 bg-emerald-50 py-3.5 text-sm font-extrabold text-emerald-700 transition-colors hover:bg-emerald-100"
-              >
-                <Home size={17} />
-                Beranda
-              </Link>
-            </div>
+            <Link
+              href="/home"
+              className="flex items-center justify-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-extrabold text-gray-700"
+            >
+              <Home size={17} />
+              Home
+            </Link>
           </div>
         </section>
       </div>
     </MobileDeviceFrame>
+  );
+}
+
+export default function PaymentSuccessPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-emerald-500" />}>
+      <PaymentSuccessContent />
+    </Suspense>
   );
 }

@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import type { ChangeEvent, FormEvent } from "react";
 import { useEffect, useState } from "react";
@@ -33,15 +32,13 @@ type PasswordForm = {
   confirmPassword: string;
 };
 
-const initialAvatar = "https://api.dicebear.com/7.x/avataaars/svg?seed=Alfhin";
-
 export default function CustomerEditProfilePage() {
   const [profile, setProfile] = useState<ProfileForm>({
-    fullName: "Alfhin",
-    email: "alfhin@email.com",
-    phone: "081234567890",
+    fullName: "",
+    email: "",
+    phone: "",
   });
-  const [avatarPreview, setAvatarPreview] = useState(initialAvatar);
+  const [avatarPreview, setAvatarPreview] = useState("");
   const [profileNotice, setProfileNotice] = useState("");
   const [isPasswordOpen, setIsPasswordOpen] = useState(false);
   const [passwordForm, setPasswordForm] = useState<PasswordForm>({
@@ -62,7 +59,29 @@ export default function CustomerEditProfilePage() {
     passwordForm.newPassword !== passwordForm.confirmPassword;
 
   useEffect(() => {
+    let ignore = false;
+
+    async function loadUser() {
+      const response = await fetch("/api/auth/me", { cache: "no-store" });
+      const data = (await response.json()) as {
+        ok: boolean;
+        user?: { name: string; email: string; phone?: string | null };
+      };
+
+      if (!ignore && data.user) {
+        setProfile((currentProfile) => ({
+          ...currentProfile,
+          fullName: data.user?.name ?? "",
+          email: data.user?.email ?? "",
+          phone: data.user?.phone ?? "",
+        }));
+      }
+    }
+
+    void loadUser();
+
     return () => {
+      ignore = true;
       if (avatarPreview.startsWith("blob:")) {
         URL.revokeObjectURL(avatarPreview);
       }
@@ -158,15 +177,17 @@ export default function CustomerEditProfilePage() {
 
         <div className="flex-1 space-y-6 overflow-y-auto px-6 py-6 pb-32 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <div className="mb-6 flex flex-col items-center justify-center">
-            <label className="group relative h-24 w-24 cursor-pointer overflow-hidden rounded-full border-4 border-white bg-emerald-100 shadow-md">
-              <Image
-                src={avatarPreview}
-                alt="Avatar Alfhin"
-                width={96}
-                height={96}
-                unoptimized
-                className="h-full w-full object-cover"
-              />
+            <label className="group relative flex h-24 w-24 cursor-pointer items-center justify-center overflow-hidden rounded-full border-4 border-white bg-emerald-50 text-emerald-600 shadow-md">
+              {avatarPreview ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={avatarPreview}
+                  alt="Avatar preview"
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <User size={38} />
+              )}
               <input
                 type="file"
                 accept="image/*"

@@ -10,7 +10,6 @@ import {
   MapPin,
   MessageSquareText,
   ReceiptText,
-  ShieldCheck,
   Store,
   TicketPercent,
   Wallet,
@@ -68,23 +67,7 @@ const paymentOptions: {
   },
 ];
 
-const addressOptions = [
-  {
-    id: "nearby",
-    label: "Pickup utama",
-    address: "Jl. Sudirman No. 45, Pekanbaru",
-    distance: "1.2 km dari lokasimu",
-  },
-  {
-    id: "office",
-    label: "Dekat kantor",
-    address: "Jl. Diponegoro No. 12, Pekanbaru",
-    distance: "2.4 km dari lokasimu",
-  },
-] as const;
-
 const serviceFee = 2000;
-const voucherDiscount = 5000;
 
 export function CustomerCheckoutScreen() {
   const router = useRouter();
@@ -94,20 +77,57 @@ export function CustomerCheckoutScreen() {
     useState<(typeof pickupOptions)[number]["id"]>("early");
   const [paymentMethod, setPaymentMethod] =
     useState<(typeof paymentOptions)[number]["id"]>("gopay");
-  const [selectedAddress, setSelectedAddress] =
-    useState<(typeof addressOptions)[number]["id"]>("nearby");
   const [notes, setNotes] = useState("");
-  const [useVoucher, setUseVoucher] = useState(true);
   const [agreePickup, setAgreePickup] = useState(true);
+  const [isSubmittingOrder, setIsSubmittingOrder] = useState(false);
+  const [checkoutNotice, setCheckoutNotice] = useState<string | null>(null);
 
-  const discount = useVoucher ? voucherDiscount : 0;
-  const grandTotal = Math.max(0, cartTotal + serviceFee - discount);
+  const grandTotal = Math.max(0, cartTotal + serviceFee);
   const selectedPickup = pickupOptions.find((item) => item.id === pickupTime);
-  const activeAddress = addressOptions.find((item) => item.id === selectedAddress);
 
-  const handlePaymentSuccess = () => {
-    clearCart();
-    router.push("/payment-success");
+  const handlePaymentSuccess = async () => {
+    if (cart.length === 0 || isSubmittingOrder) {
+      return;
+    }
+
+    setIsSubmittingOrder(true);
+    setCheckoutNotice(null);
+
+    try {
+      const response = await fetch("/api/orders", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          items: cart.map((item) => ({
+            menuItemId: item.id,
+            quantity: item.qty,
+          })),
+          note: notes.trim() || undefined,
+        }),
+      });
+      const data = (await response.json()) as {
+        ok: boolean;
+        message?: string;
+        order?: {
+          orderCode: string;
+        };
+      };
+
+      if (!response.ok || !data.ok || !data.order) {
+        throw new Error(data.message || "Checkout gagal.");
+      }
+
+      clearCart();
+      router.push(`/payment-success?order=${data.order.orderCode}`);
+    } catch (error) {
+      setCheckoutNotice(
+        error instanceof Error ? error.message : "Checkout gagal.",
+      );
+    } finally {
+      setIsSubmittingOrder(false);
+    }
   };
 
   return (
@@ -170,7 +190,7 @@ export function CustomerCheckoutScreen() {
                   <div className="rounded-2xl bg-white px-3 py-3 text-gray-600">
                     Hemat
                     <span className="mt-1 block text-sm font-extrabold text-gray-950">
-                      {formatRp(totalSaved + discount)}
+                      {formatRp(totalSaved)}
                     </span>
                   </div>
                   <div className="rounded-2xl bg-white px-3 py-3 text-gray-600">
@@ -189,42 +209,15 @@ export function CustomerCheckoutScreen() {
                     Lokasi Pickup
                   </h2>
                 </div>
-                <div className="space-y-3">
-                  {addressOptions.map((address) => {
-                    const isActive = selectedAddress === address.id;
-
-                    return (
-                      <button
-                        key={address.id}
-                        type="button"
-                        onClick={() => setSelectedAddress(address.id)}
-                        className={`w-full rounded-[22px] border p-4 text-left transition-all ${
-                          isActive
-                            ? "border-emerald-200 bg-emerald-50 ring-4 ring-emerald-500/10"
-                            : "border-gray-100 bg-gray-50 hover:bg-gray-100"
-                        }`}
-                      >
-                        <div className="mb-1 flex items-center justify-between gap-3">
-                          <p className="text-sm font-extrabold text-gray-950">
-                            {address.label}
-                          </p>
-                          <span
-                            className={`h-5 w-5 rounded-full border-[5px] ${
-                              isActive
-                                ? "border-emerald-500 bg-white"
-                                : "border-gray-200"
-                            }`}
-                          />
-                        </div>
-                        <p className="text-xs leading-5 font-medium text-gray-500">
-                          {address.address}
-                        </p>
-                        <p className="mt-1 text-[11px] font-bold text-emerald-600">
-                          {address.distance}
-                        </p>
-                      </button>
-                    );
-                  })}
+                <div className="rounded-[22px] border border-gray-100 bg-gray-50 p-4">
+                  <p className="text-sm font-extrabold text-gray-950">
+                    Pickup di restoran
+                  </p>
+                  <p className="mt-1 text-xs leading-5 font-medium text-gray-500">
+                    Alamat pickup mengikuti restoran pada item yang kamu
+                    checkout. Detail lokasi muncul di tracking order setelah
+                    checkout berhasil.
+                  </p>
                 </div>
               </section>
 
@@ -326,19 +319,10 @@ export function CustomerCheckoutScreen() {
                       Voucher
                     </h2>
                   </div>
-                  <label className="flex items-center gap-2 text-xs font-extrabold text-emerald-600">
-                    <input
-                      type="checkbox"
-                      checked={useVoucher}
-                      onChange={(event) => setUseVoucher(event.target.checked)}
-                      className="h-4 w-4 accent-emerald-500"
-                    />
-                    SURPLUS5
-                  </label>
                 </div>
                 <p className="text-xs leading-5 font-medium text-gray-500">
-                  Voucher otomatis memberi potongan {formatRp(voucherDiscount)}
-                  untuk checkout prototype ini.
+                  Voucher diterapkan dari keranjang jika kode voucher valid dari
+                  database.
                 </p>
               </section>
 
@@ -407,12 +391,6 @@ export function CustomerCheckoutScreen() {
                     <span>Diskon Surplus</span>
                     <span>- {formatRp(totalSaved)}</span>
                   </div>
-                  {useVoucher ? (
-                    <div className="flex justify-between rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 font-bold text-blue-600">
-                      <span>Voucher SURPLUS5</span>
-                      <span>- {formatRp(discount)}</span>
-                    </div>
-                  ) : null}
                   <div className="flex justify-between px-1 text-gray-600">
                     <span>Biaya Layanan</span>
                     <span>{formatRp(serviceFee)}</span>
@@ -443,6 +421,11 @@ export function CustomerCheckoutScreen() {
 
         {cart.length > 0 ? (
           <div className="absolute right-0 bottom-0 left-0 z-50 rounded-t-[32px] border-t border-gray-50 bg-white/95 p-6 shadow-[0_-15px_40px_rgba(0,0,0,0.08)] backdrop-blur-md">
+            {checkoutNotice ? (
+              <div className="mb-4 rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-xs font-bold text-red-700">
+                {checkoutNotice}
+              </div>
+            ) : null}
             <div className="mb-4 flex items-start justify-between gap-4 px-1">
               <div>
                 <p className="text-xs font-medium text-gray-500">
@@ -454,7 +437,7 @@ export function CustomerCheckoutScreen() {
               </div>
               <div className="text-right">
                 <p className="text-[10px] font-bold text-gray-400">
-                  {activeAddress?.label}
+                  Pickup restoran
                 </p>
                 <p className="mt-1 text-xs font-extrabold text-emerald-600">
                   {selectedPickup?.time}
@@ -463,19 +446,11 @@ export function CustomerCheckoutScreen() {
             </div>
             <button
               type="button"
-              disabled={!agreePickup}
+              disabled={!agreePickup || isSubmittingOrder}
               onClick={handlePaymentSuccess}
               className="w-full rounded-2xl bg-gray-900 py-4 text-sm font-extrabold text-white shadow-[0_12px_26px_rgba(15,23,42,0.14)] transition-all duration-300 hover:bg-emerald-500 active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-gray-300 disabled:shadow-none"
             >
-              Bayar Sekarang
-            </button>
-            <button
-              type="button"
-              onClick={() => router.push("/payment-failed")}
-              className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl border border-red-100 bg-red-50 py-3.5 text-xs font-extrabold text-red-600 transition-colors hover:bg-red-100"
-            >
-              <ShieldCheck size={16} />
-              Simulasikan Pembayaran Gagal
+              {isSubmittingOrder ? "Memproses..." : "Bayar Sekarang"}
             </button>
           </div>
         ) : null}

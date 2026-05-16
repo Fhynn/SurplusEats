@@ -45,7 +45,7 @@ const faqs: FaqItem[] = [
     answer:
       "Ajukan refund dari detail pesanan, pilih alasan kualitas makanan, lalu tulis kronologi dan bukti. Tim admin akan meninjau laporan sebelum dana dikembalikan.",
     actionLabel: "Ajukan Refund",
-    actionHref: "/orders/SFM-77C0Z/refund",
+    actionHref: "/orders",
   },
   {
     id: "refund-withdraw",
@@ -70,7 +70,7 @@ const faqs: FaqItem[] = [
     title: "Cara klaim voucher promo",
     category: "Voucher",
     answer:
-      "Buka Voucher Saya, masukkan kode promo, lalu tekan Klaim. Kode demo yang tersedia di prototype ini adalah ALFHIN dan SAVEFOOD.",
+      "Buka Voucher Saya, masukkan kode promo yang dibuat admin, lalu tekan Klaim. Voucher yang aktif akan mengikuti data dari database.",
     actionLabel: "Buka Voucher",
     actionHref: "/profile/vouchers",
   },

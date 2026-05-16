@@ -11,7 +11,7 @@ interface CustomerAppContextValue {
   originalTotal: number;
   totalSaved: number;
   addToCart: (food: Food) => void;
-  updateCartQty: (id: number, delta: number) => void;
+  updateCartQty: (id: string, delta: number) => void;
   clearCart: () => void;
 }
 
@@ -63,7 +63,7 @@ export function CustomerAppProvider({
       });
     };
 
-    const updateCartQty = (id: number, delta: number) => {
+    const updateCartQty = (id: string, delta: number) => {
       setCart((currentCart) =>
         currentCart
           .map((item) => {

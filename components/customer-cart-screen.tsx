@@ -16,12 +16,17 @@ import {
   X,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { useCustomerApp } from "@/components/customer-app-provider";
 import { formatRp } from "@/lib/customer-data";
 
-const voucherSuggestions = ["SURPLUS5", "HEMAT10"] as const;
+type CartVoucher = {
+  code: string;
+  discount: number;
+  minSpendAmount: number;
+  status: "available" | "used";
+};
 
 export function CustomerCartScreen() {
   const router = useRouter();
@@ -36,21 +41,74 @@ export function CustomerCartScreen() {
   } = useCustomerApp();
   const [voucherCode, setVoucherCode] = useState("");
   const [appliedVoucher, setAppliedVoucher] = useState("");
+  const [availableVouchers, setAvailableVouchers] = useState<CartVoucher[]>([]);
+  const [voucherNotice, setVoucherNotice] = useState("");
   const [isClearOpen, setIsClearOpen] = useState(false);
   const serviceFee = 2000;
-  const voucherDiscount = appliedVoucher ? 5000 : 0;
+  const activeVoucher = useMemo(
+    () => availableVouchers.find((voucher) => voucher.code === appliedVoucher),
+    [appliedVoucher, availableVouchers],
+  );
+  const voucherDiscount = activeVoucher ? activeVoucher.discount : 0;
   const grandTotal = Math.max(0, cartTotal + serviceFee - voucherDiscount);
   const foodSavedKg = (cartCount * 0.8).toFixed(1);
 
-  const handleApplyVoucher = () => {
-    const normalizedCode = voucherCode.trim().toUpperCase();
+  useEffect(() => {
+    let ignore = false;
+
+    async function loadVouchers() {
+      const response = await fetch("/api/vouchers", { cache: "no-store" });
+      const data = (await response.json()) as {
+        ok: boolean;
+        vouchers?: CartVoucher[];
+      };
+
+      if (!ignore) {
+        setAvailableVouchers(
+          (data.vouchers ?? []).filter((voucher) => voucher.status === "available"),
+        );
+      }
+    }
+
+    void loadVouchers();
+
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
+  const applyVoucherByCode = (code: string) => {
+    const normalizedCode = code.trim().toUpperCase();
 
     if (!normalizedCode) {
       return;
     }
 
-    setAppliedVoucher(normalizedCode);
+    const voucher = availableVouchers.find(
+      (item) => item.code.toUpperCase() === normalizedCode,
+    );
+
+    if (!voucher) {
+      setVoucherNotice("Voucher tidak tersedia untuk akun ini.");
+      setAppliedVoucher("");
+      return;
+    }
+
+    if (cartTotal < voucher.minSpendAmount) {
+      setVoucherNotice(
+        `Minimum transaksi voucher ini ${formatRp(voucher.minSpendAmount)}.`,
+      );
+      setAppliedVoucher("");
+      return;
+    }
+
+    setAppliedVoucher(voucher.code);
     setVoucherCode(normalizedCode);
+    setVoucherNotice("");
+  };
+
+  const handleApplyVoucher = () => {
+    applyVoucherByCode(voucherCode);
   };
 
   if (cart.length === 0) {
@@ -256,25 +314,29 @@ export function CustomerCartScreen() {
               Pakai
             </button>
           </div>
-          <div className="flex flex-wrap gap-2">
-            {voucherSuggestions.map((voucher) => (
-              <button
-                key={voucher}
-                type="button"
-                onClick={() => {
-                  setVoucherCode(voucher);
-                  setAppliedVoucher(voucher);
-                }}
-                className={`rounded-full px-3 py-1.5 text-[10px] font-extrabold ${
-                  appliedVoucher === voucher
-                    ? "bg-emerald-500 text-white"
-                    : "bg-emerald-50 text-emerald-600"
-                }`}
-              >
-                {voucher}
-              </button>
-            ))}
-          </div>
+          {availableVouchers.length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {availableVouchers.map((voucher) => (
+                <button
+                  key={voucher.code}
+                  type="button"
+                  onClick={() => applyVoucherByCode(voucher.code)}
+                  className={`rounded-full px-3 py-1.5 text-[10px] font-extrabold ${
+                    appliedVoucher === voucher.code
+                      ? "bg-emerald-500 text-white"
+                      : "bg-emerald-50 text-emerald-600"
+                  }`}
+                >
+                  {voucher.code}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          {voucherNotice ? (
+            <p className="mt-3 text-xs font-bold text-red-600">
+              {voucherNotice}
+            </p>
+          ) : null}
           {appliedVoucher ? (
             <p className="mt-3 text-xs font-bold text-emerald-600">
               Voucher {appliedVoucher} aktif: diskon {formatRp(voucherDiscount)}.

@@ -12,14 +12,14 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { MobileDeviceFrame } from "@/components/mobile-device-frame";
 
 type AddressKind = "home" | "office";
 
 type SavedAddress = {
-  id: number;
+  id: string;
   label: string;
   detail: string;
   note: string;
@@ -34,24 +34,13 @@ type AddressDraft = {
   kind: AddressKind;
 };
 
-const initialAddresses: SavedAddress[] = [
-  {
-    id: 1,
-    label: "Rumah",
-    detail: "Jl. Jendral Sudirman No. 45, Pekanbaru Kota, Riau 28111.",
-    note: "Pagar hitam depan pos satpam.",
-    kind: "home",
-    isPrimary: true,
-  },
-  {
-    id: 2,
-    label: "Kantor",
-    detail: "Gedung Surya Tower Lantai 4, Jl. HR Subrantas, Pekanbaru.",
-    note: "Titipkan ke resepsionis bila sedang meeting.",
-    kind: "office",
-    isPrimary: false,
-  },
-];
+type ApiAddress = {
+  id: string;
+  label: string;
+  addressLine: string;
+  notes: string | null;
+  isPrimary: boolean;
+};
 
 const emptyDraft: AddressDraft = {
   label: "",
@@ -60,16 +49,58 @@ const emptyDraft: AddressDraft = {
   kind: "home",
 };
 
+function mapApiAddress(address: ApiAddress): SavedAddress {
+  return {
+    id: address.id,
+    label: address.label,
+    detail: address.addressLine,
+    note: address.notes ?? "",
+    kind: address.label.toLowerCase().includes("kantor") ? "office" : "home",
+    isPrimary: address.isPrimary,
+  };
+}
+
 export default function CustomerAddressesPage() {
-  const [addresses, setAddresses] = useState(initialAddresses);
+  const [addresses, setAddresses] = useState<SavedAddress[]>([]);
   const [draft, setDraft] = useState<AddressDraft>(emptyDraft);
-  const [editingAddressId, setEditingAddressId] = useState<number | null>(null);
+  const [editingAddressId, setEditingAddressId] = useState<string | null>(null);
   const [deletingAddress, setDeletingAddress] = useState<SavedAddress | null>(
     null,
   );
   const [isEditorOpen, setIsEditorOpen] = useState(false);
+  const [isLoadingAddresses, setIsLoadingAddresses] = useState(true);
+  const [isSavingAddress, setIsSavingAddress] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const isDraftInvalid = !draft.label.trim() || !draft.detail.trim();
+
+  const loadAddresses = useCallback(async () => {
+    setIsLoadingAddresses(true);
+
+    try {
+      const response = await fetch("/api/addresses", { cache: "no-store" });
+      const data = (await response.json()) as {
+        ok: boolean;
+        message?: string;
+        addresses?: ApiAddress[];
+      };
+
+      if (!response.ok || !data.ok) {
+        throw new Error(data.message || "Alamat gagal dimuat.");
+      }
+
+      setAddresses((data.addresses || []).map(mapApiAddress));
+      setNotice(null);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Alamat gagal dimuat.");
+    } finally {
+      setIsLoadingAddresses(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadAddresses();
+  }, [loadAddresses]);
 
   const handleOpenAdd = () => {
     setDraft(emptyDraft);
@@ -94,7 +125,7 @@ export default function CustomerAddressesPage() {
     setDraft(emptyDraft);
   };
 
-  const handleSaveAddress = () => {
+  const handleSaveAddress = async () => {
     if (isDraftInvalid) {
       return;
     }
@@ -106,61 +137,82 @@ export default function CustomerAddressesPage() {
       kind: draft.kind,
     };
 
-    if (editingAddressId) {
-      setAddresses((currentAddresses) =>
-        currentAddresses.map((address) =>
-          address.id === editingAddressId
-            ? {
-                ...address,
-                ...normalizedDraft,
-              }
-            : address,
-        ),
+    setIsSavingAddress(true);
+
+    try {
+      const response = await fetch(
+        editingAddressId ? `/api/addresses/${editingAddressId}` : "/api/addresses",
+        {
+          method: editingAddressId ? "PATCH" : "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(normalizedDraft),
+        },
       );
+      const data = (await response.json()) as {
+        ok: boolean;
+        message?: string;
+      };
+
+      if (!response.ok || !data.ok) {
+        throw new Error(data.message || "Alamat gagal disimpan.");
+      }
+
+      await loadAddresses();
       handleCloseEditor();
-      return;
+    } catch (error) {
+      setNotice(
+        error instanceof Error ? error.message : "Alamat gagal disimpan.",
+      );
+    } finally {
+      setIsSavingAddress(false);
     }
-
-    setAddresses((currentAddresses) => [
-      ...currentAddresses,
-      {
-        id: Date.now(),
-        ...normalizedDraft,
-        isPrimary: currentAddresses.length === 0,
-      },
-    ]);
-    handleCloseEditor();
   };
 
-  const handleSetPrimary = (addressId: number) => {
-    setAddresses((currentAddresses) =>
-      currentAddresses.map((address) => ({
-        ...address,
-        isPrimary: address.id === addressId,
-      })),
-    );
+  const handleSetPrimary = async (addressId: string) => {
+    try {
+      const response = await fetch(`/api/addresses/${addressId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ isPrimary: true }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Alamat utama gagal diperbarui.");
+      }
+
+      await loadAddresses();
+    } catch (error) {
+      setNotice(
+        error instanceof Error
+          ? error.message
+          : "Alamat utama gagal diperbarui.",
+      );
+    }
   };
 
-  const handleDeleteAddress = () => {
+  const handleDeleteAddress = async () => {
     if (!deletingAddress) {
       return;
     }
 
-    setAddresses((currentAddresses) => {
-      const remainingAddresses = currentAddresses.filter(
-        (address) => address.id !== deletingAddress.id,
-      );
+    try {
+      const response = await fetch(`/api/addresses/${deletingAddress.id}`, {
+        method: "DELETE",
+      });
 
-      if (!deletingAddress.isPrimary || remainingAddresses.length === 0) {
-        return remainingAddresses;
+      if (!response.ok) {
+        throw new Error("Alamat gagal dihapus.");
       }
 
-      return remainingAddresses.map((address, index) => ({
-        ...address,
-        isPrimary: index === 0,
-      }));
-    });
-    setDeletingAddress(null);
+      await loadAddresses();
+      setDeletingAddress(null);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Alamat gagal dihapus.");
+    }
   };
 
   return (
@@ -195,7 +247,25 @@ export default function CustomerAddressesPage() {
         </header>
 
         <div className="flex-1 space-y-4 overflow-y-auto px-6 py-6 pb-24 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          {addresses.length === 0 ? (
+          {notice ? (
+            <section className="rounded-[24px] border border-red-100 bg-red-50 p-4 text-sm font-bold text-red-700">
+              {notice}
+            </section>
+          ) : null}
+
+          {isLoadingAddresses ? (
+            <section className="rounded-[28px] border border-gray-100 bg-white p-7 text-center shadow-sm">
+              <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-emerald-100 border-t-emerald-500" />
+              <h2 className="text-lg font-extrabold text-gray-950">
+                Memuat alamat
+              </h2>
+              <p className="mt-2 text-sm leading-6 font-medium text-gray-500">
+                Data diambil dari akun customer yang sedang login.
+              </p>
+            </section>
+          ) : null}
+
+          {!isLoadingAddresses && addresses.length === 0 ? (
             <section className="rounded-[28px] border border-dashed border-emerald-200 bg-white p-7 text-center shadow-sm">
               <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-[24px] bg-emerald-50 text-emerald-600">
                 <MapPin size={30} />
@@ -209,7 +279,7 @@ export default function CustomerAddressesPage() {
             </section>
           ) : null}
 
-          {addresses.map((address) => {
+          {!isLoadingAddresses && addresses.map((address) => {
             const isHome = address.kind === "home";
             const Icon = isHome ? Home : Building2;
 
@@ -428,11 +498,11 @@ export default function CustomerAddressesPage() {
                 <button
                   type="button"
                   onClick={handleSaveAddress}
-                  disabled={isDraftInvalid}
+                  disabled={isDraftInvalid || isSavingAddress}
                   className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-gray-900 py-3.5 text-sm font-extrabold text-white shadow-lg transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-gray-300 disabled:shadow-none"
                 >
                   <Save size={17} />
-                  Simpan
+                  {isSavingAddress ? "Menyimpan..." : "Simpan"}
                 </button>
               </div>
             </div>

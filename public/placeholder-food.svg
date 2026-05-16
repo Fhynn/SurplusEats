@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="420" viewBox="0 0 600 420" role="img" aria-labelledby="title desc">
+  <title id="title">Gambar makanan belum tersedia</title>
+  <desc id="desc">Placeholder netral untuk menu yang belum mengunggah foto.</desc>
+  <rect width="600" height="420" fill="#ecfdf5"/>
+  <circle cx="300" cy="210" r="96" fill="#d1fae5"/>
+  <path fill="#10b981" d="M240 204c0-44 28-78 68-78 35 0 60 25 60 59 0 48-42 83-92 103-21-24-36-52-36-84Zm68-42c-19 0-32 18-32 42 0 14 5 29 14 43 28-15 42-35 42-59 0-16-10-26-24-26Z"/>
+  <text x="300" y="338" fill="#047857" font-family="Arial, sans-serif" font-size="24" font-weight="700" text-anchor="middle">Foto menu belum tersedia</text>
+</svg>

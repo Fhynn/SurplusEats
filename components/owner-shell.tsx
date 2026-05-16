@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import {
   BarChart3,
@@ -14,8 +13,9 @@ import {
   UtensilsCrossed,
   Wallet,
 } from "lucide-react";
-import { usePathname, useSearchParams } from "next/navigation";
-import type { ReactNode } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import type { FormEvent, ReactNode } from "react";
+import { useState } from "react";
 
 const shellRoutes = new Set([
   "/owner/dashboard",
@@ -38,7 +38,7 @@ const navItems = [
     href: "/owner/dashboard?tab=orders",
     label: "Pesanan",
     icon: ShoppingBag,
-    badge: "3 Baru",
+    badge: undefined,
   },
   {
     href: "/owner/menu",
@@ -62,7 +62,7 @@ const navItems = [
     href: "/owner/reviews",
     label: "Ulasan",
     icon: Star,
-    badge: "4 Baru",
+    badge: undefined,
   },
 ] as const;
 
@@ -71,10 +71,26 @@ export function OwnerShell({
 }: Readonly<{
   children: ReactNode;
 }>) {
+  const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const dashboardTab = searchParams.get("tab");
+  const [shellQuery, setShellQuery] = useState("");
   const shouldUseShell = shellRoutes.has(pathname) || pathname.startsWith("/owner/orders/");
+
+  const handleShellSearch = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    const trimmedQuery = shellQuery.trim();
+
+    if (!trimmedQuery) {
+      return;
+    }
+
+    router.push(
+      `/owner/dashboard?tab=orders&q=${encodeURIComponent(trimmedQuery)}`,
+    );
+  };
 
   if (!shouldUseShell) {
     return children;
@@ -167,17 +183,22 @@ export function OwnerShell({
 
         <main className="flex h-screen min-w-0 flex-1 flex-col overflow-hidden">
           <header className="flex h-20 shrink-0 items-center justify-between border-b border-gray-100 bg-white px-8 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
-            <div className="relative hidden w-96 md:block">
+            <form
+              className="relative hidden w-96 md:block"
+              onSubmit={handleShellSearch}
+            >
               <Search
                 size={18}
                 className="absolute top-1/2 left-4 -translate-y-1/2 text-gray-400"
               />
               <input
                 type="text"
-                placeholder="Cari order ID atau menu..."
+                value={shellQuery}
+                onChange={(event) => setShellQuery(event.target.value)}
+                placeholder="Cari order ID, customer, atau menu..."
                 className="w-full rounded-xl border border-gray-200 bg-gray-50 py-2.5 pr-4 pl-12 text-sm font-medium text-gray-900 transition-all outline-none focus:bg-white focus:ring-2 focus:ring-emerald-500/20"
               />
-            </div>
+            </form>
 
             <div className="ml-auto flex items-center gap-4">
               <Link
@@ -192,23 +213,17 @@ export function OwnerShell({
                 <div className="absolute top-2 right-2 h-2 w-2 rounded-full border-2 border-white bg-red-500" />
               </Link>
               <div className="h-8 w-px bg-gray-200" />
-              <div className="group flex cursor-pointer items-center gap-3">
+              <Link href="/owner/settings" className="group flex items-center gap-3">
                 <div className="hidden text-right md:block">
                   <p className="text-sm leading-tight font-extrabold text-gray-900">
-                    Bakehouse Bakery
+                    Owner Dashboard
                   </p>
                   <p className="text-xs font-medium text-gray-500">Owner</p>
                 </div>
-                <div className="h-10 w-10 overflow-hidden rounded-xl border-2 border-transparent bg-emerald-100 transition-all group-hover:border-emerald-500">
-                  <Image
-                    src="https://images.unsplash.com/photo-1583338917451-face2751d8d5?q=80&w=150&auto=format&fit=crop"
-                    alt="Shop avatar"
-                    width={40}
-                    height={40}
-                    className="h-full w-full object-cover"
-                  />
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl border-2 border-transparent bg-emerald-50 text-emerald-600 transition-all group-hover:border-emerald-500">
+                  <Store size={20} />
                 </div>
-              </div>
+              </Link>
             </div>
           </header>
 

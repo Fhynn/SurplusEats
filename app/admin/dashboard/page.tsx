@@ -7,11 +7,9 @@ import {
   BarChart3,
   Bell,
   Building2,
-  Check,
   CheckCircle2,
   Clock3,
   FileBadge2,
-  FileCheck2,
   LayoutDashboard,
   Leaf,
   PieChart,
@@ -28,7 +26,9 @@ import {
   X,
   XCircle,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import type { FormEvent } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 type AdminTab =
   | "dashboard"
@@ -58,244 +58,71 @@ type AdminUser = {
   banReason?: string;
 };
 
-const stats = [
-  {
-    label: "Total Pengguna",
-    value: "48.392",
-    trend: "+12%",
-    icon: Users,
-    iconWrapClassName: "bg-blue-50",
-    iconClassName: "text-blue-500",
-  },
-  {
-    label: "Restoran",
-    value: "1.284",
-    trend: "+8%",
-    icon: Store,
-    iconWrapClassName: "bg-emerald-50",
-    iconClassName: "text-emerald-500",
-  },
-  {
-    label: "Transaksi",
-    value: "92.740",
-    trend: "+18%",
-    icon: WalletCards,
-    iconWrapClassName: "bg-purple-50",
-    iconClassName: "text-purple-500",
-  },
-  {
-    label: "Food Saved",
-    value: "18.6 Ton",
-    trend: "+21%",
-    icon: Leaf,
-    iconWrapClassName: "bg-green-50",
-    iconClassName: "text-green-500",
-  },
-];
+type AttentionItem = {
+  title: string;
+  meta: string;
+  level: string;
+};
 
-const attentionItems = [
-  {
-    title: "Dispute refund order #SE-8821",
-    meta: "Pembeli menunggu respon admin",
-    level: "Tinggi",
-  },
-  {
-    title: "Restoran baru perlu verifikasi",
-    meta: "7 dokumen belum direview hari ini",
-    level: "Sedang",
-  },
-  {
-    title: "Lonjakan pembatalan pickup",
-    meta: "Area Jakarta Selatan naik 6%",
-    level: "Pantau",
-  },
-];
+type RecentTransaction = {
+  id: string;
+  customer: string;
+  store: string;
+  total: string;
+  status: string;
+};
 
-const recentTransactions = [
-  {
-    id: "TRX-78291",
-    customer: "Nadia Putri",
-    store: "Green Bowl Co.",
-    total: "Rp42.000",
-    status: "Selesai",
-  },
-  {
-    id: "TRX-78262",
-    customer: "Arka Wijaya",
-    store: "Bakehouse Senopati",
-    total: "Rp27.500",
-    status: "Diproses",
-  },
-  {
-    id: "TRX-78238",
-    customer: "Maya Lestari",
-    store: "Dapur Bu Sari",
-    total: "Rp31.000",
-    status: "Pickup",
-  },
-] as const;
+type RefundDispute = {
+  orderId: string;
+  customer: string;
+  resto: string;
+  reason: string;
+  total: string;
+};
 
-const refundDisputes = [
-  {
-    orderId: "SE-8821",
-    customer: "Nadia Putri",
-    resto: "Green Bowl Co.",
-    reason: "Makanan tidak sesuai foto",
-    total: "Rp42.000",
-  },
-  {
-    orderId: "SE-8794",
-    customer: "Arka Wijaya",
-    resto: "Bakehouse Senopati",
-    reason: "Pickup dibatalkan restoran",
-    total: "Rp27.500",
-  },
-  {
-    orderId: "SE-8739",
-    customer: "Maya Lestari",
-    resto: "Dapur Bu Sari",
-    reason: "Pesanan kurang item",
-    total: "Rp31.000",
-  },
-  {
-    orderId: "SE-8702",
-    customer: "Reza Ananda",
-    resto: "Kopi Sore Kemang",
-    reason: "Kualitas produk menurun",
-    total: "Rp18.000",
-  },
-] as const;
+type WeeklySale = {
+  day: string;
+  value: number;
+};
 
-const weeklySales = [
-  { day: "Senin", value: 58 },
-  { day: "Selasa", value: 72 },
-  { day: "Rabu", value: 46 },
-  { day: "Kamis", value: 88 },
-  { day: "Jumat", value: 68 },
-  { day: "Sabtu", value: 96 },
-  { day: "Minggu", value: 76 },
-] as const;
+type FoodDistributionItem = {
+  label: string;
+  value: number;
+  className: string;
+  textClassName: string;
+};
 
-const foodDistribution = [
-  {
-    label: "Roti",
-    value: 45,
-    className: "bg-blue-500",
-    textClassName: "text-blue-600",
-  },
-  {
-    label: "Nasi",
-    value: 30,
-    className: "bg-amber-400",
-    textClassName: "text-amber-600",
-  },
-  {
-    label: "Lainnya",
-    value: 25,
-    className: "bg-purple-500",
-    textClassName: "text-purple-600",
-  },
-] as const;
+type AdminDashboardData = {
+  metrics: {
+    totalUsers: number;
+    totalRestaurants: number;
+    totalTransactions: number;
+    foodSavedItems: number;
+  };
+  users: AdminUser[];
+  verificationStores: VerificationStore[];
+  recentTransactions: RecentTransaction[];
+  refundDisputes: RefundDispute[];
+  attentionItems: AttentionItem[];
+  weeklySales: WeeklySale[];
+  foodDistribution: FoodDistributionItem[];
+};
 
-const initialAdminUsers: AdminUser[] = [
-  {
-    id: "USR-10481",
-    joinedAt: "30 Apr 2026",
-    name: "Nadia Putri",
-    email: "nadia.putri@example.com",
-    role: "customer",
-    status: "active",
+const emptyDashboardData: AdminDashboardData = {
+  metrics: {
+    totalUsers: 0,
+    totalRestaurants: 0,
+    totalTransactions: 0,
+    foodSavedItems: 0,
   },
-  {
-    id: "OWN-09342",
-    joinedAt: "28 Apr 2026",
-    name: "Bakehouse Bakery",
-    email: "owner@bakehouse.example.com",
-    role: "owner",
-    status: "active",
-  },
-  {
-    id: "USR-10227",
-    joinedAt: "24 Apr 2026",
-    name: "Arka Wijaya",
-    email: "arka.wijaya@example.com",
-    role: "customer",
-    status: "banned",
-    banReason: "Penyalahgunaan voucher refund.",
-  },
-  {
-    id: "OWN-09118",
-    joinedAt: "20 Apr 2026",
-    name: "Kopi Sore Kemang",
-    email: "admin@kopisore.example.com",
-    role: "owner",
-    status: "active",
-  },
-  {
-    id: "USR-10091",
-    joinedAt: "18 Apr 2026",
-    name: "Maya Lestari",
-    email: "maya.lestari@example.com",
-    role: "customer",
-    status: "active",
-  },
-  {
-    id: "OWN-08977",
-    joinedAt: "15 Apr 2026",
-    name: "Dapur Bu Sari",
-    email: "halo@dapur-busari.example.com",
-    role: "owner",
-    status: "banned",
-    banReason: "Dokumen toko tidak valid setelah audit.",
-  },
-];
-
-const verificationStores: VerificationStore[] = [
-  {
-    id: "UMKM-24081",
-    date: "30 Apr 2026",
-    storeName: "Warung Nasi Bu Rini",
-    category: "Masakan Rumahan",
-    owner: "Rini Handayani",
-    email: "rini.handayani@example.com",
-    phone: "+62 812-2219-8821",
-    address:
-      "Jl. Cipete Raya No. 18, Cilandak, Jakarta Selatan, DKI Jakarta 12410",
-  },
-  {
-    id: "UMKM-24079",
-    date: "30 Apr 2026",
-    storeName: "Kopi Sore Kemang",
-    category: "Kafe & Minuman",
-    owner: "Aditya Mahendra",
-    email: "aditya.mahendra@example.com",
-    phone: "+62 813-4401-7730",
-    address:
-      "Jl. Kemang Timur No. 55, Mampang Prapatan, Jakarta Selatan, DKI Jakarta 12730",
-  },
-  {
-    id: "UMKM-24073",
-    date: "29 Apr 2026",
-    storeName: "Roti Lembut Nana",
-    category: "Bakery",
-    owner: "Nana Kartika",
-    email: "nana.kartika@example.com",
-    phone: "+62 857-1120-9452",
-    address:
-      "Jl. Bintaro Utama Sektor 3A No. 12, Pondok Aren, Tangerang Selatan 15225",
-  },
-  {
-    id: "UMKM-24070",
-    date: "29 Apr 2026",
-    storeName: "Mie Ayam Pak Darto",
-    category: "Noodle Shop",
-    owner: "Sudarsono",
-    email: "sudarsono@example.com",
-    phone: "+62 822-9102-1140",
-    address:
-      "Jl. Tebet Barat Dalam Raya No. 7, Tebet, Jakarta Selatan, DKI Jakarta 12810",
-  },
-] as const;
+  users: [],
+  verificationStores: [],
+  recentTransactions: [],
+  refundDisputes: [],
+  attentionItems: [],
+  weeklySales: [],
+  foodDistribution: [],
+};
 
 const navItems = [
   {
@@ -322,21 +149,6 @@ const navItems = [
     id: "analytics",
     label: "Laporan Analitik",
     icon: BarChart3,
-  },
-] as const;
-
-const documentFiles = [
-  {
-    label: "KTP",
-    name: "ktp_pemilik.pdf",
-  },
-  {
-    label: "Foto Toko",
-    name: "foto_toko_depan.jpg",
-  },
-  {
-    label: "Surat Izin",
-    name: "surat_izin_usaha.pdf",
   },
 ] as const;
 
@@ -395,8 +207,20 @@ const pageTitleByTab: Record<AdminTab, string> = {
 };
 
 function AdminDashboardPage() {
-  const [activeTab, setActiveTab] = useState<AdminTab>("dashboard");
-  const [adminUsers, setAdminUsers] = useState<AdminUser[]>(initialAdminUsers);
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const tabParam = searchParams.get("tab");
+  const activeTab: AdminTab =
+    tabParam === "users" ||
+    tabParam === "verification" ||
+    tabParam === "transactions" ||
+    tabParam === "analytics"
+      ? tabParam
+      : "dashboard";
+  const [dashboardData, setDashboardData] =
+    useState<AdminDashboardData>(emptyDashboardData);
+  const [isLoadingDashboard, setIsLoadingDashboard] = useState(true);
+  const [dashboardNotice, setDashboardNotice] = useState<string | null>(null);
   const [userSearchQuery, setUserSearchQuery] = useState("");
   const [selectedStore, setSelectedStore] = useState<VerificationStore | null>(
     null,
@@ -404,6 +228,91 @@ function AdminDashboardPage() {
   const [selectedUserForBan, setSelectedUserForBan] =
     useState<AdminUser | null>(null);
   const [banReason, setBanReason] = useState("");
+  const [globalSearchQuery, setGlobalSearchQuery] = useState("");
+  const adminUsers = dashboardData.users;
+  const verificationStores = dashboardData.verificationStores;
+  const recentTransactions = dashboardData.recentTransactions;
+  const refundDisputes = dashboardData.refundDisputes;
+  const attentionItems = dashboardData.attentionItems;
+  const weeklySales = dashboardData.weeklySales;
+  const foodDistribution = dashboardData.foodDistribution;
+  const stats = [
+    {
+      label: "Total Pengguna",
+      value: String(dashboardData.metrics.totalUsers),
+      trend: "DB",
+      icon: Users,
+      iconWrapClassName: "bg-blue-50",
+      iconClassName: "text-blue-500",
+    },
+    {
+      label: "Restoran",
+      value: String(dashboardData.metrics.totalRestaurants),
+      trend: "DB",
+      icon: Store,
+      iconWrapClassName: "bg-emerald-50",
+      iconClassName: "text-emerald-500",
+    },
+    {
+      label: "Transaksi",
+      value: String(dashboardData.metrics.totalTransactions),
+      trend: "DB",
+      icon: WalletCards,
+      iconWrapClassName: "bg-purple-50",
+      iconClassName: "text-purple-500",
+    },
+    {
+      label: "Item Saved",
+      value: String(dashboardData.metrics.foodSavedItems),
+      trend: "DB",
+      icon: Leaf,
+      iconWrapClassName: "bg-green-50",
+      iconClassName: "text-green-500",
+    },
+  ] as const;
+
+  const loadDashboardData = useCallback(async () => {
+    setIsLoadingDashboard(true);
+
+    try {
+      const response = await fetch("/api/admin/dashboard", {
+        cache: "no-store",
+      });
+      const data = (await response.json()) as
+        | ({ ok: true } & AdminDashboardData)
+        | { ok: false; message?: string };
+
+      if (!response.ok || !data.ok) {
+        throw new Error(
+          "message" in data ? data.message : "Dashboard admin gagal dimuat.",
+        );
+      }
+
+      setDashboardData({
+        metrics: data.metrics,
+        users: data.users,
+        verificationStores: data.verificationStores,
+        recentTransactions: data.recentTransactions,
+        refundDisputes: data.refundDisputes,
+        attentionItems: data.attentionItems,
+        weeklySales: data.weeklySales,
+        foodDistribution: data.foodDistribution,
+      });
+      setDashboardNotice(null);
+    } catch (error) {
+      setDashboardNotice(
+        error instanceof Error
+          ? error.message
+          : "Dashboard admin gagal dimuat.",
+      );
+    } finally {
+      setIsLoadingDashboard(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadDashboardData();
+  }, [loadDashboardData]);
 
   const filteredAdminUsers = adminUsers.filter((user) => {
     const normalizedQuery = userSearchQuery.trim().toLowerCase();
@@ -422,44 +331,169 @@ function AdminDashboardPage() {
     setBanReason("");
   };
 
+  const handleChangeTab = (tab: AdminTab) => {
+    router.replace(
+      tab === "dashboard" ? "/admin/dashboard" : `/admin/dashboard?tab=${tab}`,
+      { scroll: false },
+    );
+  };
+
+  const handleGlobalSearch = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    const trimmedQuery = globalSearchQuery.trim();
+
+    if (!trimmedQuery) {
+      return;
+    }
+
+    const normalizedQuery = trimmedQuery.toLowerCase();
+    const matchesUser = adminUsers.some((user) =>
+      [user.id, user.name, user.email, user.role, user.status]
+        .join(" ")
+        .toLowerCase()
+        .includes(normalizedQuery),
+    );
+    const matchesVerification = verificationStores.some((store) =>
+      [store.id, store.storeName, store.category, store.owner, store.email]
+        .join(" ")
+        .toLowerCase()
+        .includes(normalizedQuery),
+    );
+    const matchesTransaction = recentTransactions.some((transaction) =>
+      [
+        transaction.id,
+        transaction.customer,
+        transaction.store,
+        transaction.status,
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(normalizedQuery),
+    );
+    const matchesRefund = refundDisputes.some((dispute) =>
+      [dispute.orderId, dispute.customer, dispute.resto, dispute.reason]
+        .join(" ")
+        .toLowerCase()
+        .includes(normalizedQuery),
+    );
+
+    if (matchesUser) {
+      setUserSearchQuery(trimmedQuery);
+      handleChangeTab("users");
+      return;
+    }
+
+    if (matchesVerification) {
+      handleChangeTab("verification");
+      return;
+    }
+
+    if (matchesTransaction || matchesRefund) {
+      handleChangeTab("transactions");
+      return;
+    }
+
+    handleChangeTab("dashboard");
+  };
+
   const handleCloseBanModal = () => {
     setSelectedUserForBan(null);
     setBanReason("");
   };
 
-  const handleConfirmBan = () => {
+  const updateUserStatus = async (
+    userId: string,
+    status: "ACTIVE" | "SUSPENDED",
+  ) => {
+    const response = await fetch(`/api/admin/users/${userId}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ status }),
+    });
+    const data = (await response.json()) as {
+      ok: boolean;
+      message?: string;
+    };
+
+    if (!response.ok || !data.ok) {
+      throw new Error(data.message || "Status user gagal diperbarui.");
+    }
+  };
+
+  const handleConfirmBan = async () => {
     const trimmedReason = banReason.trim();
 
     if (!selectedUserForBan || !trimmedReason) {
       return;
     }
 
-    setAdminUsers((currentUsers) =>
-      currentUsers.map((user) =>
-        user.id === selectedUserForBan.id
-          ? {
-              ...user,
-              status: "banned",
-              banReason: trimmedReason,
-            }
-          : user,
-      ),
-    );
-    handleCloseBanModal();
+    try {
+      await updateUserStatus(selectedUserForBan.id, "SUSPENDED");
+      await loadDashboardData();
+      handleCloseBanModal();
+    } catch (error) {
+      setDashboardNotice(
+        error instanceof Error
+          ? error.message
+          : "Status user gagal diperbarui.",
+      );
+    }
   };
 
-  const handleRevokeBan = (userId: string) => {
-    setAdminUsers((currentUsers) =>
-      currentUsers.map((user) =>
-        user.id === userId
-          ? {
-              ...user,
-              status: "active",
-              banReason: undefined,
-            }
-          : user,
-      ),
-    );
+  const handleRevokeBan = async (userId: string) => {
+    try {
+      await updateUserStatus(userId, "ACTIVE");
+      await loadDashboardData();
+    } catch (error) {
+      setDashboardNotice(
+        error instanceof Error
+          ? error.message
+          : "Status user gagal diperbarui.",
+      );
+    }
+  };
+
+  const handleReviewApplication = async (
+    status: "APPROVED" | "REJECTED",
+  ) => {
+    if (!selectedStore) {
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/restaurant-applications", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          applicationId: selectedStore.id,
+          status,
+          adminNote:
+            status === "APPROVED"
+              ? "Ajuan disetujui oleh admin."
+              : "Ajuan ditolak oleh admin.",
+        }),
+      });
+      const data = (await response.json()) as {
+        ok: boolean;
+        message?: string;
+      };
+
+      if (!response.ok || !data.ok) {
+        throw new Error(data.message || "Review ajuan gagal disimpan.");
+      }
+
+      setSelectedStore(null);
+      await loadDashboardData();
+    } catch (error) {
+      setDashboardNotice(
+        error instanceof Error ? error.message : "Review ajuan gagal disimpan.",
+      );
+    }
   };
 
   useEffect(() => {
@@ -517,7 +551,7 @@ function AdminDashboardPage() {
                 <button
                   key={id}
                   type="button"
-                  onClick={() => setActiveTab(id)}
+                  onClick={() => handleChangeTab(id)}
                   className={`flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold transition-all ${
                     isActive
                       ? "bg-emerald-500/10 text-emerald-300 ring-1 ring-emerald-400/10"
@@ -548,17 +582,22 @@ function AdminDashboardPage() {
         <main className="flex min-h-screen min-w-0 flex-1 flex-col lg:ml-72">
           <header className="sticky top-0 z-20 border-b border-gray-100 bg-white/95 px-5 py-4 shadow-[0_4px_20px_rgba(0,0,0,0.03)] backdrop-blur md:px-8">
             <div className="flex items-center gap-4">
-              <div className="relative max-w-2xl flex-1">
+              <form
+                className="relative max-w-2xl flex-1"
+                onSubmit={handleGlobalSearch}
+              >
                 <Search
                   size={19}
                   className="absolute top-1/2 left-4 -translate-y-1/2 text-gray-400"
                 />
                 <input
                   type="text"
+                  value={globalSearchQuery}
+                  onChange={(event) => setGlobalSearchQuery(event.target.value)}
                   placeholder="Cari pengguna, restoran, transaksi..."
                   className="h-12 w-full rounded-2xl border border-gray-200 bg-gray-50 pr-4 pl-12 text-sm font-semibold text-gray-900 outline-none transition-all placeholder:text-gray-400 focus:border-emerald-300 focus:bg-white focus:ring-4 focus:ring-emerald-500/10"
                 />
-              </div>
+              </form>
               <Link
                 href="/admin/notifications"
                 className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-gray-200 bg-white text-gray-500 shadow-sm transition-colors hover:bg-gray-50"
@@ -591,6 +630,48 @@ function AdminDashboardPage() {
                 <div className="inline-flex w-fit items-center gap-2 rounded-full border border-emerald-100 bg-emerald-50 px-4 py-2 text-sm font-bold text-emerald-700">
                   <CheckCircle2 size={16} />
                   Sistem aktif
+                </div>
+              </div>
+
+              {dashboardNotice ? (
+                <div className="mb-6 rounded-[22px] border border-red-100 bg-red-50 px-5 py-4 text-sm font-bold text-red-700">
+                  {dashboardNotice}
+                </div>
+              ) : null}
+
+              {isLoadingDashboard ? (
+                <div className="mb-6 rounded-[24px] border border-gray-100 bg-white p-6 text-center shadow-[0_4px_20px_rgba(0,0,0,0.03)]">
+                  <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-emerald-100 border-t-emerald-500" />
+                  <p className="text-sm font-extrabold text-gray-950">
+                    Memuat data admin dari database
+                  </p>
+                </div>
+              ) : null}
+
+              <div className="mb-8 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                <div className="flex min-w-max gap-2 rounded-[24px] border border-gray-100 bg-white p-2 shadow-[0_4px_20px_rgba(0,0,0,0.03)]">
+                  {navItems.map(({ id, label, icon: Icon }) => {
+                    const isActive = activeTab === id;
+
+                    return (
+                      <button
+                        key={id}
+                        type="button"
+                        onClick={() => handleChangeTab(id)}
+                        className={`inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-extrabold transition-all ${
+                          isActive
+                            ? "bg-gray-950 text-white shadow-sm"
+                            : "text-gray-500 hover:bg-gray-50 hover:text-gray-950"
+                        }`}
+                      >
+                        <Icon
+                          size={18}
+                          className={isActive ? "text-emerald-300" : "text-gray-400"}
+                        />
+                        {label}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -1021,7 +1102,7 @@ function AdminDashboardPage() {
                           Grafik Penjualan
                         </h2>
                         <p className="mt-1 text-sm font-medium text-gray-500">
-                          Simulasi performa transaksi mingguan.
+                          Performa transaksi mingguan dari database.
                         </p>
                       </div>
                       <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-50">
@@ -1173,28 +1254,8 @@ function AdminDashboardPage() {
                 <h3 className="mb-5 text-sm font-extrabold text-gray-950">
                   Dokumen Lampiran
                 </h3>
-                <div className="space-y-3">
-                  {documentFiles.map((document) => (
-                    <div
-                      key={document.label}
-                      className="flex items-center gap-4 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm"
-                    >
-                      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-dashed border-emerald-200 bg-emerald-50">
-                        <FileCheck2 size={21} className="text-emerald-500" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-extrabold text-gray-900">
-                          {document.label}
-                        </p>
-                        <p className="truncate text-xs font-semibold text-gray-500">
-                          {document.name}
-                        </p>
-                      </div>
-                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-50">
-                        <Check size={18} className="text-emerald-500" />
-                      </div>
-                    </div>
-                  ))}
+                <div className="rounded-2xl border border-dashed border-gray-200 bg-white p-5 text-sm font-semibold text-gray-500">
+                  Belum ada dokumen terunggah untuk ajuan ini.
                 </div>
               </section>
             </div>
@@ -1202,6 +1263,7 @@ function AdminDashboardPage() {
             <div className="flex flex-col gap-3 border-t border-gray-100 bg-white p-6 sm:flex-row sm:items-center sm:justify-between">
               <button
                 type="button"
+                onClick={() => void handleReviewApplication("REJECTED")}
                 className="inline-flex items-center justify-center gap-2 rounded-2xl bg-red-50 px-5 py-3 text-sm font-extrabold text-red-600 transition-colors hover:bg-red-500 hover:text-white"
               >
                 <XCircle size={18} />
@@ -1209,6 +1271,7 @@ function AdminDashboardPage() {
               </button>
               <button
                 type="button"
+                onClick={() => void handleReviewApplication("APPROVED")}
                 className="inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-5 py-3 text-sm font-extrabold text-white shadow-[0_8px_20px_rgba(16,185,129,0.25)] transition-colors hover:bg-emerald-600"
               >
                 <CheckCircle2 size={18} />

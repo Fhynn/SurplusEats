@@ -21,11 +21,22 @@ import {
   X,
 } from "lucide-react";
 import { useParams } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 type OwnerOrderStatus = "new" | "preparing" | "ready" | "completed" | "rejected";
 type FlowOrderStatus = Exclude<OwnerOrderStatus, "rejected">;
 type ActiveModal = "chat" | "reject" | null;
+
+type ApiOrderStatus =
+  | "PENDING"
+  | "PAYMENT_FAILED"
+  | "PAID"
+  | "CONFIRMED"
+  | "PREPARING"
+  | "READY"
+  | "COMPLETED"
+  | "CANCELLED"
+  | "REFUNDED";
 
 type ChatMessage = {
   id: number;
@@ -34,59 +45,52 @@ type ChatMessage = {
   time: string;
 };
 
-const orders = [
-  {
-    id: "SFM-99A2X",
-    customer: "Alfhin Pratama",
-    phone: "0812-3456-7890",
-    pickupName: "Alfhin",
-    pickupCode: "7721",
-    status: "new",
-    time: "18:30",
-    pickupWindow: "19:00 - 20:00 WIB",
-    address: "Pickup di kasir Bakehouse Bakery, Jl. Sudirman No. 45",
-    items: [
-      { name: "Roti Sourdough", qty: 1, price: 15000 },
-      { name: "Croissant Butter", qty: 2, price: 15000 },
-    ],
-    note: "Tolong pisahkan roti manis dan asin.",
-    payment: "GoPay",
-  },
-  {
-    id: "SFM-88B1Y",
-    customer: "Budi Santoso",
-    phone: "0821-8877-2211",
-    pickupName: "Budi",
-    pickupCode: "2190",
-    status: "new",
-    time: "18:18",
-    pickupWindow: "20:00 - 21:00 WIB",
-    address: "Pickup di kasir Bakehouse Bakery, Jl. Sudirman No. 45",
-    items: [
-      { name: "Nasi Ayam Bakar", qty: 2, price: 12000 },
-      { name: "Es Teh", qty: 1, price: 0 },
-    ],
-    note: undefined,
-    payment: "QRIS",
-  },
-  {
-    id: "SFM-77C0Z",
-    customer: "Siti Aminah",
-    phone: "0852-4410-7721",
-    pickupName: "Siti",
-    pickupCode: "7721",
-    status: "preparing",
-    time: "18:02",
-    pickupWindow: "19:30 - 20:30 WIB",
-    address: "Pickup di kasir Bakehouse Bakery, Jl. Sudirman No. 45",
-    items: [
-      { name: "Assorted Sushi", qty: 1, price: 35000 },
-      { name: "Miso Soup", qty: 1, price: 0 },
-    ],
-    note: "Pickup atas nama Siti, nomor belakang 7721.",
-    payment: "GoPay",
-  },
-] as const;
+type ApiOwnerOrderDetail = {
+  orderCode: string;
+  status: ApiOrderStatus;
+  paymentStatus: string;
+  createdAt: string;
+  pickupCode: string | null;
+  pickupTime: string | null;
+  note: string | null;
+  serviceFee: number;
+  total: number;
+  customer: {
+    name: string;
+    phone: string | null;
+  };
+  restaurant: {
+    name: string;
+    address: string;
+    pickupStart: string | null;
+    pickupEnd: string | null;
+  };
+  items: {
+    menuNameSnapshot: string;
+    quantity: number;
+    priceSnapshot: number;
+  }[];
+};
+
+type OwnerOrderDetail = {
+  id: string;
+  customer: string;
+  phone: string;
+  pickupCode: string;
+  status: OwnerOrderStatus;
+  time: string;
+  pickupWindow: string;
+  address: string;
+  items: {
+    name: string;
+    qty: number;
+    price: number;
+  }[];
+  note?: string;
+  payment: string;
+  serviceFee: number;
+  total: number;
+};
 
 const formatRp = (amount: number) =>
   new Intl.NumberFormat("id-ID", {
@@ -94,6 +98,65 @@ const formatRp = (amount: number) =>
     currency: "IDR",
     maximumFractionDigits: 0,
   }).format(amount);
+
+function formatOrderTime(value: string) {
+  return new Intl.DateTimeFormat("id-ID", {
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
+function mapApiStatusToOwner(status: ApiOrderStatus): OwnerOrderStatus {
+  switch (status) {
+    case "PREPARING":
+      return "preparing";
+    case "READY":
+      return "ready";
+    case "COMPLETED":
+      return "completed";
+    case "CANCELLED":
+    case "REFUNDED":
+      return "rejected";
+    default:
+      return "new";
+  }
+}
+
+const apiStatusByOwnerStatus: Record<FlowOrderStatus, ApiOrderStatus> = {
+  new: "CONFIRMED",
+  preparing: "PREPARING",
+  ready: "READY",
+  completed: "COMPLETED",
+};
+
+function mapApiOrderDetail(order: ApiOwnerOrderDetail): OwnerOrderDetail {
+  const pickupWindow =
+    order.pickupTime
+      ? formatOrderTime(order.pickupTime)
+      : order.restaurant.pickupStart && order.restaurant.pickupEnd
+        ? `${order.restaurant.pickupStart} - ${order.restaurant.pickupEnd} WIB`
+        : "Belum diatur";
+
+  return {
+    id: order.orderCode,
+    customer: order.customer.name,
+    phone: order.customer.phone ?? "-",
+    pickupCode: order.pickupCode ?? "-",
+    status: mapApiStatusToOwner(order.status),
+    time: formatOrderTime(order.createdAt),
+    pickupWindow,
+    address: `Pickup di ${order.restaurant.name}, ${order.restaurant.address}`,
+    items: order.items.map((item) => ({
+      name: item.menuNameSnapshot,
+      qty: item.quantity,
+      price: item.priceSnapshot,
+    })),
+    note: order.note ?? undefined,
+    payment: order.paymentStatus,
+    serviceFee: order.serviceFee,
+    total: order.total,
+  };
+}
 
 const statusMeta = {
   new: {
@@ -128,25 +191,21 @@ const timeline = [
     status: "new",
     title: "Pesanan Masuk",
     description: "Customer sudah membayar dan menunggu konfirmasi toko.",
-    time: "18:30",
   },
   {
     status: "preparing",
     title: "Sedang Disiapkan",
     description: "Tim toko menyiapkan dan mengemas pesanan.",
-    time: "19:05",
   },
   {
     status: "ready",
     title: "Siap Diambil",
     description: "Customer bisa mengambil pesanan dengan QR pickup.",
-    time: "19:30",
   },
   {
     status: "completed",
     title: "Pickup Selesai",
     description: "QR sudah diverifikasi dan order selesai.",
-    time: "20:00",
   },
 ] as const;
 
@@ -161,38 +220,139 @@ const rejectReasons = [
 
 export default function OwnerOrderDetailPage() {
   const params = useParams<{ id: string }>();
-  const order = useMemo(() => {
-    return orders.find((item) => item.id === params.id) ?? orders[0];
-  }, [params.id]);
-  const [status, setStatus] = useState<OwnerOrderStatus>(
-    order.status as OwnerOrderStatus,
-  );
+  const [order, setOrder] = useState<OwnerOrderDetail | null>(null);
+  const [status, setStatus] = useState<OwnerOrderStatus>("new");
+  const [isLoadingOrder, setIsLoadingOrder] = useState(true);
+  const [orderNotice, setOrderNotice] = useState<string | null>(null);
   const [adminNote, setAdminNote] = useState("");
   const [activeModal, setActiveModal] = useState<ActiveModal>(null);
   const [chatDraft, setChatDraft] = useState("");
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
-    {
-      id: 1,
-      sender: "system",
-      text: `Order ${order.id} dibuat dan customer menunggu update dari toko.`,
-      time: order.time,
-    },
-    {
-      id: 2,
-      sender: "customer",
-      text: order.note ?? "Halo, apakah pesanan saya sudah bisa diambil sesuai jadwal?",
-      time: "Baru saja",
-    },
-  ]);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [rejectReason, setRejectReason] = useState("");
   const [rejectNote, setRejectNote] = useState("");
 
-  const total = order.items.reduce((sum, item) => sum + item.qty * item.price, 0);
+  const loadOrder = useCallback(async () => {
+    setIsLoadingOrder(true);
+
+    try {
+      const response = await fetch(`/api/orders/${params.id}`, {
+        cache: "no-store",
+      });
+      const data = (await response.json()) as {
+        ok: boolean;
+        message?: string;
+        order?: ApiOwnerOrderDetail;
+      };
+
+      if (!response.ok || !data.ok || !data.order) {
+        throw new Error(data.message || "Order tidak ditemukan.");
+      }
+
+      const nextOrder = mapApiOrderDetail(data.order);
+      setOrder(nextOrder);
+      setStatus(nextOrder.status);
+      setOrderNotice(null);
+    } catch (error) {
+      setOrder(null);
+      setOrderNotice(
+        error instanceof Error ? error.message : "Order tidak ditemukan.",
+      );
+    } finally {
+      setIsLoadingOrder(false);
+    }
+  }, [params.id]);
+
+  useEffect(() => {
+    void loadOrder();
+  }, [loadOrder]);
+
+  useEffect(() => {
+    if (!order) {
+      return;
+    }
+
+    setChatMessages([
+      {
+        id: 1,
+        sender: "system",
+        text: `Order ${order.id} dibuat dan customer menunggu update dari toko.`,
+        time: order.time,
+      },
+      {
+        id: 2,
+        sender: "customer",
+        text:
+          order.note ??
+          "Halo, apakah pesanan saya sudah bisa diambil sesuai jadwal?",
+        time: "Baru saja",
+      },
+    ]);
+  }, [order]);
+
+  if (isLoadingOrder) {
+    return (
+      <div className="mx-auto max-w-6xl rounded-[32px] border border-gray-100 bg-white p-10 text-center shadow-sm">
+        <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-4 border-emerald-100 border-t-emerald-500" />
+        <h1 className="text-xl font-extrabold text-gray-950">
+          Memuat detail pesanan
+        </h1>
+        <p className="mt-2 text-sm font-medium text-gray-500">
+          Data diambil dari database order restoran.
+        </p>
+      </div>
+    );
+  }
+
+  if (!order) {
+    return (
+      <div className="mx-auto max-w-6xl rounded-[32px] border border-red-100 bg-red-50 p-10 text-center shadow-sm">
+        <h1 className="text-xl font-extrabold text-red-700">
+          Order tidak ditemukan
+        </h1>
+        <p className="mt-2 text-sm font-bold text-red-600">
+          {orderNotice ?? "ID order tidak tersedia untuk owner yang sedang login."}
+        </p>
+        <Link
+          href="/owner/dashboard?tab=orders"
+          className="mt-6 inline-flex rounded-2xl bg-red-600 px-5 py-3 text-sm font-extrabold text-white"
+        >
+          Kembali ke daftar pesanan
+        </Link>
+      </div>
+    );
+  }
+
+  const total = order.total;
   const currentStatusIndex =
     status === "rejected" ? -1 : statusOrder.indexOf(status);
   const StatusIcon = statusMeta[status].icon;
 
-  const advanceStatus = () => {
+  const updateOrderStatus = async (nextStatus: ApiOrderStatus) => {
+    setOrderNotice(null);
+
+    const response = await fetch(`/api/orders/${order.id}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ status: nextStatus }),
+    });
+    const data = (await response.json()) as {
+      ok: boolean;
+      message?: string;
+      order?: ApiOwnerOrderDetail;
+    };
+
+    if (!response.ok || !data.ok || !data.order) {
+      throw new Error(data.message || "Status order gagal diperbarui.");
+    }
+
+    const nextOrder = mapApiOrderDetail(data.order);
+    setOrder(nextOrder);
+    setStatus(nextOrder.status);
+  };
+
+  const advanceStatus = async () => {
     if (status === "rejected") {
       return;
     }
@@ -200,7 +360,15 @@ export default function OwnerOrderDetailPage() {
     const nextStatus = statusOrder[currentStatusIndex + 1];
 
     if (nextStatus) {
-      setStatus(nextStatus);
+      try {
+        await updateOrderStatus(apiStatusByOwnerStatus[nextStatus]);
+      } catch (error) {
+        setOrderNotice(
+          error instanceof Error
+            ? error.message
+            : "Status order gagal diperbarui.",
+        );
+      }
     }
   };
 
@@ -222,25 +390,31 @@ export default function OwnerOrderDetailPage() {
       {
         id: currentMessages.length + 2,
         sender: "system",
-        text: "Pesan owner tercatat di prototype UI.",
+        text: "Pesan owner tercatat di tampilan percakapan saat ini.",
         time: "Sekarang",
       },
     ]);
     setChatDraft("");
   };
 
-  const handleRejectOrder = () => {
+  const handleRejectOrder = async () => {
     if (!rejectReason) {
       return;
     }
 
-    setStatus("rejected");
-    setAdminNote(
-      `Order ditolak: ${rejectReason}${rejectNote.trim() ? ` - ${rejectNote.trim()}` : ""}`,
-    );
-    setActiveModal(null);
-    setRejectReason("");
-    setRejectNote("");
+    try {
+      await updateOrderStatus("CANCELLED");
+      setAdminNote(
+        `Order ditolak: ${rejectReason}${rejectNote.trim() ? ` - ${rejectNote.trim()}` : ""}`,
+      );
+      setActiveModal(null);
+      setRejectReason("");
+      setRejectNote("");
+    } catch (error) {
+      setOrderNotice(
+        error instanceof Error ? error.message : "Order gagal ditolak.",
+      );
+    }
   };
 
   return (
@@ -274,6 +448,12 @@ export default function OwnerOrderDetailPage() {
           {statusMeta[status].label}
         </span>
       </header>
+
+      {orderNotice ? (
+        <div className="rounded-[22px] border border-red-100 bg-red-50 px-5 py-4 text-sm font-bold text-red-700">
+          {orderNotice}
+        </div>
+      ) : null}
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1fr_360px]">
         <main className="space-y-6">
@@ -420,11 +600,13 @@ export default function OwnerOrderDetailPage() {
               </div>
               <div className="flex justify-between text-sm font-bold">
                 <span className="text-gray-400">Masuk Saldo</span>
-                <span className="text-emerald-300">{formatRp(total - 2000)}</span>
+                <span className="text-emerald-300">
+                  {formatRp(total - order.serviceFee)}
+                </span>
               </div>
               <div className="flex justify-between text-sm font-bold">
                 <span className="text-gray-400">Fee Platform</span>
-                <span>{formatRp(2000)}</span>
+                <span>{formatRp(order.serviceFee)}</span>
               </div>
             </div>
           </section>
@@ -455,7 +637,11 @@ export default function OwnerOrderDetailPage() {
                           {step.title}
                         </h3>
                         <span className="text-[10px] font-bold text-gray-400">
-                          {step.time}
+                          {step.status === "new"
+                            ? order.time
+                            : isDone
+                              ? "Tercatat"
+                              : "Menunggu"}
                         </span>
                       </div>
                       <p className="text-xs leading-5 font-medium text-gray-500">

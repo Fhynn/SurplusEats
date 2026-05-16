@@ -1,0 +1,466 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  CUSTOMER
+  OWNER
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  DELETED
+}
+
+enum ApplicationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum RestaurantStatus {
+  DRAFT
+  PENDING
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+
+enum MenuItemStatus {
+  ACTIVE
+  HIDDEN
+  SOLD_OUT
+}
+
+enum OrderStatus {
+  PENDING
+  PAYMENT_FAILED
+  PAID
+  CONFIRMED
+  PREPARING
+  READY
+  COMPLETED
+  CANCELLED
+  REFUNDED
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+enum RefundStatus {
+  PENDING
+  REVIEWING
+  APPROVED
+  REJECTED
+  PAID
+}
+
+enum RefundMethod {
+  GOPAY
+  BANK_TRANSFER
+}
+
+enum NotificationType {
+  ORDER
+  PROMO
+  REFUND
+  SYSTEM
+}
+
+enum AssetVisibility {
+  PUBLIC
+  PRIVATE
+}
+
+enum WalletTransactionType {
+  PAYOUT
+  ORDER_INCOME
+  REFUND_DEDUCTION
+  ADJUSTMENT
+}
+
+enum WalletTransactionStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
+
+model User {
+  id            String     @id @default(cuid())
+  authUserId    String?    @unique
+  email         String     @unique
+  passwordHash  String?
+  name          String
+  phone         String?
+  avatarUrl     String?
+  role          UserRole   @default(CUSTOMER)
+  status        UserStatus @default(ACTIVE)
+  emailVerified DateTime?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  addresses        Address[]
+  applications     RestaurantApplication[]
+  cartItems        CartItem[]
+  notifications    Notification[]
+  orders           Order[]                 @relation("CustomerOrders")
+  ownedRestaurants Restaurant[]            @relation("RestaurantOwner")
+  refunds          RefundRequest[]         @relation("CustomerRefunds")
+  reviews          Review[]
+  uploadedAssets   Asset[]                 @relation("AssetUploader")
+  adminLogs        AdminActionLog[]        @relation("AdminActionActor")
+
+  @@index([role])
+  @@index([status])
+}
+
+model Address {
+  id          String   @id @default(cuid())
+  userId      String
+  label       String
+  recipient   String
+  phone       String
+  addressLine String
+  city        String
+  notes       String?
+  isPrimary   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model RestaurantApplication {
+  id            String            @id @default(cuid())
+  userId        String?
+  applicantName String
+  email         String
+  phone         String
+  businessName  String
+  businessType  String
+  address       String
+  city          String
+  description   String?
+  status        ApplicationStatus @default(PENDING)
+  adminNote     String?
+  submittedAt   DateTime          @default(now())
+  reviewedAt    DateTime?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  documents  VerificationDocument[]
+  restaurant Restaurant?
+  user       User?                  @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([email])
+  @@index([userId])
+}
+
+model Restaurant {
+  id            String           @id @default(cuid())
+  ownerId       String
+  applicationId String?          @unique
+  name          String
+  slug          String           @unique
+  description   String?
+  address       String
+  city          String
+  phone         String?
+  imageUrl      String?
+  bannerUrl     String?
+  rating        Float            @default(0)
+  reviewCount   Int              @default(0)
+  status        RestaurantStatus @default(PENDING)
+  pickupStart   String?
+  pickupEnd     String?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  application           RestaurantApplication? @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+  menuItems             MenuItem[]
+  orders                Order[]
+  owner                 User                   @relation("RestaurantOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  reviews               Review[]
+  verificationDocuments VerificationDocument[]
+  walletTransactions    WalletTransaction[]
+
+  @@index([ownerId])
+  @@index([status])
+  @@index([city])
+}
+
+model MenuItem {
+  id              String         @id @default(cuid())
+  restaurantId    String
+  name            String
+  slug            String
+  description     String
+  category        String
+  imageUrl        String?
+  originalPrice   Int
+  discountedPrice Int
+  stock           Int            @default(0)
+  soldCount       Int            @default(0)
+  pickupStart     String?
+  pickupEnd       String?
+  expiresAt       DateTime?
+  status          MenuItemStatus @default(ACTIVE)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  cartItems  CartItem[]
+  orderItems OrderItem[]
+  restaurant Restaurant  @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  @@unique([restaurantId, slug])
+  @@index([restaurantId, status])
+  @@index([category])
+}
+
+model CartItem {
+  id         String   @id @default(cuid())
+  userId     String
+  menuItemId String
+  quantity   Int      @default(1)
+  note       String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  menuItem MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, menuItemId])
+  @@index([userId])
+}
+
+model Order {
+  id            String        @id @default(cuid())
+  orderCode     String        @unique
+  customerId    String
+  restaurantId  String
+  status        OrderStatus   @default(PENDING)
+  paymentStatus PaymentStatus @default(PENDING)
+  subtotal      Int
+  discount      Int           @default(0)
+  serviceFee    Int           @default(0)
+  total         Int
+  pickupCode    String?
+  pickupTime    DateTime?
+  note          String?
+  paidAt        DateTime?
+  completedAt   DateTime?
+  cancelledAt   DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  customer      User           @relation("CustomerOrders", fields: [customerId], references: [id], onDelete: Cascade)
+  items         OrderItem[]
+  refundRequest RefundRequest?
+  restaurant    Restaurant     @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
+  review        Review?
+
+  @@index([customerId, status])
+  @@index([restaurantId, status])
+  @@index([createdAt])
+}
+
+model OrderItem {
+  id                    String  @id @default(cuid())
+  orderId               String
+  menuItemId            String?
+  menuNameSnapshot      String
+  restaurantSnapshot    String
+  priceSnapshot         Int
+  originalPriceSnapshot Int
+  quantity              Int
+
+  menuItem MenuItem? @relation(fields: [menuItemId], references: [id], onDelete: SetNull)
+  order    Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([menuItemId])
+}
+
+model RefundRequest {
+  id          String       @id @default(cuid())
+  orderId     String       @unique
+  customerId  String
+  reason      String
+  description String
+  amount      Int
+  method      RefundMethod
+  status      RefundStatus @default(PENDING)
+  adminNote   String?
+  reviewedAt  DateTime?
+  paidAt      DateTime?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  customer User             @relation("CustomerRefunds", fields: [customerId], references: [id], onDelete: Cascade)
+  evidence RefundEvidence[]
+  order    Order            @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([customerId, status])
+  @@index([status])
+}
+
+model RefundEvidence {
+  id        String   @id @default(cuid())
+  refundId  String
+  assetId   String
+  createdAt DateTime @default(now())
+
+  asset  Asset         @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  refund RefundRequest @relation(fields: [refundId], references: [id], onDelete: Cascade)
+
+  @@unique([refundId, assetId])
+}
+
+model VerificationDocument {
+  id            String   @id @default(cuid())
+  applicationId String?
+  restaurantId  String?
+  assetId       String?
+  type          String
+  label         String
+  status        String   @default("pending")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  application RestaurantApplication? @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  asset       Asset?                 @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  restaurant  Restaurant?            @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId])
+  @@index([restaurantId])
+}
+
+model Asset {
+  id           String          @id @default(cuid())
+  uploadedById String?
+  url          String
+  pathname     String
+  contentType  String?
+  size         Int?
+  visibility   AssetVisibility @default(PUBLIC)
+  bucket       String          @default("vercel-blob")
+  entityType   String?
+  entityId     String?
+  createdAt    DateTime        @default(now())
+
+  refundEvidence        RefundEvidence[]
+  uploadedBy            User?                  @relation("AssetUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
+  verificationDocuments VerificationDocument[]
+
+  @@index([uploadedById])
+  @@index([entityType, entityId])
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  type      NotificationType
+  title     String
+  body      String
+  href      String?
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt])
+  @@index([type])
+}
+
+model Review {
+  id           String   @id @default(cuid())
+  orderId      String   @unique
+  restaurantId String
+  userId       String
+  rating       Int
+  comment      String?
+  createdAt    DateTime @default(now())
+
+  order      Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([restaurantId])
+  @@index([userId])
+}
+
+model Voucher {
+  id          String    @id @default(cuid())
+  code        String    @unique
+  title       String
+  description String?
+  discount    Int
+  minSpend    Int       @default(0)
+  quota       Int?
+  active      Boolean   @default(true)
+  startsAt    DateTime?
+  endsAt      DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  redemptions VoucherRedemption[]
+
+  @@index([active])
+}
+
+model VoucherRedemption {
+  id         String   @id @default(cuid())
+  voucherId  String
+  userId     String
+  orderId    String?
+  redeemedAt DateTime @default(now())
+
+  voucher Voucher @relation(fields: [voucherId], references: [id], onDelete: Cascade)
+
+  @@unique([voucherId, userId, orderId])
+  @@index([userId])
+}
+
+model WalletTransaction {
+  id           String                  @id @default(cuid())
+  restaurantId String
+  type         WalletTransactionType
+  status       WalletTransactionStatus @default(PENDING)
+  amount       Int
+  reference    String?
+  description  String?
+  createdAt    DateTime                @default(now())
+  updatedAt    DateTime                @updatedAt
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  @@index([restaurantId, status])
+}
+
+model AdminActionLog {
+  id         String   @id @default(cuid())
+  adminId    String?
+  action     String
+  targetType String
+  targetId   String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  admin User? @relation("AdminActionActor", fields: [adminId], references: [id], onDelete: SetNull)
+
+  @@index([adminId])
+  @@index([targetType, targetId])
+}

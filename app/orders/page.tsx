@@ -17,77 +17,15 @@ import {
   X,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { MobileDeviceFrame } from "@/components/mobile-device-frame";
-
-type OrderStatus = "ready" | "preparing" | "completed" | "cancelled";
-
-type CustomerOrder = {
-  id: string;
-  resto: string;
-  items: string;
-  total: number;
-  status: OrderStatus;
-  statusText: string;
-  time: string;
-  image: string;
-  foodId?: number;
-};
-
-const activeOrders: CustomerOrder[] = [
-  {
-    id: "SFM-99A2X",
-    resto: "Bakehouse Bakery",
-    items: "Paket Roti Artisan Sourdough (x1)",
-    total: 15000,
-    status: "ready",
-    statusText: "Siap Diambil",
-    time: "Hari ini, 19:30",
-    image:
-      "https://images.unsplash.com/photo-1509440159596-0249088772ff?q=80&w=600&auto=format&fit=crop",
-    foodId: 1,
-  },
-  {
-    id: "SFM-88B1Y",
-    resto: "Warteg Modern Bahari",
-    items: "Nasi Ayam Bakar (x2)",
-    total: 24000,
-    status: "preparing",
-    statusText: "Sedang Disiapkan",
-    time: "Hari ini, 20:00",
-    image:
-      "https://images.unsplash.com/photo-1598514982205-f36b96d1e8d4?q=80&w=600&auto=format&fit=crop",
-    foodId: 2,
-  },
-];
-
-const pastOrders: CustomerOrder[] = [
-  {
-    id: "SFM-77C0Z",
-    resto: "Sushi Yay!",
-    items: "Assorted Sushi Surplus (x1)",
-    total: 35000,
-    status: "completed",
-    statusText: "Selesai",
-    time: "Kemarin, 21:00",
-    image:
-      "https://images.unsplash.com/photo-1579871494447-9811cf80d66c?q=80&w=600&auto=format&fit=crop",
-    foodId: 3,
-  },
-  {
-    id: "SFM-66D9W",
-    resto: "Kopi Kenangan Mantan",
-    items: "Roti Coklat + Kopi Susu (x1)",
-    total: 20000,
-    status: "cancelled",
-    statusText: "Dibatalkan",
-    time: "18 Okt 2023, 18:00",
-    image:
-      "https://images.unsplash.com/photo-1565299507177-b0ac66763828?q=80&w=600&auto=format&fit=crop",
-    foodId: 2,
-  },
-];
+import {
+  apiOrderToCard,
+  type ApiOrder,
+  type CustomerOrderCard,
+  type UiOrderStatus,
+} from "@/lib/order-mapper";
 
 const formatRp = (amount: number) =>
   new Intl.NumberFormat("id-ID", {
@@ -96,7 +34,7 @@ const formatRp = (amount: number) =>
     maximumFractionDigits: 0,
   }).format(amount);
 
-const statusClassNameByStatus: Record<OrderStatus, string> = {
+const statusClassNameByStatus: Record<UiOrderStatus, string> = {
   ready: "bg-emerald-50 text-emerald-600",
   preparing: "bg-blue-50 text-blue-600",
   completed: "bg-gray-100 text-gray-600",
@@ -107,9 +45,25 @@ export default function CustomerOrdersPage() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<"aktif" | "selesai">("aktif");
   const [query, setQuery] = useState("");
-  const [reviewOrder, setReviewOrder] = useState<CustomerOrder | null>(null);
+  const [reviewOrder, setReviewOrder] = useState<CustomerOrderCard | null>(null);
   const [rating, setRating] = useState(0);
   const [reviewComment, setReviewComment] = useState("");
+  const [allOrders, setAllOrders] = useState<CustomerOrderCard[]>([]);
+  const [isLoadingOrders, setIsLoadingOrders] = useState(true);
+  const activeOrders = useMemo(
+    () =>
+      allOrders.filter(
+        (order) => order.status === "ready" || order.status === "preparing",
+      ),
+    [allOrders],
+  );
+  const pastOrders = useMemo(
+    () =>
+      allOrders.filter(
+        (order) => order.status === "completed" || order.status === "cancelled",
+      ),
+    [allOrders],
+  );
   const orders = activeTab === "aktif" ? activeOrders : pastOrders;
   const normalizedQuery = query.trim().toLowerCase();
   const visibleOrders = orders.filter((order) => {
@@ -127,7 +81,41 @@ export default function CustomerOrdersPage() {
     (order) => order.status === "preparing",
   ).length;
 
-  const handleOpenOrder = (order: CustomerOrder) => {
+  useEffect(() => {
+    let ignore = false;
+
+    async function loadOrders() {
+      setIsLoadingOrders(true);
+
+      try {
+        const response = await fetch("/api/orders", { cache: "no-store" });
+        const result = (await response.json()) as {
+          ok: boolean;
+          orders?: ApiOrder[];
+        };
+
+        if (!ignore) {
+          setAllOrders(result.orders?.map(apiOrderToCard) ?? []);
+        }
+      } catch {
+        if (!ignore) {
+          setAllOrders([]);
+        }
+      } finally {
+        if (!ignore) {
+          setIsLoadingOrders(false);
+        }
+      }
+    }
+
+    loadOrders();
+
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
+  const handleOpenOrder = (order: CustomerOrderCard) => {
     if (order.status === "ready" || order.status === "preparing") {
       router.push(`/orders/${order.id}`);
     }
@@ -272,6 +260,17 @@ export default function CustomerOrdersPage() {
               </div>
             </section>
           )}
+
+          {isLoadingOrders ? (
+            <div className="rounded-[28px] border border-gray-100 bg-white p-8 text-center shadow-sm">
+              <h2 className="text-base font-extrabold text-gray-950">
+                Memuat pesanan database...
+              </h2>
+              <p className="mt-2 text-sm leading-6 font-medium text-gray-500">
+                Riwayat akan muncul sesuai session akun yang sedang login.
+              </p>
+            </div>
+          ) : null}
 
           {visibleOrders.map((order) => {
             const isTrackable =
@@ -425,7 +424,7 @@ export default function CustomerOrdersPage() {
             );
           })}
 
-          {visibleOrders.length === 0 ? (
+          {!isLoadingOrders && visibleOrders.length === 0 ? (
             <div className="rounded-[28px] border border-dashed border-gray-200 bg-white p-8 text-center">
               <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-gray-50 text-gray-400">
                 <Search size={24} />

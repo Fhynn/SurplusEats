@@ -25,8 +25,8 @@ Public deployment / Deployment publik:
 
 **https://surplus-eats.vercel.app/**
 
-> This website is still a frontend prototype and is currently in development.  
-> Website ini masih prototype frontend dan masih dalam tahap pengerjaan.
+> This website is still in development. Backend integration has started, but several screens still use mock/local state while the API wiring is completed.  
+> Website ini masih dalam tahap pengerjaan. Integrasi backend sudah dimulai, tetapi beberapa layar masih memakai mock/state lokal sambil proses penyambungan API diselesaikan.
 
 | Page / Halaman | Public URL |
 | --- | --- |
@@ -65,6 +65,10 @@ Public deployment / Deployment publik:
 | Owner Verification | https://surplus-eats.vercel.app/owner/verify |
 | Owner Banned Page | https://surplus-eats.vercel.app/owner/banned |
 | Admin Dashboard | https://surplus-eats.vercel.app/admin/dashboard |
+| Admin Users Tab | https://surplus-eats.vercel.app/admin/dashboard?tab=users |
+| Admin Verification Tab | https://surplus-eats.vercel.app/admin/dashboard?tab=verification |
+| Admin Transactions Tab | https://surplus-eats.vercel.app/admin/dashboard?tab=transactions |
+| Admin Analytics Tab | https://surplus-eats.vercel.app/admin/dashboard?tab=analytics |
 | Admin Notifications | https://surplus-eats.vercel.app/admin/notifications |
 | Admin User Detail | https://surplus-eats.vercel.app/admin/users/USR-10481 |
 | Admin Verification Detail | https://surplus-eats.vercel.app/admin/verifications/UMKM-24081 |
@@ -124,7 +128,7 @@ Screenshot files are stored in [`public/screenshots`](public/screenshots).
 
 SurplusEats adalah prototype aplikasi web untuk membantu pelanggan membeli makanan surplus dari restoran atau UMKM dengan harga lebih hemat. Di sisi lain, owner restoran dapat mengelola menu surplus, pesanan, stok, dan pengaturan toko. Admin dapat mengelola pengguna, verifikasi restoran, transaksi, refund, dan laporan analitik.
 
-Project ini masih berada pada tahap frontend prototype. Banyak data masih memakai mock data dan state lokal. Backend, database, autentikasi produksi, dan payment gateway belum diimplementasikan.
+Project ini masih berada pada tahap pengerjaan. Fondasi backend sudah dimulai dengan Neon PostgreSQL, Prisma, Vercel Blob, seed data, API awal, session login, password hash, dan route guard berbasis role. Sebagian layar masih memakai mock data dan state lokal sampai proses penyambungan API selesai. Integrasi penuh Neon Auth SDK dan payment gateway masih dalam tahap berikutnya.
 
 ### Status Development
 
@@ -132,20 +136,18 @@ Project ini **masih dalam tahap pengerjaan**.
 
 Yang belum final:
 
-- Belum memakai database PostgreSQL.
-- Belum ada backend API.
-- Belum ada autentikasi produksi.
+- Sebagian layar belum tersambung ke API database.
+- Session login/register sudah aktif, tetapi integrasi penuh Neon Auth SDK belum final.
 - Belum ada payment gateway asli.
-- Belum ada upload file produksi.
-- Belum ada role-based access control yang sebenarnya.
-- Data masih menggunakan mock data.
-- State sebagian besar masih berada di komponen React.
+- Role guard dasar sudah aktif untuk customer, owner, dan admin; permission API detail masih perlu diperdalam.
+- Sebagian data masih menggunakan mock data.
+- Sebagian state masih berada di komponen React.
 
 ### Fitur Utama
 
 #### Customer App
 
-- Login customer dengan akun demo, remember me, lupa password, link daftar mitra, dan register interaktif dengan preferensi makanan, validasi password, serta persetujuan layanan.
+- Login customer dengan validasi backend, session cookie, akun demo nyata, remember me, lupa password, link daftar mitra, dan register interaktif dengan preferensi makanan, validasi password, serta persetujuan layanan.
 - Reset password customer dengan step indicator, OTP, countdown kirim ulang, validasi password, konfirmasi password, dan success state.
 - Home makanan surplus dengan search ke browser, impact card, quick actions, kategori, flash rescue list, diskon, stok, dan quick add to cart.
 - Browse / pencarian makanan dengan query aktif, kategori, sorting, filter modal, statistik hasil, empty state, dan quick add to cart.
@@ -154,7 +156,8 @@ Yang belum final:
 - Checkout dengan lokasi pickup, waktu pickup, item pesanan, catatan restoran, voucher, metode pembayaran, ringkasan harga, persetujuan pickup, dan simulasi payment failed.
 - Payment success dengan receipt, QR pickup, timeline status, download/share simulasi, tracking, dan payment failed flow dengan retry metode pembayaran serta bantuan support.
 - Riwayat pesanan customer dengan tab aktif/selesai, search, ringkasan pickup hari ini, card status, ulasan, refund, dan pesan lagi.
-- Tracking pesanan dengan map, QR pickup, timeline status, lokasi, dan chat restoran.
+- Tracking pesanan dengan map, status ready/preparing, QR pickup aktif, progress bar, detail pickup, lokasi, chat restoran, receipt, dan flow pembatalan.
+- Pengajuan refund dengan ringkasan nominal, progress kelengkapan, alasan, preview bukti, checklist bukti, detail masalah, metode pengembalian, timeline review, dan success summary.
 - Riwayat pesanan legacy dengan pencarian, ulasan, refund, dan pesan lagi.
 - Modal ulasan restoran dengan star rating.
 - Profile customer sebagai hub akun dengan statistik food rescue, keamanan akun, voucher, riwayat, alamat, bantuan, support, dan logout confirmation.
@@ -167,9 +170,9 @@ Yang belum final:
 
 #### Owner Dashboard
 
-- Dashboard owner desktop.
-- Kanban manajemen pesanan.
-- Kelola menu surplus.
+- Dashboard owner desktop dengan KPI, tabel pesanan terbaru, aksi status order, dan shortcut tambah makanan.
+- Kanban manajemen pesanan dengan ringkasan status, search order/customer/menu dari top bar dan query URL, aksi terima/tolak, tandai siap, dan konfirmasi pickup.
+- Kelola menu surplus dengan search, filter kategori/stok, ringkasan aktif/sold out/diskon, modal tambah/edit/hapus makanan, preview gambar, dan deep link tambah makanan dari dashboard.
 - Tambah makanan.
 - Edit makanan dengan data pre-filled.
 - Hapus makanan dengan modal konfirmasi.
@@ -183,9 +186,9 @@ Yang belum final:
 
 #### Admin Dashboard
 
-- Sidebar admin dark mode.
+- Sidebar/shell admin dark mode yang konsisten di semua route admin.
 - Statistik operasional.
-- Notifikasi prioritas admin.
+- Notifikasi prioritas admin dengan search, filter kategori/prioritas, bulk mark read, panel detail alert, dan action link.
 - Kelola pengguna.
 - Detail akun pengguna untuk audit admin.
 - Ban / suspend user.
@@ -197,6 +200,14 @@ Yang belum final:
 - Laporan analitik.
 - Pengaturan admin, keamanan, notifikasi operasional, dan role akses.
 
+#### Backend Foundation
+
+- Database Neon PostgreSQL dengan Prisma schema untuk user, owner/restoran, pendaftaran mitra, menu, cart, order, refund, asset upload, voucher, notification, wallet, review, dan audit log.
+- Seed data demo untuk admin, owner, customer, password hash, restoran Bakehouse Bakery, menu surplus, order, voucher, wallet transaction, dan notification.
+- API awal untuk auth login/register/logout/me, health check, restoran, menu item, pendaftaran/review mitra, checkout order, refund request, dan upload file ke Vercel Blob.
+- Proxy route guard untuk mencegah akses langsung tanpa login ke route customer, owner, dan admin.
+- Vercel Blob disiapkan untuk asset public seperti foto produk/restoran dan dapat diperluas untuk file private.
+
 ### Tech Stack
 
 - Next.js 16
@@ -204,6 +215,10 @@ Yang belum final:
 - TypeScript
 - Tailwind CSS 4
 - lucide-react
+- Prisma 7
+- Neon PostgreSQL
+- Vercel Blob
+- Zod
 
 ### Cara Menjalankan
 
@@ -233,16 +248,49 @@ http://localhost:3000
 | `npm run build` | Membuat production build |
 | `npm run start` | Menjalankan production server |
 | `npm run lint` | Menjalankan ESLint |
+| `npm run db:generate` | Generate Prisma Client |
+| `npm run db:push` | Push schema Prisma ke database |
+| `npm run db:seed` | Isi data demo awal |
+| `npm run db:studio` | Membuka Prisma Studio |
+
+### Environment Backend
+
+Jangan commit secret asli. Simpan credential lokal di `.env.local` atau di Environment Variables Vercel.
+
+```env
+DATABASE_URL="postgresql://..."
+DIRECT_URL="postgresql://..."
+BLOB_READ_WRITE_TOKEN="vercel_blob_rw_..."
+NEON_AUTH_BASE_URL=""
+NEON_AUTH_COOKIE_SECRET=""
+```
+
+### API Awal
+
+| Route | Fungsi |
+| --- | --- |
+| `/api/health` | Cek koneksi database, Blob, Neon Auth env, dan count data utama |
+| `/api/auth/login` | Login dengan email/password dan set session cookie |
+| `/api/auth/register` | Register customer dan set session cookie |
+| `/api/auth/register-owner` | Register mitra/owner pending review dan set session cookie |
+| `/api/auth/logout` | Logout dan hapus session cookie |
+| `/api/auth/me` | Ambil user dari session aktif |
+| `/api/restaurants` | Ambil restoran approved beserta menu aktif |
+| `/api/menu-items` | Ambil dan tambah menu owner |
+| `/api/restaurant-applications` | Daftar mitra dan review approve/reject admin |
+| `/api/orders` | Ambil order dan membuat checkout order |
+| `/api/refunds` | Ambil dan membuat pengajuan refund |
+| `/api/uploads` | Upload file ke Vercel Blob dan simpan asset ke database |
 
 ### Route Customer
 
 | Route | Deskripsi |
 | --- | --- |
-| `/` | Login customer dengan akun demo, remember me, lupa password, dan link daftar mitra |
+| `/` | Login dengan validasi backend, session cookie, akun demo nyata, remember me, lupa password, dan link daftar mitra |
 | `/forgot-password` | Reset password customer dengan OTP, countdown kirim ulang, validasi password, dan success state |
 | `/register` | Register customer interaktif dengan preferensi makanan dan validasi password |
 | `/home` | Home customer dengan search ke browser, impact card, quick actions, kategori, flash rescue, dan quick add |
-| `/notifications` | Notifikasi customer |
+| `/notifications` | Notifikasi customer dengan filter kategori/status, count belum dibaca, mark read, hapus item, action link, dan empty state |
 | `/browse` | Browse makanan dengan UI seirama home, query aktif, kategori, sorting, filter modal, empty state, dan quick add |
 | `/browser` | Alias browse makanan dengan UI seirama home |
 | `/detail/[id]` | Detail makanan dengan favorit, quantity selector, pickup info, food rescue impact, ulasan, add to cart, dan checkout cepat |
@@ -250,8 +298,8 @@ http://localhost:3000
 | `/checkout` | Checkout dengan lokasi pickup, waktu pickup, item pesanan, voucher, payment method, summary, dan simulasi payment failed |
 | `/payment-success` | Pembayaran berhasil dengan receipt, QR pickup, timeline status, download/share simulasi, dan tracking |
 | `/orders` | Riwayat pesanan dengan tab aktif/selesai, search, ringkasan pickup, ulasan, refund, dan pesan lagi |
-| `/orders/[id]` | Live tracking pesanan dengan QR pickup |
-| `/orders/[id]/refund` | Pengajuan refund pesanan |
+| `/orders/[id]` | Live tracking pesanan dengan status ready/preparing, QR pickup, progress bar, detail pickup, lokasi, chat, receipt, dan pembatalan |
+| `/orders/[id]/refund` | Pengajuan refund dengan progress kelengkapan, preview bukti, checklist bukti, metode pengembalian, timeline review, dan success summary |
 | `/payment-failed` | Pembayaran gagal dengan retry metode pembayaran dan bantuan support |
 | `/tracking` | Tracking pesanan dengan map, QR pickup, timeline status, lokasi, dan chat restoran |
 | `/history` | Riwayat pesanan legacy dengan pencarian, ulasan, refund, dan pesan lagi |
@@ -268,8 +316,8 @@ http://localhost:3000
 | Route | Deskripsi |
 | --- | --- |
 | `/register-mitra` | Form pendaftaran mitra dengan progress, data operasional, dan upload dokumen |
-| `/owner/dashboard` | Dashboard owner |
-| `/owner/menu` | Kelola menu |
+| `/owner/dashboard` | Dashboard owner dengan KPI, tabel pesanan terbaru, top search, dan Kanban order dengan search/status summary |
+| `/owner/menu` | Kelola menu dengan search, filter kategori/stok, ringkasan menu, modal tambah/edit/hapus makanan, dan deep link tambah menu |
 | `/owner/orders/[id]` | Detail pesanan owner |
 | `/owner/wallet` | Saldo dan pencairan dana |
 | `/owner/analytics` | Analitik performa toko dengan periode 7/30/90 hari |
@@ -283,8 +331,12 @@ http://localhost:3000
 
 | Route | Deskripsi |
 | --- | --- |
-| `/admin/dashboard` | Dashboard admin |
-| `/admin/notifications` | Notifikasi prioritas admin |
+| `/admin/dashboard` | Dashboard admin dengan shell/sidebar konsisten dan tab query |
+| `/admin/dashboard?tab=users` | Tab kelola pengguna admin |
+| `/admin/dashboard?tab=verification` | Tab verifikasi restoran / UMKM |
+| `/admin/dashboard?tab=transactions` | Tab transaksi dan refund |
+| `/admin/dashboard?tab=analytics` | Tab laporan analitik |
+| `/admin/notifications` | Notifikasi prioritas admin dengan search, filter kategori/prioritas, bulk mark read, panel detail, dan action link |
 | `/admin/users/[id]` | Detail akun pengguna admin |
 | `/admin/verifications/[id]` | Detail verifikasi restoran / UMKM |
 | `/admin/transactions/[id]` | Detail transaksi admin |
@@ -324,15 +376,13 @@ public/
 
 ### Rencana Lanjutan
 
-1. Membuat skema database PostgreSQL.
-2. Membuat backend API.
-3. Menambahkan autentikasi.
-4. Menghubungkan UI ke database.
-5. Menambahkan validasi form produksi.
-6. Menambahkan payment gateway.
-7. Menambahkan upload file produksi.
-8. Menambahkan testing.
-9. Menentukan license resmi sebelum project dipublikasikan lebih luas.
+1. Menghubungkan semua UI ke API database secara bertahap.
+2. Memperdalam permission API per role.
+3. Menyelesaikan integrasi penuh Neon Auth SDK.
+4. Menambahkan payment gateway.
+5. Menambahkan validasi form produksi yang lebih ketat.
+6. Menambahkan testing otomatis.
+7. Menentukan license resmi sebelum project dipublikasikan lebih luas.
 
 ---
 
@@ -342,7 +392,7 @@ public/
 
 SurplusEats is a web application prototype for helping customers buy surplus food from restaurants or small businesses at a more affordable price. Restaurant owners can manage surplus menus, orders, stock, and store settings. Admins can manage users, restaurant verification, transactions, refunds, and analytics.
 
-This project is currently a frontend prototype. Most data is still mocked and stored in local React state. Backend services, database integration, production authentication, and real payment gateway integration are not implemented yet.
+This project is still in development. The backend foundation has started with Neon PostgreSQL, Prisma, Vercel Blob, seed data, early API routes, login sessions, password hashing, and role-based route guards. Some screens still use mocked data and local state while API wiring is completed. Full Neon Auth SDK integration and the real payment gateway are still next-step work.
 
 ### Development Status
 
@@ -350,20 +400,18 @@ This project is **still in progress**.
 
 Not final yet:
 
-- No PostgreSQL database integration yet.
-- No backend API yet.
-- No production authentication yet.
+- Some screens are not connected to database APIs yet.
+- Login/register sessions are active, but full Neon Auth SDK integration is not final yet.
 - No real payment gateway yet.
-- No production file upload yet.
-- No real role-based access control yet.
-- Data is still mocked.
-- Most state is still local to React components.
+- Basic role guards are active for customer, owner, and admin; detailed API permissions still need deeper hardening.
+- Some data is still mocked.
+- Some state is still local to React components.
 
 ### Main Features
 
 #### Customer App
 
-- Customer login with demo accounts, remember me, forgot password, partner signup link, and interactive registration with food preferences, password validation, and terms agreement.
+- Customer login with backend validation, session cookie, real demo accounts, remember me, forgot password, partner signup link, and interactive registration with food preferences, password validation, and terms agreement.
 - Customer password reset with step indicator, OTP, resend countdown, password validation, password confirmation, and success state.
 - Surplus food home screen with browser search, impact card, quick actions, categories, flash rescue list, discount, stock, and quick add to cart.
 - Food browse / search page with active query, categories, sorting, filter modal, result stats, empty state, and quick add to cart.
@@ -372,7 +420,8 @@ Not final yet:
 - Checkout with pickup location, pickup time, order items, restaurant note, voucher, payment methods, price summary, pickup agreement, and payment failed simulation.
 - Payment success with receipt, pickup QR, status timeline, simulated download/share, tracking, and payment failed flow with payment retry plus support help.
 - Customer order history with active/completed tabs, search, today's pickup summary, status cards, reviews, refunds, and reorder actions.
-- Order tracking with map, pickup QR, status timeline, location, and restaurant chat.
+- Order tracking with map, ready/preparing states, active pickup QR, progress bar, pickup detail, location, restaurant chat, receipt, and cancellation flow.
+- Refund request with amount summary, completion progress, reasons, evidence preview, evidence checklist, issue details, refund method, review timeline, and success summary.
 - Legacy order history with search, review, refund, and reorder actions.
 - Restaurant review modal with star rating.
 - Customer profile hub with food rescue stats, account security, vouchers, orders, addresses, help, support, and logout confirmation.
@@ -385,9 +434,9 @@ Not final yet:
 
 #### Owner Dashboard
 
-- Desktop owner dashboard.
-- Kanban order management.
-- Surplus menu management.
+- Desktop owner dashboard with KPIs, latest order table, order status actions, and add-food shortcut.
+- Kanban order management with status summary, top-bar and URL-query order/customer/menu search, accept/reject, mark ready, and pickup confirmation actions.
+- Surplus menu management with search, category/stock filters, active/sold-out/discount summary, add/edit/delete food modal, image preview, and add-food deep link from the dashboard.
 - Add food modal.
 - Edit food modal with pre-filled data.
 - Delete food confirmation modal.
@@ -401,9 +450,9 @@ Not final yet:
 
 #### Admin Dashboard
 
-- Dark admin sidebar.
+- Consistent dark admin sidebar/shell across all admin routes.
 - Operational statistics.
-- Priority admin notifications.
+- Priority admin notifications with search, category/priority filters, bulk mark read, alert detail panel, and action links.
 - User management.
 - Admin user account detail.
 - Ban / suspend user flow.
@@ -415,6 +464,14 @@ Not final yet:
 - Analytics report simulation.
 - Admin settings, security, operational notifications, and access roles.
 
+#### Backend Foundation
+
+- Neon PostgreSQL database with Prisma schema for users, owners/restaurants, partner applications, menus, carts, orders, refunds, uploaded assets, vouchers, notifications, wallets, reviews, and audit logs.
+- Demo seed data for admin, owner, customer, password hashes, Bakehouse Bakery, surplus menus, order, voucher, wallet transaction, and notifications.
+- Early APIs for auth login/register/logout/me, health check, restaurants, menu items, partner applications/review, checkout orders, refund requests, and Vercel Blob uploads.
+- Proxy route guard to block direct unauthenticated access to customer, owner, and admin routes.
+- Vercel Blob is prepared for public assets such as product/restaurant photos and can be extended for private files.
+
 ### Tech Stack
 
 - Next.js 16
@@ -422,6 +479,10 @@ Not final yet:
 - TypeScript
 - Tailwind CSS 4
 - lucide-react
+- Prisma 7
+- Neon PostgreSQL
+- Vercel Blob
+- Zod
 
 ### Getting Started
 
@@ -451,16 +512,49 @@ http://localhost:3000
 | `npm run build` | Build for production |
 | `npm run start` | Start the production server |
 | `npm run lint` | Run ESLint |
+| `npm run db:generate` | Generate Prisma Client |
+| `npm run db:push` | Push Prisma schema to the database |
+| `npm run db:seed` | Seed initial demo data |
+| `npm run db:studio` | Open Prisma Studio |
+
+### Backend Environment
+
+Do not commit real secrets. Store local credentials in `.env.local` or in Vercel Environment Variables.
+
+```env
+DATABASE_URL="postgresql://..."
+DIRECT_URL="postgresql://..."
+BLOB_READ_WRITE_TOKEN="vercel_blob_rw_..."
+NEON_AUTH_BASE_URL=""
+NEON_AUTH_COOKIE_SECRET=""
+```
+
+### Early APIs
+
+| Route | Purpose |
+| --- | --- |
+| `/api/health` | Check database connection, Blob, Neon Auth env, and main data counts |
+| `/api/auth/login` | Login with email/password and set session cookie |
+| `/api/auth/register` | Register customer and set session cookie |
+| `/api/auth/register-owner` | Register partner/owner pending review and set session cookie |
+| `/api/auth/logout` | Logout and clear session cookie |
+| `/api/auth/me` | Fetch the active session user |
+| `/api/restaurants` | Fetch approved restaurants with active menus |
+| `/api/menu-items` | Fetch and create owner menu items |
+| `/api/restaurant-applications` | Submit partner registration and admin approve/reject review |
+| `/api/orders` | Fetch orders and create checkout orders |
+| `/api/refunds` | Fetch and create refund requests |
+| `/api/uploads` | Upload files to Vercel Blob and save asset records |
 
 ### Customer Routes
 
 | Route | Description |
 | --- | --- |
-| `/` | Customer login with demo accounts, remember me, forgot password, and partner signup link |
+| `/` | Login with backend validation, session cookie, real demo accounts, remember me, forgot password, and partner signup link |
 | `/forgot-password` | Customer password reset with OTP, resend countdown, password validation, and success state |
 | `/register` | Interactive customer registration with food preferences and password validation |
 | `/home` | Customer home with browser search, impact card, quick actions, categories, flash rescue, and quick add |
-| `/notifications` | Customer notifications |
+| `/notifications` | Customer notifications with category/status filters, unread counts, mark read, delete item, action links, and empty state |
 | `/browse` | Food browse with home-style UI, active query, categories, sorting, filter modal, empty state, and quick add |
 | `/browser` | Food browse alias with home-style UI |
 | `/detail/[id]` | Food detail with favorite action, quantity selector, pickup info, food rescue impact, reviews, add to cart, and quick checkout |
@@ -468,8 +562,8 @@ http://localhost:3000
 | `/checkout` | Checkout with pickup location, pickup time, order items, voucher, payment method, summary, and payment failed simulation |
 | `/payment-success` | Payment success with receipt, pickup QR, status timeline, simulated download/share, and tracking |
 | `/orders` | Order history with active/completed tabs, search, pickup summary, reviews, refunds, and reorder actions |
-| `/orders/[id]` | Live order tracking with pickup QR |
-| `/orders/[id]/refund` | Order refund request |
+| `/orders/[id]` | Live order tracking with ready/preparing states, pickup QR, progress bar, pickup detail, location, chat, receipt, and cancellation |
+| `/orders/[id]/refund` | Refund request with completion progress, evidence preview, evidence checklist, refund method, review timeline, and success summary |
 | `/payment-failed` | Payment failed with payment retry and support help |
 | `/tracking` | Order tracking with map, pickup QR, status timeline, location, and restaurant chat |
 | `/history` | Legacy order history with search, review, refund, and reorder actions |
@@ -486,8 +580,8 @@ http://localhost:3000
 | Route | Description |
 | --- | --- |
 | `/register-mitra` | Partner / store registration form with progress, operational data, and document uploads |
-| `/owner/dashboard` | Owner dashboard |
-| `/owner/menu` | Menu management |
+| `/owner/dashboard` | Owner dashboard with KPIs, latest orders, top search, and Kanban orders with search/status summary |
+| `/owner/menu` | Menu management with search, category/stock filters, menu summary, add/edit/delete food modal, and add-menu deep link |
 | `/owner/orders/[id]` | Owner order detail |
 | `/owner/wallet` | Wallet and withdrawal |
 | `/owner/analytics` | Store performance analytics with 7/30/90 day periods |
@@ -501,8 +595,12 @@ http://localhost:3000
 
 | Route | Description |
 | --- | --- |
-| `/admin/dashboard` | Admin dashboard |
-| `/admin/notifications` | Priority admin notifications |
+| `/admin/dashboard` | Admin dashboard with consistent shell/sidebar and query tabs |
+| `/admin/dashboard?tab=users` | Admin user management tab |
+| `/admin/dashboard?tab=verification` | Restaurant / UMKM verification tab |
+| `/admin/dashboard?tab=transactions` | Transaction and refund tab |
+| `/admin/dashboard?tab=analytics` | Analytics report tab |
+| `/admin/notifications` | Priority admin notifications with search, category/priority filters, bulk mark read, detail panel, and action links |
 | `/admin/users/[id]` | Admin user account detail |
 | `/admin/verifications/[id]` | Restaurant / UMKM verification detail |
 | `/admin/transactions/[id]` | Admin transaction detail |

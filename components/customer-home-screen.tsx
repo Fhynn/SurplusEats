@@ -12,31 +12,30 @@ import {
   Plus,
   Search,
   Star,
+  UserRound,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { useCustomerApp } from "@/components/customer-app-provider";
-import { CATEGORIES, MOCK_FOODS, formatRp } from "@/lib/customer-data";
+import { CATEGORIES, formatRp, type Food } from "@/lib/customer-data";
+import { menuItemToFood, type ApiMenuItem } from "@/lib/food-mapper";
 
 const quickActions = [
   {
     label: "Voucher",
-    value: "5 aktif",
     route: "/profile/vouchers",
     icon: Gift,
     className: "border-blue-100 bg-blue-50 text-blue-700",
   },
   {
     label: "Pickup",
-    value: "2 order",
     route: "/orders",
     icon: Flame,
     className: "border-amber-100 bg-amber-50 text-amber-700",
   },
   {
     label: "Impact",
-    value: "12.5 Kg",
     route: "/profile",
     icon: Leaf,
     className: "border-emerald-100 bg-emerald-50 text-emerald-700",
@@ -47,15 +46,67 @@ export function CustomerHomeScreen() {
   const router = useRouter();
   const [activeCategory, setActiveCategory] =
     useState<(typeof CATEGORIES)[number]>("Semua");
+  const [allFoods, setAllFoods] = useState<Food[]>([]);
+  const [orderCount, setOrderCount] = useState(0);
+  const [voucherCount, setVoucherCount] = useState(0);
+  const [isLoadingFoods, setIsLoadingFoods] = useState(true);
   const { addToCart } = useCustomerApp();
+
+  useEffect(() => {
+    let ignore = false;
+
+    async function loadFoods() {
+      setIsLoadingFoods(true);
+
+      try {
+        const [response, ordersResponse, vouchersResponse] = await Promise.all([
+          fetch("/api/menu-items", { cache: "no-store" }),
+          fetch("/api/orders", { cache: "no-store" }),
+          fetch("/api/vouchers", { cache: "no-store" }),
+        ]);
+        const result = (await response.json()) as {
+          ok: boolean;
+          menuItems?: ApiMenuItem[];
+        };
+        const ordersData = (await ordersResponse.json()) as {
+          ok: boolean;
+          orders?: unknown[];
+        };
+        const vouchersData = (await vouchersResponse.json()) as {
+          ok: boolean;
+          vouchers?: unknown[];
+        };
+
+        if (!ignore) {
+          setAllFoods(result.menuItems?.map(menuItemToFood) ?? []);
+          setOrderCount(ordersData.orders?.length ?? 0);
+          setVoucherCount(vouchersData.vouchers?.length ?? 0);
+        }
+      } catch {
+        if (!ignore) {
+          setAllFoods([]);
+        }
+      } finally {
+        if (!ignore) {
+          setIsLoadingFoods(false);
+        }
+      }
+    }
+
+    loadFoods();
+
+    return () => {
+      ignore = true;
+    };
+  }, []);
 
   const foods = useMemo(() => {
     if (activeCategory === "Semua") {
-      return MOCK_FOODS;
+      return allFoods;
     }
 
-    return MOCK_FOODS.filter((food) => food.category === activeCategory);
-  }, [activeCategory]);
+    return allFoods.filter((food) => food.category === activeCategory);
+  }, [activeCategory, allFoods]);
 
   return (
     <div className="flex flex-1 flex-col overflow-y-auto pb-24 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -68,7 +119,7 @@ export function CustomerHomeScreen() {
             </span>
             <div className="flex items-center gap-1.5 text-sm font-bold text-gray-900">
               <MapPin size={16} className="text-emerald-500" />
-              Sudirman, Pekanbaru
+              Pilih lokasi
             </div>
           </div>
 
@@ -86,17 +137,10 @@ export function CustomerHomeScreen() {
             <button
               type="button"
               onClick={() => router.push("/profile")}
-              className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border-2 border-emerald-500 bg-emerald-100"
+              className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-emerald-500 bg-emerald-50 text-emerald-600"
               aria-label="Buka profil"
             >
-              <Image
-                src="https://api.dicebear.com/7.x/avataaars/svg?seed=Alfhin"
-                alt="User profile"
-                width={40}
-                height={40}
-                unoptimized
-                className="h-full w-full object-cover"
-              />
+              <UserRound size={20} />
             </button>
           </div>
         </div>
@@ -135,24 +179,30 @@ export function CustomerHomeScreen() {
           <div className="relative z-10 grid grid-cols-3 gap-2">
             <div className="rounded-2xl bg-emerald-600/45 p-3">
               <p className="text-[10px] font-bold text-emerald-50">Saved</p>
-              <p className="mt-1 text-sm font-extrabold">2.5 Kg</p>
+              <p className="mt-1 text-sm font-extrabold">{orderCount} order</p>
             </div>
             <div className="rounded-2xl bg-emerald-600/45 p-3">
-              <p className="text-[10px] font-bold text-emerald-50">Hemat</p>
-              <p className="mt-1 text-sm font-extrabold">Rp48rb</p>
+              <p className="text-[10px] font-bold text-emerald-50">Voucher</p>
+              <p className="mt-1 text-sm font-extrabold">{voucherCount}</p>
             </div>
             <div className="rounded-2xl bg-emerald-600/45 p-3">
-              <p className="text-[10px] font-bold text-emerald-50">Level</p>
-              <p className="mt-1 text-sm font-extrabold">Hero 2</p>
+              <p className="text-[10px] font-bold text-emerald-50">Menu</p>
+              <p className="mt-1 text-sm font-extrabold">{allFoods.length}</p>
             </div>
           </div>
         </section>
 
         <section className="mb-6 grid grid-cols-3 gap-3">
-          {quickActions.map((action) => {
-            const Icon = action.icon;
+            {quickActions.map((action) => {
+              const Icon = action.icon;
+              const value =
+                action.label === "Voucher"
+                  ? `${voucherCount} aktif`
+                  : action.label === "Pickup"
+                    ? `${orderCount} order`
+                    : `${orderCount} order`;
 
-            return (
+              return (
               <button
                 key={action.label}
                 type="button"
@@ -164,7 +214,7 @@ export function CustomerHomeScreen() {
                   {action.label}
                 </p>
                 <p className="mt-1 text-sm font-extrabold text-gray-950">
-                  {action.value}
+                  {value}
                 </p>
               </button>
             );
@@ -208,6 +258,11 @@ export function CustomerHomeScreen() {
         </section>
 
         <section className="space-y-4">
+          {isLoadingFoods ? (
+            <div className="rounded-[24px] border border-gray-100 bg-white p-6 text-center text-sm font-bold text-gray-500 shadow-sm">
+              Memuat menu dari database...
+            </div>
+          ) : null}
           {foods.map((food) => {
             const discount = Math.round(
               ((food.originalPrice - food.price) / food.originalPrice) * 100,
@@ -276,6 +331,17 @@ export function CustomerHomeScreen() {
               </article>
             );
           })}
+          {!isLoadingFoods && foods.length === 0 ? (
+            <div className="rounded-[24px] border border-gray-100 bg-white p-6 text-center shadow-sm">
+              <h3 className="text-base font-extrabold text-gray-950">
+                Belum ada menu aktif
+              </h3>
+              <p className="mt-2 text-sm leading-6 font-medium text-gray-500">
+                Menu akan tampil otomatis setelah owner menambahkan produk aktif
+                di database.
+              </p>
+            </div>
+          ) : null}
         </section>
       </main>
     </div>

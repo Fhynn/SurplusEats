@@ -1,16 +1,16 @@
-import Link from "next/link";
 import {
   Banknote,
   CheckCircle2,
   Clock3,
   FileCheck2,
   FileText,
-  HelpCircle,
   LayoutDashboard,
   MapPin,
   ShieldCheck,
   Store,
 } from "lucide-react";
+
+import { OwnerVerifyActions } from "@/components/owner-verify-actions";
 
 const verificationSteps = [
   {
@@ -107,7 +107,7 @@ export default function OwnerVerifyPage() {
                 SurplusOwner
               </p>
               <p className="text-xs font-semibold text-gray-400">
-                Bakehouse Bakery
+                Menunggu admin
               </p>
             </div>
           </div>
@@ -148,28 +148,11 @@ export default function OwnerVerifyPage() {
           </div>
 
           <div className="mt-8 space-y-3">
-            <Link
-              href="/owner/dashboard"
-              className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gray-900 px-5 py-4 text-sm font-extrabold text-white shadow-[0_12px_28px_rgba(15,23,42,0.16)] transition-colors hover:bg-emerald-500"
-            >
+            <div className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gray-900 px-5 py-4 text-sm font-extrabold text-white shadow-[0_12px_28px_rgba(15,23,42,0.16)]">
               <LayoutDashboard size={18} />
-              Lihat Preview Dashboard
-            </Link>
-            <div className="grid grid-cols-2 gap-3">
-              <Link
-                href="mailto:support@surpluseats.id"
-                className="flex items-center justify-center gap-2 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3.5 text-sm font-extrabold text-blue-700 transition-colors hover:bg-blue-100"
-              >
-                <HelpCircle size={17} />
-                Support
-              </Link>
-              <Link
-                href="/"
-                className="rounded-2xl border border-gray-200 bg-white px-4 py-3.5 text-center text-sm font-extrabold text-gray-700 transition-colors hover:bg-gray-50"
-              >
-                Login
-              </Link>
+              Dashboard aktif setelah admin approve
             </div>
+            <OwnerVerifyActions />
           </div>
         </section>
 

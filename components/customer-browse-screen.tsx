@@ -12,13 +12,15 @@ import {
   Search,
   SlidersHorizontal,
   Star,
+  UserRound,
   X,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { useCustomerApp } from "@/components/customer-app-provider";
-import { CATEGORIES, MOCK_FOODS, formatRp } from "@/lib/customer-data";
+import { CATEGORIES, formatRp, type Food } from "@/lib/customer-data";
+import { menuItemToFood, type ApiMenuItem } from "@/lib/food-mapper";
 
 const filterChips = [
   "Terdekat",
@@ -37,10 +39,55 @@ export function CustomerBrowseScreen() {
   const [activeCategory, setActiveCategory] =
     useState<(typeof CATEGORIES)[number]>("Semua");
   const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [allFoods, setAllFoods] = useState<Food[]>([]);
+  const [isLoadingFoods, setIsLoadingFoods] = useState(true);
+
+  useEffect(() => {
+    let ignore = false;
+
+    async function loadFoods() {
+      setIsLoadingFoods(true);
+
+      try {
+        const params = new URLSearchParams();
+
+        if (query.trim()) {
+          params.set("q", query.trim());
+        }
+
+        const response = await fetch(`/api/menu-items?${params.toString()}`, {
+          cache: "no-store",
+        });
+        const result = (await response.json()) as {
+          ok: boolean;
+          menuItems?: ApiMenuItem[];
+        };
+
+        if (!ignore) {
+          setAllFoods(result.menuItems?.map(menuItemToFood) ?? []);
+        }
+      } catch {
+        if (!ignore) {
+          setAllFoods([]);
+        }
+      } finally {
+        if (!ignore) {
+          setIsLoadingFoods(false);
+        }
+      }
+    }
+
+    const timeoutId = window.setTimeout(loadFoods, 250);
+
+    return () => {
+      ignore = true;
+      window.clearTimeout(timeoutId);
+    };
+  }, [query]);
 
   const foods = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
-    let nextFoods = [...MOCK_FOODS];
+    let nextFoods = [...allFoods];
 
     if (activeCategory !== "Semua") {
       nextFoods = nextFoods.filter((food) => food.category === activeCategory);
@@ -72,7 +119,7 @@ export function CustomerBrowseScreen() {
     }
 
     return nextFoods;
-  }, [activeCategory, activeFilter, query]);
+  }, [activeCategory, activeFilter, allFoods, query]);
 
   return (
     <div className="relative flex flex-1 flex-col overflow-hidden bg-gray-50">
@@ -85,7 +132,7 @@ export function CustomerBrowseScreen() {
             </span>
             <div className="flex items-center gap-1.5 text-sm font-bold text-gray-900">
               <MapPin size={16} className="text-emerald-500" />
-              Sudirman, Pekanbaru
+              Pilih lokasi
             </div>
           </div>
 
@@ -100,15 +147,8 @@ export function CustomerBrowseScreen() {
               <span className="absolute top-2 right-2 h-2.5 w-2.5 rounded-full border-2 border-white bg-red-500" />
             </button>
 
-            <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border-2 border-emerald-500 bg-emerald-100">
-              <Image
-                src="https://api.dicebear.com/7.x/avataaars/svg?seed=Alfhin"
-                alt="User profile"
-                width={40}
-                height={40}
-                unoptimized
-                className="h-full w-full object-cover"
-              />
+            <div className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-emerald-500 bg-emerald-50 text-emerald-600">
+              <UserRound size={20} />
             </div>
           </div>
         </div>
@@ -204,7 +244,16 @@ export function CustomerBrowseScreen() {
           </button>
         </section>
 
-        {foods.length > 0 ? (
+        {isLoadingFoods ? (
+          <section className="rounded-[28px] border border-gray-100 bg-white p-8 text-center shadow-sm">
+            <h2 className="text-lg font-extrabold text-gray-950">
+              Memuat menu database...
+            </h2>
+            <p className="mt-2 text-sm leading-6 font-medium text-gray-500">
+              Sistem mengambil menu aktif dari restoran yang sudah approved.
+            </p>
+          </section>
+        ) : foods.length > 0 ? (
           <section className="space-y-4">
             {foods.map((food) => (
               <article

@@ -85,7 +85,7 @@ export default function OwnerBannedPage() {
                 SurplusOwner
               </p>
               <p className="text-xs font-semibold text-gray-400">
-                Bakehouse Bakery
+                Akun owner
               </p>
             </div>
           </div>

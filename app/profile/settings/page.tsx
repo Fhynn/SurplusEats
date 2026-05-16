@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -16,8 +15,9 @@ import {
   Smartphone,
   Ticket,
   Trash2,
+  UserRound,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { MobileDeviceFrame } from "@/components/mobile-device-frame";
 
@@ -118,6 +118,7 @@ function Toggle({
 
 export default function CustomerAccountSettingsPage() {
   const router = useRouter();
+  const [user, setUser] = useState<{ name: string; email: string } | null>(null);
   const [preferences, setPreferences] = useState<Record<PreferenceKey, boolean>>(
     {
       pushNotification: true,
@@ -130,6 +131,28 @@ export default function CustomerAccountSettingsPage() {
     useState<ConfirmationType>(null);
   const [securityNotice, setSecurityNotice] = useState("");
 
+  useEffect(() => {
+    let ignore = false;
+
+    async function loadUser() {
+      const response = await fetch("/api/auth/me", { cache: "no-store" });
+      const data = (await response.json()) as {
+        ok: boolean;
+        user?: { name: string; email: string };
+      };
+
+      if (!ignore) {
+        setUser(data.user ?? null);
+      }
+    }
+
+    void loadUser();
+
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
   const handleToggle = (key: PreferenceKey) => {
     setPreferences((currentPreferences) => ({
       ...currentPreferences,
@@ -137,8 +160,10 @@ export default function CustomerAccountSettingsPage() {
     }));
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await fetch("/api/auth/logout", { method: "POST" });
     router.push("/");
+    router.refresh();
   };
 
   const handleDeleteAccount = () => {
@@ -169,23 +194,15 @@ export default function CustomerAccountSettingsPage() {
         <div className="flex-1 space-y-6 overflow-y-auto px-6 py-6 pb-24 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <section className="rounded-[24px] border border-gray-100 bg-white p-6 shadow-sm">
             <div className="flex items-center gap-4">
-              <div className="h-16 w-16 shrink-0 overflow-hidden rounded-full border-2 border-white bg-emerald-100 shadow-sm">
-                <Image
-                  src="https://api.dicebear.com/7.x/avataaars/svg?seed=Alfhin"
-                  alt="Avatar Alfhin"
-                  width={64}
-                  height={64}
-                  unoptimized
-                  className="h-full w-full object-cover"
-                />
+              <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full border-2 border-white bg-emerald-50 text-emerald-600 shadow-sm">
+                <UserRound size={28} />
               </div>
               <div className="min-w-0 flex-1">
                 <h2 className="truncate text-lg font-extrabold text-gray-900">
-                  Alfhin
+                  {user?.name || "Customer"}
                 </h2>
-                <p className="text-xs text-gray-500">0812-3456-7890</p>
                 <p className="mt-1 text-xs font-semibold text-emerald-600">
-                  alfhin@email.com
+                  {user?.email || "Belum login"}
                 </p>
               </div>
               <Link

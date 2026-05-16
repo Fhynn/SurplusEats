@@ -14,7 +14,7 @@ import {
   Ticket,
   X,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { MobileDeviceFrame } from "@/components/mobile-device-frame";
 
@@ -34,91 +34,6 @@ type Voucher = {
   status: VoucherStatus;
 };
 
-const initialVouchers: Voucher[] = [
-  {
-    id: "food-hero",
-    code: "HERO50",
-    tone: "emerald",
-    label: "50%",
-    title: "Diskon Food Hero",
-    description: "Maks. diskon Rp 15.000. Berlaku untuk semua restoran.",
-    meta: "Berakhir besok",
-    minSpend: "Tanpa minimum transaksi",
-    terms: [
-      "Berlaku untuk 1 transaksi customer.",
-      "Tidak bisa digabung dengan voucher lain.",
-      "Voucher otomatis hangus setelah masa berlaku selesai.",
-    ],
-    status: "available",
-  },
-  {
-    id: "free-delivery",
-    code: "ONGKIRHEMAT",
-    tone: "blue",
-    label: "FREE",
-    title: "Gratis Ongkir Biasa",
-    description: "Khusus pesanan di atas Rp 50.000.",
-    meta: "Hingga 31 Okt",
-    minSpend: "Minimum transaksi Rp 50.000",
-    terms: [
-      "Berlaku untuk restoran dalam radius pickup terdekat.",
-      "Tidak berlaku untuk biaya tambahan layanan.",
-      "Kuota voucher dapat berubah sewaktu-waktu.",
-    ],
-    status: "available",
-  },
-  {
-    id: "late-night",
-    code: "MALAMHEMAT",
-    tone: "gray",
-    label: "25%",
-    title: "Pickup Malam Hemat",
-    description: "Diskon khusus setelah pukul 20:00 WIB.",
-    meta: "Sudah dipakai",
-    minSpend: "Minimum transaksi Rp 25.000",
-    terms: [
-      "Hanya berlaku pada jam pickup malam.",
-      "Satu akun hanya bisa memakai voucher ini satu kali.",
-    ],
-    status: "used",
-  },
-];
-
-const claimableVouchers: Record<string, Voucher> = {
-  ALFHIN: {
-    id: "alfhin-credit",
-    code: "ALFHIN",
-    tone: "amber",
-    label: "35%",
-    title: "Creator Credit Voucher",
-    description: "Diskon spesial untuk prototype SurplusEats by Fhynn.",
-    meta: "Berlaku 7 hari",
-    minSpend: "Minimum transaksi Rp 20.000",
-    terms: [
-      "Voucher ini dibuat untuk demo frontend prototype.",
-      "Tidak terhubung ke payment gateway asli.",
-      "Credit dan nama project tetap milik Fhynn.",
-    ],
-    status: "available",
-  },
-  SAVEFOOD: {
-    id: "save-food",
-    code: "SAVEFOOD",
-    tone: "emerald",
-    label: "20%",
-    title: "Save Good Food",
-    description: "Diskon untuk pembelian makanan surplus pertama minggu ini.",
-    meta: "Berlaku 3 hari",
-    minSpend: "Minimum transaksi Rp 30.000",
-    terms: [
-      "Berlaku untuk restoran yang sedang aktif promo.",
-      "Tidak dapat diuangkan.",
-      "Berlaku selama kuota masih tersedia.",
-    ],
-    status: "available",
-  },
-};
-
 const toneClassName: Record<VoucherTone, string> = {
   emerald: "bg-emerald-500",
   amber: "bg-amber-500",
@@ -133,13 +48,46 @@ const statusLabel: Record<VoucherStatus, string> = {
 };
 
 export default function CustomerVouchersPage() {
-  const [vouchers, setVouchers] = useState(initialVouchers);
+  const [vouchers, setVouchers] = useState<Voucher[]>([]);
+  const [isLoadingVouchers, setIsLoadingVouchers] = useState(true);
   const [promoCode, setPromoCode] = useState("");
   const [feedback, setFeedback] = useState<{
     type: "success" | "error";
     message: string;
   } | null>(null);
   const [selectedVoucher, setSelectedVoucher] = useState<Voucher | null>(null);
+
+  const loadVouchers = useCallback(async () => {
+    setIsLoadingVouchers(true);
+
+    try {
+      const response = await fetch("/api/vouchers", { cache: "no-store" });
+      const data = (await response.json()) as {
+        ok: boolean;
+        message?: string;
+        vouchers?: Voucher[];
+      };
+
+      if (!response.ok || !data.ok) {
+        throw new Error(data.message || "Voucher gagal dimuat.");
+      }
+
+      setVouchers(data.vouchers || []);
+      setFeedback(null);
+    } catch (error) {
+      setFeedback({
+        type: "error",
+        message:
+          error instanceof Error ? error.message : "Voucher gagal dimuat.",
+      });
+    } finally {
+      setIsLoadingVouchers(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadVouchers();
+  }, [loadVouchers]);
 
   const availableCount = useMemo(
     () => vouchers.filter((voucher) => voucher.status === "available").length,
@@ -157,52 +105,32 @@ export default function CustomerVouchersPage() {
       return;
     }
 
-    const voucherTemplate = claimableVouchers[normalizedCode];
+    const voucher = vouchers.find((item) => item.code === normalizedCode);
 
-    if (!voucherTemplate) {
+    if (!voucher) {
       setFeedback({
         type: "error",
-        message: "Kode promo tidak ditemukan atau sudah tidak berlaku.",
+        message: "Kode promo tidak ditemukan di database atau sudah tidak berlaku.",
       });
       return;
     }
 
-    const isAlreadyClaimed = vouchers.some(
-      (voucher) => voucher.code === normalizedCode,
-    );
-
-    if (isAlreadyClaimed) {
-      setFeedback({
-        type: "error",
-        message: "Voucher ini sudah ada di akun kamu.",
-      });
-      return;
-    }
-
-    setVouchers((currentVouchers) => [voucherTemplate, ...currentVouchers]);
     setPromoCode("");
     setFeedback({
       type: "success",
-      message: `${voucherTemplate.title} berhasil diklaim.`,
+      message: `${voucher.title} tersedia untuk dipakai.`,
     });
   };
 
   const handleUseVoucher = (voucherId: string) => {
-    setVouchers((currentVouchers) =>
-      currentVouchers.map((voucher) =>
-        voucher.id === voucherId
-          ? {
-              ...voucher,
-              status: "used",
-              meta: "Sudah dipakai",
-            }
-          : voucher,
-      ),
-    );
+    const voucher = vouchers.find((item) => item.id === voucherId);
+
     setSelectedVoucher(null);
     setFeedback({
       type: "success",
-      message: "Voucher ditandai dipakai di prototype UI.",
+      message: voucher
+        ? `Kode ${voucher.code} siap dipakai saat checkout.`
+        : "Voucher siap dipakai saat checkout.",
     });
   };
 
@@ -261,9 +189,6 @@ export default function CustomerVouchersPage() {
             </button>
           </div>
 
-          <p className="mt-3 text-[11px] leading-5 font-semibold text-gray-400">
-            Coba kode: ALFHIN atau SAVEFOOD.
-          </p>
         </header>
 
         <div className="flex-1 space-y-4 overflow-y-auto px-6 py-6 pb-24 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -303,7 +228,19 @@ export default function CustomerVouchersPage() {
             </div>
           </section>
 
-          {vouchers.map((voucher) => {
+          {isLoadingVouchers ? (
+            <div className="rounded-[24px] border border-gray-100 bg-white p-6 text-center shadow-sm">
+              <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-emerald-100 border-t-emerald-500" />
+              <p className="text-sm font-extrabold text-gray-950">
+                Memuat voucher
+              </p>
+              <p className="mt-1 text-xs font-medium text-gray-500">
+                Data diambil dari voucher aktif di database.
+              </p>
+            </div>
+          ) : null}
+
+          {!isLoadingVouchers && vouchers.map((voucher) => {
             const isAvailable = voucher.status === "available";
             const isInactive = voucher.status !== "available";
 
@@ -390,6 +327,18 @@ export default function CustomerVouchersPage() {
               </article>
             );
           })}
+
+          {!isLoadingVouchers && vouchers.length === 0 ? (
+            <div className="rounded-[24px] border border-dashed border-gray-200 bg-white p-6 text-center">
+              <Gift size={30} className="mx-auto mb-3 text-gray-400" />
+              <p className="text-sm font-extrabold text-gray-950">
+                Belum ada voucher aktif
+              </p>
+              <p className="mt-1 text-xs font-medium text-gray-500">
+                Voucher akan tampil otomatis saat tersedia di database.
+              </p>
+            </div>
+          ) : null}
 
           <Link
             href="/browse"
