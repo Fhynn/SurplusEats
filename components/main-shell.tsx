@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Home, ShoppingBag, User } from "lucide-react";
+import { Bot, Home, ShoppingBag, User } from "lucide-react";
 import { usePathname } from "next/navigation";
 
 import { useCustomerApp } from "@/components/customer-app-provider";
@@ -9,6 +9,7 @@ import { MobileDeviceFrame } from "@/components/mobile-device-frame";
 
 const NAV_ITEMS = [
   { href: "/home", label: "Beranda", icon: Home },
+  { href: "/ai", label: "AI", icon: Bot },
   { href: "/cart", label: "Keranjang", icon: ShoppingBag },
   { href: "/profile", label: "Akun", icon: User },
 ] as const;
@@ -112,7 +113,7 @@ export function MainShell({
         </div>
       </div>
 
-      <nav className="bottom-nav-enter absolute right-0 bottom-0 left-0 z-50 flex items-center justify-between rounded-t-[32px] border-t border-gray-100 bg-white/90 px-6 pt-4 pb-6 shadow-[0_-10px_30px_rgba(0,0,0,0.05)] backdrop-blur-xl md:hidden">
+      <nav className="bottom-nav-enter absolute right-0 bottom-0 left-0 z-50 grid grid-cols-4 rounded-t-[32px] border-t border-gray-100 bg-white/90 px-4 pt-4 pb-6 shadow-[0_-10px_30px_rgba(0,0,0,0.05)] backdrop-blur-xl md:hidden">
         {NAV_ITEMS.map(({ href, label, icon: Icon }) =>
           renderNavItem(href, label, Icon, "mobile"),
         )}
