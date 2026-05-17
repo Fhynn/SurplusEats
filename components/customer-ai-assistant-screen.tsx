@@ -90,6 +90,7 @@ export function CustomerAiAssistantScreen() {
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const scrollContainerRef = useRef<HTMLElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const isSendingRef = useRef(false);
 
@@ -102,10 +103,20 @@ export function CustomerAiAssistantScreen() {
   }, [cartCount, cartTotal]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({
-      block: "end",
-      behavior: "smooth",
+    const frameId = window.requestAnimationFrame(() => {
+      const scrollContainer = scrollContainerRef.current;
+
+      if (!scrollContainer) {
+        return;
+      }
+
+      scrollContainer.scrollTo({
+        top: scrollContainer.scrollHeight,
+        behavior: "smooth",
+      });
     });
+
+    return () => window.cancelAnimationFrame(frameId);
   }, [messages, isSending]);
 
   const sendMessage = async (rawMessage: string) => {
@@ -200,28 +211,28 @@ export function CustomerAiAssistantScreen() {
 
   return (
     <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-[#f8fafc]">
-      <header className="shrink-0 border-b border-gray-100 bg-white px-5 pt-7 pb-4 md:px-8 md:pt-6 lg:px-10">
+      <header className="shrink-0 border-b border-gray-100 bg-white px-4 pt-4 pb-3 md:px-8 md:pt-6 md:pb-4 lg:px-10">
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-emerald-500 text-white shadow-[0_10px_30px_rgba(16,185,129,0.24)]">
-              <Sparkles size={22} />
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[20px] bg-emerald-500 text-white shadow-[0_10px_30px_rgba(16,185,129,0.24)] md:h-12 md:w-12 md:rounded-2xl">
+              <Sparkles size={21} />
             </div>
             <div className="min-w-0">
-              <p className="text-xs font-extrabold tracking-[0.12em] text-emerald-600 uppercase">
+              <p className="text-[11px] font-extrabold tracking-[0.12em] text-emerald-600 uppercase md:text-xs">
                 SurplusEats AI
               </p>
-              <h1 className="mt-1 text-xl font-extrabold tracking-tight text-gray-950 md:text-2xl">
+              <h1 className="mt-1 text-[1.35rem] leading-tight font-extrabold tracking-tight text-gray-950 md:text-2xl">
                 Asisten Checkout & Rekomendasi
               </h1>
             </div>
           </div>
 
-          <div className="flex items-center justify-between gap-3 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-emerald-700 md:min-w-72">
+          <div className="flex items-center justify-between gap-3 rounded-[22px] border border-emerald-100 bg-emerald-50 px-3.5 py-2.5 text-emerald-700 md:min-w-72 md:rounded-2xl md:px-4 md:py-3">
             <div>
               <p className="text-[11px] font-extrabold uppercase text-emerald-600">
                 Keranjang
               </p>
-              <p className="mt-0.5 text-sm font-extrabold text-gray-950">
+              <p className="mt-0.5 text-[13px] leading-5 font-extrabold text-gray-950 md:text-sm">
                 {cartSummary}
               </p>
             </div>
@@ -237,26 +248,29 @@ export function CustomerAiAssistantScreen() {
         </div>
       </header>
 
-      <main className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-5 pb-48 scroll-smooth [scrollbar-width:thin] md:px-8 md:pb-36 lg:px-10">
+      <main
+        ref={scrollContainerRef}
+        className="mb-[10.75rem] min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 pb-4 scroll-smooth scroll-pb-4 [scrollbar-width:thin] md:mb-0 md:px-8 md:py-5 md:pb-36 md:scroll-pb-36 lg:px-10"
+      >
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-4">
-          <section className="grid gap-3 md:grid-cols-4">
+          <section className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] md:mx-0 md:grid md:grid-cols-4 md:overflow-visible md:px-0 md:pb-0 [&::-webkit-scrollbar]:hidden">
             {starterPrompts.map((prompt) => (
               <button
                 key={prompt}
                 type="button"
                 onClick={() => void sendMessage(prompt)}
                 disabled={isSending}
-                className="motion-card rounded-2xl border border-gray-100 bg-white p-4 text-left shadow-sm disabled:opacity-60"
+                className="motion-card min-w-[13.5rem] rounded-[22px] border border-gray-100 bg-white p-3 text-left shadow-sm disabled:opacity-60 md:min-w-0 md:rounded-2xl md:p-4"
               >
-                <Bot size={17} className="mb-3 text-emerald-500" />
-                <span className="text-sm leading-5 font-extrabold text-gray-800">
+                <Bot size={16} className="mb-2 text-emerald-500 md:mb-3 md:size-[17px]" />
+                <span className="text-[13px] leading-5 font-extrabold text-gray-800 md:text-sm">
                   {prompt}
                 </span>
               </button>
             ))}
           </section>
 
-          <section className="space-y-4">
+          <section className="space-y-3 md:space-y-4">
             {messages.map((message, index) => {
               const isUser = message.role === "user";
               const canShowQuickReplies =
@@ -273,13 +287,13 @@ export function CustomerAiAssistantScreen() {
                   className={`flex ${isUser ? "justify-end" : "justify-start"}`}
                 >
                   <div
-                    className={`max-w-[92%] rounded-[24px] px-4 py-3 shadow-sm md:max-w-3xl ${
+                    className={`max-w-[88%] rounded-[22px] px-4 py-3 shadow-sm md:max-w-3xl md:rounded-[24px] ${
                       isUser
                         ? "bg-gray-950 text-white"
                         : "border border-gray-100 bg-white text-gray-800"
                     }`}
                   >
-                    <p className="whitespace-pre-wrap text-sm leading-6 font-semibold">
+                    <p className="whitespace-pre-wrap text-[13px] leading-6 font-semibold md:text-sm">
                       {message.content}
                     </p>
 
@@ -377,7 +391,7 @@ export function CustomerAiAssistantScreen() {
                             type="button"
                             onClick={() => void sendMessage(reply)}
                             disabled={isSending}
-                            className="rounded-full border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs font-extrabold text-emerald-700 disabled:opacity-60"
+                            className="max-w-full rounded-full border border-emerald-100 bg-emerald-50 px-3 py-2 text-left text-[13px] leading-5 font-extrabold break-words text-emerald-700 disabled:opacity-60 md:text-xs"
                           >
                             {reply}
                           </button>
@@ -404,15 +418,15 @@ export function CustomerAiAssistantScreen() {
 
       <form
         onSubmit={handleSubmit}
-        className="absolute right-0 bottom-24 left-0 z-40 border-t border-gray-100 bg-white/95 px-5 py-4 backdrop-blur-xl md:bottom-0 md:px-8 lg:px-10"
+        className="absolute right-0 bottom-[5.75rem] left-0 z-40 border-t border-gray-100 bg-white/95 px-4 py-3 backdrop-blur-xl md:bottom-0 md:px-8 md:py-4 lg:px-10"
       >
-        <div className="mx-auto flex w-full max-w-6xl items-center gap-3">
+        <div className="mx-auto flex w-full max-w-6xl items-center gap-2 md:gap-3">
           <input
             ref={inputRef}
             value={input}
             onChange={(event) => setInput(event.target.value)}
-            placeholder="Tanya AI soal menu, toko, keranjang, atau checkout..."
-            className="min-w-0 flex-1 rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-bold text-gray-900 outline-none transition focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-100"
+            placeholder="Tanya AI soal menu atau checkout..."
+            className="h-12 min-w-0 flex-1 rounded-[20px] border border-gray-200 bg-gray-50 px-4 text-[13px] font-bold text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-100 md:rounded-2xl md:text-sm"
             disabled={isSending}
           />
           <button
