@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { ChangeEvent, FormEvent } from "react";
 import { useEffect, useState } from "react";
 import {
@@ -33,6 +34,7 @@ type PasswordForm = {
 };
 
 export default function CustomerEditProfilePage() {
+  const router = useRouter();
   const [profile, setProfile] = useState<ProfileForm>({
     fullName: "",
     email: "",
@@ -68,12 +70,21 @@ export default function CustomerEditProfilePage() {
         user?: { name: string; email: string; phone?: string | null };
       };
 
-      if (!ignore && data.user) {
+      if (!response.ok || !data.ok || !data.user) {
+        await fetch("/api/auth/logout", { method: "POST" });
+        router.replace("/");
+        router.refresh();
+        return;
+      }
+
+      const nextUser = data.user;
+
+      if (!ignore) {
         setProfile((currentProfile) => ({
           ...currentProfile,
-          fullName: data.user?.name ?? "",
-          email: data.user?.email ?? "",
-          phone: data.user?.phone ?? "",
+          fullName: nextUser.name,
+          email: nextUser.email,
+          phone: nextUser.phone ?? "",
         }));
       }
     }
@@ -86,7 +97,7 @@ export default function CustomerEditProfilePage() {
         URL.revokeObjectURL(avatarPreview);
       }
     };
-  }, [avatarPreview]);
+  }, [avatarPreview, router]);
 
   const handleProfileChange = (key: keyof ProfileForm, value: string) => {
     setProfile((currentProfile) => ({

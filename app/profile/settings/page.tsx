@@ -145,8 +145,15 @@ export default function CustomerAccountSettingsPage() {
           user?: { name: string; email: string };
         };
 
+        if (!response.ok || !data.ok || !data.user) {
+          await fetch("/api/auth/logout", { method: "POST" });
+          router.replace("/");
+          router.refresh();
+          return;
+        }
+
         if (!ignore) {
-          setUser(data.user ?? null);
+          setUser(data.user);
         }
       } finally {
         if (!ignore) {
@@ -160,7 +167,7 @@ export default function CustomerAccountSettingsPage() {
     return () => {
       ignore = true;
     };
-  }, []);
+  }, [router]);
 
   const handleToggle = (key: PreferenceKey) => {
     setPreferences((currentPreferences) => ({
@@ -184,7 +191,7 @@ export default function CustomerAccountSettingsPage() {
   const displayName = isLoadingUser ? "Memuat profil" : user?.name || "Customer";
   const displayEmail = isLoadingUser
     ? "Menyinkronkan akun..."
-    : user?.email || "Akun belum tersedia";
+    : user?.email || "Sesi perlu diperbarui";
 
   return (
     <MobileDeviceFrame backgroundClassName="bg-[#f8fafc]">

@@ -3,6 +3,7 @@ import {
   NotificationType,
   OrderStatus,
   PaymentStatus,
+  UserRole,
 } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -33,15 +34,26 @@ export async function GET(request: Request) {
   const customerEmail = url.searchParams.get("customerEmail");
   const ownerEmail = url.searchParams.get("ownerEmail");
 
+  if (!session) {
+    return NextResponse.json(
+      { ok: false, message: "Login diperlukan untuk melihat pesanan." },
+      { status: 401 },
+    );
+  }
+
   const orders = await prisma.order.findMany({
     where: {
       customer:
-        customerEmail || session?.role === "CUSTOMER"
-          ? { email: customerEmail || session?.email }
+        session.role === UserRole.CUSTOMER
+          ? { id: session.userId }
+          : session.role === UserRole.ADMIN && customerEmail
+            ? { email: customerEmail }
           : undefined,
       restaurant:
-        ownerEmail || session?.role === "OWNER"
-          ? { owner: { email: ownerEmail || session?.email } }
+        session.role === UserRole.OWNER
+          ? { ownerId: session.userId }
+          : session.role === UserRole.ADMIN && ownerEmail
+            ? { owner: { email: ownerEmail } }
           : undefined,
     },
     include: {
@@ -185,17 +197,34 @@ export async function POST(request: Request) {
 
       for (const cartItem of data.items) {
         const menuItem = menuItems.find((item) => item.id === cartItem.menuItemId);
-        const nextStock = Math.max((menuItem?.stock || 0) - cartItem.quantity, 0);
 
-        await tx.menuItem.update({
-          where: { id: cartItem.menuItemId },
+        const stockUpdate = await tx.menuItem.updateMany({
+          where: {
+            id: cartItem.menuItemId,
+            status: MenuItemStatus.ACTIVE,
+            stock: { gte: cartItem.quantity },
+          },
           data: {
             stock: { decrement: cartItem.quantity },
             soldCount: { increment: cartItem.quantity },
-            status:
-              nextStock === 0 ? MenuItemStatus.SOLD_OUT : MenuItemStatus.ACTIVE,
           },
         });
+
+        if (stockUpdate.count !== 1) {
+          throw new Error(`${menuItem?.name || "Menu"} stok tidak cukup.`);
+        }
+
+        const updatedMenuItem = await tx.menuItem.findUnique({
+          where: { id: cartItem.menuItemId },
+          select: { stock: true },
+        });
+
+        if (updatedMenuItem?.stock === 0) {
+          await tx.menuItem.update({
+            where: { id: cartItem.menuItemId },
+            data: { status: MenuItemStatus.SOLD_OUT },
+          });
+        }
       }
 
       const ownerId = menuItems[0].restaurant.ownerId;

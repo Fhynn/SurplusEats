@@ -158,6 +158,12 @@ export function CustomerProfileScreen() {
           setOrderCount(ordersData.orders?.length ?? 0);
           setVoucherCount(vouchersData.vouchers?.length ?? 0);
         }
+      } catch {
+        if (!ignore) {
+          await fetch("/api/auth/logout", { method: "POST" });
+          router.replace("/");
+          router.refresh();
+        }
       } finally {
         if (!ignore) {
           setIsLoadingProfile(false);
@@ -204,7 +210,7 @@ export function CustomerProfileScreen() {
   const displayName = isLoadingProfile ? "Memuat profil" : user?.name || "Customer";
   const displayEmail = isLoadingProfile
     ? "Menyinkronkan akun..."
-    : user?.email || "Akun belum tersedia";
+    : user?.email || "Sesi perlu diperbarui";
 
   return (
     <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-gray-50">

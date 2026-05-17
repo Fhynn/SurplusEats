@@ -13,26 +13,34 @@ import { prisma, type PrismaTransactionClient } from "@/lib/prisma";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const applicationSchema = z.object({
-  applicantName: z.string().min(3),
-  email: z.string().email(),
-  phone: z.string().min(8),
-  businessName: z.string().min(3),
-  businessType: z.string().min(2),
-  address: z.string().min(8),
-  city: z.string().min(2),
-  description: z.string().optional(),
-});
-
 const reviewSchema = z.object({
   applicationId: z.string(),
   status: z.enum([ApplicationStatus.APPROVED, ApplicationStatus.REJECTED]),
   adminNote: z.string().optional(),
 });
+const validApplicationStatuses = new Set<string>(Object.values(ApplicationStatus));
 
 export async function GET(request: Request) {
+  const session = await getCurrentSession();
+
+  if (session?.role !== UserRole.ADMIN) {
+    return NextResponse.json(
+      { ok: false, message: "Akses admin diperlukan." },
+      { status: session ? 403 : 401 },
+    );
+  }
+
   const url = new URL(request.url);
-  const status = url.searchParams.get("status") as ApplicationStatus | null;
+  const statusParam = url.searchParams.get("status");
+
+  if (statusParam && !validApplicationStatuses.has(statusParam)) {
+    return NextResponse.json(
+      { ok: false, message: "Status verifikasi tidak valid." },
+      { status: 400 },
+    );
+  }
+
+  const status = statusParam as ApplicationStatus | null;
 
   const applications = await prisma.restaurantApplication.findMany({
     where: status ? { status } : undefined,
@@ -47,62 +55,14 @@ export async function GET(request: Request) {
   return NextResponse.json({ ok: true, applications });
 }
 
-export async function POST(request: Request) {
-  const parsed = applicationSchema.safeParse(await request.json());
-
-  if (!parsed.success) {
-    return NextResponse.json(
-      {
-        ok: false,
-        message: "Data pendaftaran mitra tidak valid.",
-        issues: parsed.error.flatten(),
-      },
-      { status: 400 },
-    );
-  }
-
-  const data = parsed.data;
-  const user = await prisma.user.upsert({
-    where: { email: data.email },
-    update: {
-      name: data.applicantName,
-      phone: data.phone,
-      role: UserRole.OWNER,
+export async function POST() {
+  return NextResponse.json(
+    {
+      ok: false,
+      message: "Gunakan endpoint pendaftaran mitra terbaru.",
     },
-    create: {
-      email: data.email,
-      name: data.applicantName,
-      phone: data.phone,
-      role: UserRole.OWNER,
-    },
-  });
-
-  const application = await prisma.restaurantApplication.create({
-    data: {
-      userId: user.id,
-      applicantName: data.applicantName,
-      email: data.email,
-      phone: data.phone,
-      businessName: data.businessName,
-      businessType: data.businessType,
-      address: data.address,
-      city: data.city,
-      description: data.description,
-      status: ApplicationStatus.PENDING,
-    },
-  });
-
-  await prisma.notification.create({
-    data: {
-      userId: user.id,
-      type: "SYSTEM",
-      title: "Pendaftaran mitra diterima",
-      body: "Admin akan meninjau data usaha kamu sebelum dashboard owner dibuka.",
-      href: "/owner/verify",
-    },
-  });
-
-  return NextResponse.json({ ok: true, application }, { status: 201 });
+    { status: 410 },
+  );
 }
 
 export async function PATCH(request: Request) {
@@ -131,8 +91,17 @@ export async function PATCH(request: Request) {
   const data = parsed.data;
 
   const result = await prisma.$transaction(async (tx: PrismaTransactionClient) => {
-    const application = await tx.restaurantApplication.update({
+    const existingApplication = await tx.restaurantApplication.findUnique({
       where: { id: data.applicationId },
+      select: { id: true },
+    });
+
+    if (!existingApplication) {
+      return null;
+    }
+
+    const application = await tx.restaurantApplication.update({
+      where: { id: existingApplication.id },
       data: {
         status: data.status,
         adminNote: data.adminNote,
@@ -210,6 +179,13 @@ export async function PATCH(request: Request) {
 
     return { application, restaurant };
   });
+
+  if (!result) {
+    return NextResponse.json(
+      { ok: false, message: "Pendaftaran mitra tidak ditemukan." },
+      { status: 404 },
+    );
+  }
 
   return NextResponse.json({ ok: true, ...result });
 }

@@ -25,12 +25,20 @@ const updateOrderStatusSchema = z.object({
 export async function GET(_request: Request, { params }: OrderDetailRouteProps) {
   const { id } = await params;
   const session = await getCurrentSession();
+
+  if (!session) {
+    return NextResponse.json(
+      { ok: false, message: "Login diperlukan untuk melihat order." },
+      { status: 401 },
+    );
+  }
+
   const order = await prisma.order.findFirst({
     where: {
       orderCode: id,
-      customerId: session?.role === "CUSTOMER" ? session.userId : undefined,
+      customerId: session.role === UserRole.CUSTOMER ? session.userId : undefined,
       restaurant:
-        session?.role === "OWNER" ? { ownerId: session.userId } : undefined,
+        session.role === UserRole.OWNER ? { ownerId: session.userId } : undefined,
     },
     include: {
       customer: true,
