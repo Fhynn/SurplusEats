@@ -15,11 +15,11 @@ export function LoadingScreen({
 }: LoadingScreenProps) {
   const isFrame = scope === "frame";
   const rootClassName = isFrame
-    ? "modal-backdrop-in absolute inset-0 z-[130] flex min-h-full items-center justify-center overflow-hidden bg-white px-5 text-center"
-    : "modal-backdrop-in fixed inset-0 z-[130] flex min-h-screen items-center justify-center overflow-hidden bg-white px-6 text-center";
+    ? "modal-backdrop-in absolute inset-0 z-[130] flex min-h-full items-center justify-center overflow-hidden bg-white/80 px-5 text-center backdrop-blur-md"
+    : "modal-backdrop-in fixed inset-0 z-[130] flex min-h-screen items-center justify-center overflow-hidden bg-white/85 px-6 text-center backdrop-blur-lg";
   const topGlowClassName = isFrame
-    ? "absolute inset-x-0 top-0 h-40 bg-emerald-50"
-    : "absolute inset-x-0 top-0 h-64 bg-emerald-50";
+    ? "absolute inset-x-0 top-0 h-40 bg-emerald-50/70"
+    : "absolute inset-x-0 top-0 h-64 bg-emerald-50/75";
   const centerGlowClassName = isFrame
     ? "absolute -top-16 left-1/2 h-56 w-56 -translate-x-1/2 rounded-full bg-emerald-100/70 blur-3xl"
     : "absolute -top-16 left-1/2 h-72 w-72 -translate-x-1/2 rounded-full bg-emerald-100/70 blur-3xl";
