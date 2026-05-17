@@ -18,6 +18,9 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { FormEvent, ReactNode } from "react";
 import { useState } from "react";
 
+import { LoadingScreen } from "@/components/loading-screen";
+import { useRouteTransition } from "@/components/route-transition-provider";
+
 const shellRoutes = new Set([
   "/owner/dashboard",
   "/owner/menu",
@@ -75,6 +78,7 @@ export function OwnerShell({
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const { isRouteLoading } = useRouteTransition();
   const dashboardTab = searchParams.get("tab");
   const [shellQuery, setShellQuery] = useState("");
   const [isLoggingOut, setIsLoggingOut] = useState(false);
@@ -112,6 +116,12 @@ export function OwnerShell({
 
   return (
     <div className="min-h-screen bg-slate-50 font-[family-name:var(--font-plus-jakarta-sans)] selection:bg-emerald-200">
+      {isRouteLoading ? (
+        <LoadingScreen
+          title="Memuat halaman..."
+          description="Sebentar, SurplusEats sedang membuka dashboard mitra."
+        />
+      ) : null}
       <div className="flex min-h-screen">
         <aside className="hidden w-64 shrink-0 flex-col border-r border-gray-100 bg-white shadow-[4px_0_24px_rgba(0,0,0,0.02)] md:flex">
           <div className="border-b border-gray-50 p-6">
@@ -147,7 +157,7 @@ export function OwnerShell({
                 <Link
                   key={label}
                   href={href}
-                  className={`flex w-full items-center ${
+                  className={`motion-press flex w-full items-center ${
                     badge ? "justify-between" : "gap-3"
                   } rounded-2xl px-4 py-3.5 text-sm font-bold transition-all duration-200 ${
                     isActive
@@ -176,7 +186,7 @@ export function OwnerShell({
           <div className="border-t border-gray-50 p-4">
             <Link
               href="/owner/settings"
-              className={`flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold transition-colors ${
+              className={`motion-press flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold transition-colors ${
                 pathname === "/owner/settings"
                   ? "bg-emerald-50 text-emerald-600"
                   : "text-gray-500 hover:bg-gray-50 hover:text-gray-900"
@@ -196,7 +206,7 @@ export function OwnerShell({
               type="button"
               onClick={handleLogout}
               disabled={isLoggingOut}
-              className="mt-2 flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold text-gray-500 transition-colors hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:text-gray-300"
+              className="motion-press mt-2 flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold text-gray-500 transition-colors hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:text-gray-300"
             >
               <LogOut size={20} className="text-gray-400" />
               {isLoggingOut ? "Keluar..." : "Keluar Akun"}
@@ -259,7 +269,10 @@ export function OwnerShell({
             </div>
           </header>
 
-          <div className="flex-1 overflow-y-auto bg-[#f8fafc] p-8 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div
+            key={`${pathname}-${dashboardTab ?? ""}`}
+            className="app-page-enter flex-1 overflow-y-auto bg-[#f8fafc] p-8 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          >
             {children}
           </div>
         </main>

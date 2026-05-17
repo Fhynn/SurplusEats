@@ -16,7 +16,9 @@ import {
 import { useRouter } from "next/navigation";
 import { type FormEvent, useState } from "react";
 
+import { LoadingScreen } from "@/components/loading-screen";
 import { MobileDeviceFrame } from "@/components/mobile-device-frame";
+import { waitForLoadingScreen } from "@/lib/loading-delay";
 
 const trustItems = [
   "Pickup QR aman",
@@ -50,15 +52,18 @@ export function CustomerLoginScreen() {
     setNotice("");
 
     try {
-      const response = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: normalizedEmail,
-          password,
-          rememberMe,
+      const [response] = await Promise.all([
+        fetch("/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: normalizedEmail,
+            password,
+            rememberMe,
+          }),
         }),
-      });
+        waitForLoadingScreen(),
+      ]);
       const result = (await response.json()) as {
         ok: boolean;
         message?: string;
@@ -81,6 +86,13 @@ export function CustomerLoginScreen() {
 
   return (
     <MobileDeviceFrame backgroundClassName="bg-white">
+      {isSubmitting ? (
+        <LoadingScreen
+          scope="frame"
+          title="Memeriksa akun..."
+          description="Kami sedang memvalidasi email dan password kamu."
+        />
+      ) : null}
       <div className="flex h-full min-h-0 flex-col overflow-y-auto bg-white">
         <section className="relative h-[34%] min-h-[230px] w-full shrink-0 md:min-h-[250px]">
           <Image
@@ -122,7 +134,11 @@ export function CustomerLoginScreen() {
         <section className="relative z-20 -mt-7 flex flex-1 flex-col rounded-t-[32px] bg-white px-6 pt-6 pb-8 shadow-[0_-15px_40px_rgba(0,0,0,0.15)]">
           <div className="mx-auto mb-5 h-1.5 w-12 rounded-full bg-gray-200" />
 
-          <form className="flex flex-1 flex-col" onSubmit={handleSubmit}>
+          <form
+            className="flex flex-1 flex-col"
+            onSubmit={handleSubmit}
+            autoComplete="off"
+          >
             <div className="flex-1 space-y-4">
               <div className="rounded-[22px] border border-emerald-100 bg-emerald-50 p-4">
                 <div className="mb-2.5 flex items-center gap-2">
@@ -166,12 +182,17 @@ export function CustomerLoginScreen() {
                   />
                   <input
                     id="email"
+                    name="surpluseats-login-email"
                     type="email"
                     value={email}
                     onChange={(event) => setEmail(event.target.value)}
                     placeholder="nama@email.com"
                     autoCapitalize="none"
-                    autoComplete="username"
+                    autoComplete="off"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    data-1p-ignore="true"
+                    data-lpignore="true"
                     onFocus={() => setEmailFocus(true)}
                     onBlur={() => setEmailFocus(false)}
                     className="w-full rounded-2xl bg-transparent py-3.5 pr-4 pl-12 text-sm font-semibold text-gray-900 outline-none placeholder:text-gray-400"
@@ -209,11 +230,14 @@ export function CustomerLoginScreen() {
                   />
                   <input
                     id="password"
+                    name="surpluseats-login-passcode"
                     type={showPassword ? "text" : "password"}
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
                     placeholder="Masukkan password"
-                    autoComplete="current-password"
+                    autoComplete="new-password"
+                    data-1p-ignore="true"
+                    data-lpignore="true"
                     onFocus={() => setPassFocus(true)}
                     onBlur={() => setPassFocus(false)}
                     className="w-full rounded-2xl bg-transparent py-3.5 pr-12 pl-12 text-sm font-semibold text-gray-900 outline-none placeholder:text-gray-400"

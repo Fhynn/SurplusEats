@@ -402,9 +402,9 @@ export default function CustomerAccountSettingsPage() {
         </div>
 
         {confirmationType ? (
-          <div className="absolute inset-0 z-50 flex items-end overflow-y-auto bg-gray-950/35 backdrop-blur-sm">
+          <div className="modal-backdrop-in absolute inset-0 z-50 flex items-end overflow-y-auto bg-gray-950/35 backdrop-blur-sm">
             <div
-              className="max-h-[92%] w-full overflow-y-auto rounded-t-[36px] bg-white px-6 pt-6 shadow-[0_-24px_70px_rgba(15,23,42,0.22)]"
+              className="sheet-in max-h-[92%] w-full overflow-y-auto rounded-t-[36px] bg-white px-6 pt-6 shadow-[0_-24px_70px_rgba(15,23,42,0.22)]"
               style={{ paddingBottom: "max(2rem, env(safe-area-inset-bottom))" }}
             >
               <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-red-50 text-red-500">

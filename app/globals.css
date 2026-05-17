@@ -94,6 +94,17 @@ input {
   }
 }
 
+@keyframes soft-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(1.08);
+  }
+}
+
 .animate-in {
   animation-duration: 200ms;
   animation-fill-mode: both;
@@ -101,6 +112,68 @@ input {
 
 .fade-in {
   animation-name: fade-in;
+}
+
+.app-frame {
+  animation: fade-in 180ms ease-out both;
+}
+
+.app-page-enter {
+  animation: fade-up 260ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.bottom-nav-enter {
+  animation: sheet-up 300ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.sheet-in {
+  animation: sheet-up 240ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.modal-backdrop-in {
+  animation: fade-in 180ms ease-out both;
+}
+
+.motion-press {
+  transform: translateZ(0);
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease,
+    background-color 180ms ease,
+    border-color 180ms ease,
+    color 180ms ease;
+}
+
+.motion-press:active {
+  transform: scale(0.98);
+}
+
+.motion-card {
+  transform: translateZ(0);
+  transition:
+    transform 220ms ease,
+    box-shadow 220ms ease,
+    border-color 220ms ease,
+    background-color 220ms ease;
+}
+
+.motion-card:hover {
+  transform: translateY(-2px);
+}
+
+.nav-active-pulse {
+  animation: soft-pulse 1.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
 }
 
 .admin-shell-content > .min-h-screen {

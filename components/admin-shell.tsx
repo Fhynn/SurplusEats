@@ -16,6 +16,9 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { ReactNode } from "react";
 import { useState } from "react";
 
+import { LoadingScreen } from "@/components/loading-screen";
+import { useRouteTransition } from "@/components/route-transition-provider";
+
 const adminNavItems = [
   {
     href: "/admin/dashboard",
@@ -118,6 +121,7 @@ export function AdminShell({ children }: Readonly<{ children: ReactNode }>) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const { isRouteLoading } = useRouteTransition();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const dashboardTab = searchParams.get("tab");
   const pageLabel =
@@ -137,8 +141,14 @@ export function AdminShell({ children }: Readonly<{ children: ReactNode }>) {
 
   return (
     <div className="min-h-screen bg-gray-50 font-[family-name:var(--font-plus-jakarta-sans)] text-gray-900 selection:bg-emerald-200">
+      {isRouteLoading ? (
+        <LoadingScreen
+          title="Memuat halaman..."
+          description="Sebentar, SurplusEats sedang membuka halaman admin."
+        />
+      ) : null}
       <div className="flex min-h-screen">
-        <aside className="hidden w-[260px] shrink-0 flex-col bg-gray-950 text-white shadow-[12px_0_36px_rgba(0,0,0,0.08)] lg:flex">
+        <aside className="sticky top-0 hidden h-screen w-[260px] shrink-0 flex-col bg-gray-950 text-white shadow-[12px_0_36px_rgba(0,0,0,0.08)] lg:flex">
           <div className="border-b border-white/10 px-6 py-6">
             <Link href="/admin/dashboard" className="flex items-center gap-3">
               <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-500/10 ring-1 ring-emerald-400/20">
@@ -155,7 +165,7 @@ export function AdminShell({ children }: Readonly<{ children: ReactNode }>) {
             </Link>
           </div>
 
-          <nav className="flex-1 space-y-2 px-4 py-6">
+          <nav className="min-h-0 flex-1 space-y-2 overflow-y-auto px-4 py-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <p className="px-3 text-xs font-extrabold tracking-wider text-gray-500 uppercase">
               Navigasi Admin
             </p>
@@ -166,7 +176,7 @@ export function AdminShell({ children }: Readonly<{ children: ReactNode }>) {
                 <Link
                   key={label}
                   href={href}
-                  className={`flex w-full items-center justify-between rounded-2xl px-4 py-3 text-sm font-bold transition-all ${
+                  className={`motion-press flex w-full items-center justify-between rounded-2xl px-4 py-3 text-sm font-bold transition-all ${
                     isActive
                       ? "bg-emerald-500/10 text-emerald-300 ring-1 ring-emerald-400/10"
                       : "text-gray-400 hover:bg-emerald-500/10 hover:text-white"
@@ -189,12 +199,12 @@ export function AdminShell({ children }: Readonly<{ children: ReactNode }>) {
             })}
           </nav>
 
-          <div className="border-t border-white/10 p-4">
+          <div className="shrink-0 border-t border-white/10 p-4">
             <button
               type="button"
               onClick={handleLogout}
               disabled={isLoggingOut}
-              className="flex w-full items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-extrabold text-gray-300 transition-colors hover:bg-red-500/10 hover:text-red-200 disabled:cursor-not-allowed disabled:text-gray-600"
+              className="motion-press flex w-full items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-extrabold text-gray-300 transition-colors hover:bg-red-500/10 hover:text-red-200 disabled:cursor-not-allowed disabled:text-gray-600"
             >
               <LogOut size={18} />
               {isLoggingOut ? "Keluar..." : "Keluar Akun"}
@@ -239,7 +249,7 @@ export function AdminShell({ children }: Readonly<{ children: ReactNode }>) {
                 <Link
                   key={label}
                   href={href}
-                  className={`shrink-0 rounded-xl px-3 py-2 text-xs font-extrabold ${
+                  className={`motion-press shrink-0 rounded-xl px-3 py-2 text-xs font-extrabold ${
                     match(pathname, dashboardTab)
                       ? "bg-emerald-500 text-white"
                       : "bg-gray-100 text-gray-600"
@@ -251,7 +261,10 @@ export function AdminShell({ children }: Readonly<{ children: ReactNode }>) {
             </div>
           </header>
 
-          <div className="admin-shell-content min-w-0 flex-1 overflow-y-auto bg-gray-50">
+          <div
+            key={`${pathname}-${dashboardTab ?? ""}`}
+            className="admin-shell-content app-page-enter min-w-0 flex-1 overflow-y-auto bg-gray-50"
+          >
             {children}
           </div>
         </main>

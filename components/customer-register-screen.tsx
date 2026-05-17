@@ -18,7 +18,10 @@ import {
 import { useRouter } from "next/navigation";
 import { type ChangeEvent, type FormEvent, useMemo, useState } from "react";
 
+import { LoadingScreen } from "@/components/loading-screen";
 import { MobileDeviceFrame } from "@/components/mobile-device-frame";
+import { WelcomeLoadingOverlay } from "@/components/welcome-loading-overlay";
+import { waitForLoadingScreen } from "@/lib/loading-delay";
 
 const preferences = ["Roti", "Nasi", "Snack", "Sayur"] as const;
 
@@ -37,6 +40,7 @@ type RegisterForm = {
 
 const inputClassName =
   "w-full rounded-2xl bg-transparent py-4 pr-4 pl-12 text-sm font-semibold text-gray-900 outline-none placeholder:text-gray-400";
+const welcomeLoadingDelayMs = 4200;
 
 export function CustomerRegisterScreen() {
   const router = useRouter();
@@ -54,6 +58,7 @@ export function CustomerRegisterScreen() {
   });
   const [notice, setNotice] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isWelcomeLoading, setIsWelcomeLoading] = useState(false);
 
   const passwordScore = useMemo(() => {
     let score = 0;
@@ -107,14 +112,17 @@ export function CustomerRegisterScreen() {
     setNotice("");
 
     try {
-      const response = await fetch("/api/auth/register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...form,
-          preferences: selectedPreferences,
+      const [response] = await Promise.all([
+        fetch("/api/auth/register", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...form,
+            preferences: selectedPreferences,
+          }),
         }),
-      });
+        waitForLoadingScreen(),
+      ]);
       const result = (await response.json()) as {
         ok: boolean;
         message?: string;
@@ -126,6 +134,8 @@ export function CustomerRegisterScreen() {
         return;
       }
 
+      setIsWelcomeLoading(true);
+      await new Promise((resolve) => setTimeout(resolve, welcomeLoadingDelayMs));
       router.push(result.redirectTo);
       router.refresh();
     } catch {
@@ -137,6 +147,20 @@ export function CustomerRegisterScreen() {
 
   return (
     <MobileDeviceFrame backgroundClassName="bg-white">
+      {isSubmitting && !isWelcomeLoading ? (
+        <LoadingScreen
+          scope="frame"
+          title="Membuat akun..."
+          description="Data akun kamu sedang diproses."
+        />
+      ) : null}
+      {isWelcomeLoading ? (
+        <WelcomeLoadingOverlay
+          scope="frame"
+          title="Selamat datang!"
+          description="Akun kamu sudah siap. Kami sedang menyiapkan beranda SurplusEats."
+        />
+      ) : null}
       <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-white">
         <header className="sticky top-0 z-20 bg-white px-6 pt-10 pb-4">
           <div className="mb-5 flex items-center">

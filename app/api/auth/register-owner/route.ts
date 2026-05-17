@@ -16,15 +16,24 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const ownerRegisterSchema = z.object({
-  ownerName: z.string().min(3),
-  email: z.string().email(),
-  phone: z.string().min(8),
-  password: z.string().min(6),
-  storeName: z.string().min(3),
-  businessType: z.string().min(2),
-  address: z.string().min(8),
-  city: z.string().min(2).default("Jakarta"),
-  description: z.string().optional(),
+  ownerName: z.string().trim().min(3, "Nama pemilik minimal 3 karakter."),
+  email: z.string().trim().email("Format email owner belum valid."),
+  phone: z
+    .string()
+    .trim()
+    .min(8, "Nomor WhatsApp minimal 8 digit."),
+  password: z.string().min(6, "Password owner minimal 6 karakter."),
+  storeName: z.string().trim().min(3, "Nama toko minimal 3 karakter."),
+  businessType: z.string().trim().min(2, "Pilih kategori usaha."),
+  address: z
+    .string()
+    .trim()
+    .min(
+      20,
+      "Alamat pickup terlalu pendek. Tulis alamat lengkap, nomor bangunan, area, dan patokan.",
+    ),
+  city: z.string().trim().min(2, "Kota wajib diisi.").default("Jakarta"),
+  description: z.string().trim().optional(),
 });
 
 const documentRequirements = [
@@ -162,11 +171,14 @@ export async function POST(request: Request) {
   const parsed = ownerRegisterSchema.safeParse(payload);
 
   if (!parsed.success) {
+    const fieldErrors = parsed.error.flatten().fieldErrors;
+    const firstFieldError = Object.values(fieldErrors).flat().find(Boolean);
+
     return NextResponse.json(
       {
         ok: false,
-        message: "Data pendaftaran mitra belum lengkap.",
-        issues: parsed.error.flatten(),
+        message: firstFieldError || "Data pendaftaran mitra belum lengkap.",
+        issues: { fieldErrors },
       },
       { status: 400 },
     );

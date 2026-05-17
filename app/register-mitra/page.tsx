@@ -29,11 +29,16 @@ import {
   useState,
 } from "react";
 
+import { LoadingScreen } from "@/components/loading-screen";
+import { WelcomeLoadingOverlay } from "@/components/welcome-loading-overlay";
+import { waitForLoadingScreen } from "@/lib/loading-delay";
+
 const inputWrapClassName =
   "relative rounded-2xl border border-gray-200 bg-white shadow-[0_4px_20px_rgba(15,23,42,0.03)] transition-all focus-within:border-emerald-300 focus-within:ring-4 focus-within:ring-emerald-500/10";
 
 const inputClassName =
   "w-full rounded-2xl bg-transparent py-3.5 pr-4 pl-12 text-sm font-semibold text-gray-900 outline-none placeholder:text-gray-400";
+const welcomeLoadingDelayMs = 4200;
 
 const businessCategories = [
   "Bakery",
@@ -54,7 +59,7 @@ const uploadRequirements: {
   {
     id: "identity",
     title: "Foto KTP Pemilik",
-    description: "JPG, PNG, atau PDF maksimal 5 MB",
+    description: "JPG, PNG, WEBP, atau PDF maksimal 6 MB",
     icon: Camera,
   },
   {
@@ -90,6 +95,93 @@ type PartnerForm = {
 };
 
 type UploadedDocs = Record<UploadKind, File | null>;
+type FormErrorKey = keyof PartnerForm | UploadKind;
+type FormErrors = Partial<Record<FormErrorKey, string>>;
+
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const maxUploadSize = 6 * 1024 * 1024;
+const allowedUploadTypes = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "application/pdf",
+]);
+
+function getInputWrapClassName(error?: string) {
+  return `${inputWrapClassName} ${
+    error
+      ? "border-red-200 bg-red-50/40 focus-within:border-red-300 focus-within:ring-red-500/10"
+      : ""
+  }`;
+}
+
+function FieldError({ message }: { message?: string }) {
+  if (!message) {
+    return null;
+  }
+
+  return (
+    <p className="mt-2 text-xs leading-5 font-bold text-red-600" role="alert">
+      {message}
+    </p>
+  );
+}
+
+function validatePartnerForm(form: PartnerForm, uploadedDocs: UploadedDocs) {
+  const errors: FormErrors = {};
+  const phoneDigits = form.phone.replace(/\D/g, "");
+
+  if (form.storeName.trim().length < 3) {
+    errors.storeName = "Nama toko minimal 3 karakter.";
+  }
+
+  if (form.ownerName.trim().length < 3) {
+    errors.ownerName = "Nama pemilik minimal 3 karakter sesuai identitas.";
+  }
+
+  if (!emailPattern.test(form.email.trim())) {
+    errors.email = "Masukkan email owner yang valid.";
+  }
+
+  if (phoneDigits.length < 8) {
+    errors.phone = "Nomor WhatsApp minimal 8 digit.";
+  }
+
+  if (form.password.length < 6) {
+    errors.password = "Password owner minimal 6 karakter.";
+  }
+
+  if (form.address.trim().length < 20) {
+    errors.address =
+      "Alamat pickup terlalu pendek. Tulis alamat lengkap, nomor bangunan, area, dan patokan utama.";
+  }
+
+  if (form.pickupWindow.trim().length < 5) {
+    errors.pickupWindow = "Tulis jam pickup, contoh: 17:00 - 21:00.";
+  }
+
+  if (form.averageSurplus.trim().length < 3) {
+    errors.averageSurplus = "Tulis estimasi surplus, contoh: 10 porsi / hari.";
+  }
+
+  if (!uploadedDocs.identity) {
+    errors.identity = "Foto KTP pemilik wajib diunggah.";
+  }
+
+  if (!uploadedDocs.permit) {
+    errors.permit = "Surat izin atau NIB wajib diunggah.";
+  }
+
+  if (!uploadedDocs.storefront) {
+    errors.storefront = "Foto tampak depan toko wajib diunggah.";
+  }
+
+  return errors;
+}
+
+function getFirstError(errors: FormErrors) {
+  return Object.values(errors).find(Boolean) || "";
+}
 
 function FieldLabel({ children }: { children: ReactNode }) {
   return (
@@ -104,18 +196,22 @@ function UploadBox({
   description,
   icon: Icon,
   fileName,
+  error,
   onChange,
 }: {
   title: string;
   description: string;
   icon: LucideIcon;
   fileName?: string;
+  error?: string;
   onChange: (event: ChangeEvent<HTMLInputElement>) => void;
 }) {
   return (
     <label
       className={`group flex cursor-pointer flex-col rounded-[24px] border border-dashed px-5 py-6 shadow-[0_4px_20px_rgba(15,23,42,0.03)] transition-all ${
-        fileName
+        error
+          ? "border-red-200 bg-red-50"
+          : fileName
           ? "border-emerald-200 bg-emerald-50"
           : "border-gray-300 bg-white hover:border-emerald-300 hover:bg-emerald-50"
       }`}
@@ -147,6 +243,7 @@ function UploadBox({
       <p className="mt-1 text-xs leading-5 font-medium text-gray-500">
         {fileName || description}
       </p>
+      <FieldError message={error} />
       <span className="mt-4 inline-flex w-fit items-center gap-2 rounded-2xl bg-gray-900 px-4 py-2 text-xs font-extrabold text-white transition-colors group-hover:bg-emerald-500">
         <UploadCloud size={14} />
         {fileName ? "Ganti File" : "Pilih File"}
@@ -172,7 +269,9 @@ export default function RegisterMitraPage() {
   });
   const [showPassword, setShowPassword] = useState(false);
   const [notice, setNotice] = useState("");
+  const [formErrors, setFormErrors] = useState<FormErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isWelcomeLoading, setIsWelcomeLoading] = useState(false);
   const [uploadedDocs, setUploadedDocs] = useState<UploadedDocs>({
     identity: null,
     permit: null,
@@ -202,6 +301,17 @@ export default function RegisterMitraPage() {
     (key: keyof PartnerForm) =>
     (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       setForm((current) => ({ ...current, [key]: event.target.value }));
+      setNotice("");
+      setFormErrors((current) => {
+        if (!current[key]) {
+          return current;
+        }
+
+        const next = { ...current };
+        delete next[key];
+
+        return next;
+      });
     };
 
   const handleUploadChange =
@@ -212,13 +322,55 @@ export default function RegisterMitraPage() {
         return;
       }
 
+      if (!allowedUploadTypes.has(file.type)) {
+        setFormErrors((current) => ({
+          ...current,
+          [key]: "Format dokumen harus JPG, PNG, WEBP, atau PDF.",
+        }));
+        setNotice("Periksa dokumen yang ditandai merah.");
+        return;
+      }
+
+      if (file.size > maxUploadSize) {
+        setFormErrors((current) => ({
+          ...current,
+          [key]: "Ukuran dokumen maksimal 6 MB.",
+        }));
+        setNotice("Periksa dokumen yang ditandai merah.");
+        return;
+      }
+
       setUploadedDocs((current) => ({ ...current, [key]: file }));
+      setNotice("");
+      setFormErrors((current) => {
+        if (!current[key]) {
+          return current;
+        }
+
+        const next = { ...current };
+        delete next[key];
+
+        return next;
+      });
     };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setIsSubmitting(true);
     setNotice("");
+
+    const validationErrors = validatePartnerForm(form, uploadedDocs);
+
+    if (Object.keys(validationErrors).length > 0) {
+      setFormErrors(validationErrors);
+      setNotice(
+        getFirstError(validationErrors) ||
+          "Periksa data yang ditandai merah sebelum mendaftar.",
+      );
+      return;
+    }
+
+    setFormErrors({});
+    setIsSubmitting(true);
 
     try {
       const formData = new FormData();
@@ -242,21 +394,45 @@ export default function RegisterMitraPage() {
         }
       });
 
-      const response = await fetch("/api/auth/register-owner", {
-        method: "POST",
-        body: formData,
-      });
+      const [response] = await Promise.all([
+        fetch("/api/auth/register-owner", {
+          method: "POST",
+          body: formData,
+        }),
+        waitForLoadingScreen(),
+      ]);
       const result = (await response.json()) as {
         ok: boolean;
         message?: string;
         redirectTo?: string;
+        issues?: {
+          fieldErrors?: Partial<Record<keyof PartnerForm, string[]>>;
+        };
       };
 
       if (!response.ok || !result.ok || !result.redirectTo) {
+        const apiFieldErrors = result.issues?.fieldErrors;
+
+        if (apiFieldErrors) {
+          const nextErrors: FormErrors = {};
+
+          Object.entries(apiFieldErrors).forEach(([key, messages]) => {
+            const message = messages?.[0];
+
+            if (message) {
+              nextErrors[key as keyof PartnerForm] = message;
+            }
+          });
+
+          setFormErrors(nextErrors);
+        }
+
         setNotice(result.message || "Pendaftaran mitra gagal. Coba lagi.");
         return;
       }
 
+      setIsWelcomeLoading(true);
+      await new Promise((resolve) => setTimeout(resolve, welcomeLoadingDelayMs));
       router.push(result.redirectTo);
       router.refresh();
     } catch {
@@ -267,8 +443,21 @@ export default function RegisterMitraPage() {
   };
 
   return (
-    <main className="min-h-screen overflow-y-auto bg-[#f8fafc] px-5 py-8 font-[family-name:var(--font-plus-jakarta-sans)] text-gray-900">
+    <main className="relative min-h-screen overflow-y-auto bg-[#f8fafc] px-5 py-8 font-[family-name:var(--font-plus-jakarta-sans)] text-gray-900">
+      {isSubmitting && !isWelcomeLoading ? (
+        <LoadingScreen
+          title="Mengirim pendaftaran..."
+          description="Dokumen dan data mitra sedang dikirim ke SurplusEats."
+        />
+      ) : null}
+      {isWelcomeLoading ? (
+        <WelcomeLoadingOverlay
+          title="Pendaftaran diterima!"
+          description="Akun mitra sudah dibuat. Kami sedang membuka halaman status verifikasi."
+        />
+      ) : null}
       <form
+        noValidate
         onSubmit={handleSubmit}
         className="mx-auto grid max-w-6xl gap-6 lg:grid-cols-[0.84fr_1.16fr]"
       >
@@ -337,7 +526,7 @@ export default function RegisterMitraPage() {
             <div className="grid gap-4 md:grid-cols-2">
               <div>
                 <FieldLabel>Nama Toko</FieldLabel>
-                <div className={inputWrapClassName}>
+                <div className={getInputWrapClassName(formErrors.storeName)}>
                   <Store
                     size={19}
                     className="absolute top-1/2 left-4 -translate-y-1/2 text-emerald-500"
@@ -349,13 +538,15 @@ export default function RegisterMitraPage() {
                     onChange={handleInputChange("storeName")}
                     placeholder="Nama usaha kamu"
                     className={inputClassName}
+                    aria-invalid={Boolean(formErrors.storeName)}
                   />
                 </div>
+                <FieldError message={formErrors.storeName} />
               </div>
 
               <div>
                 <FieldLabel>Nama Pemilik</FieldLabel>
-                <div className={inputWrapClassName}>
+                <div className={getInputWrapClassName(formErrors.ownerName)}>
                   <User
                     size={19}
                     className="absolute top-1/2 left-4 -translate-y-1/2 text-emerald-500"
@@ -367,13 +558,15 @@ export default function RegisterMitraPage() {
                     onChange={handleInputChange("ownerName")}
                     placeholder="Nama sesuai KTP"
                     className={inputClassName}
+                    aria-invalid={Boolean(formErrors.ownerName)}
                   />
                 </div>
+                <FieldError message={formErrors.ownerName} />
               </div>
 
               <div>
                 <FieldLabel>Email Owner</FieldLabel>
-                <div className={inputWrapClassName}>
+                <div className={getInputWrapClassName(formErrors.email)}>
                   <Mail
                     size={19}
                     className="absolute top-1/2 left-4 -translate-y-1/2 text-emerald-500"
@@ -385,13 +578,15 @@ export default function RegisterMitraPage() {
                     onChange={handleInputChange("email")}
                     placeholder="owner@email.com"
                     className={inputClassName}
+                    aria-invalid={Boolean(formErrors.email)}
                   />
                 </div>
+                <FieldError message={formErrors.email} />
               </div>
 
               <div>
                 <FieldLabel>No. WhatsApp</FieldLabel>
-                <div className={inputWrapClassName}>
+                <div className={getInputWrapClassName(formErrors.phone)}>
                   <Phone
                     size={19}
                     className="absolute top-1/2 left-4 -translate-y-1/2 text-emerald-500"
@@ -403,13 +598,15 @@ export default function RegisterMitraPage() {
                     onChange={handleInputChange("phone")}
                     placeholder="08123456789"
                     className={inputClassName}
+                    aria-invalid={Boolean(formErrors.phone)}
                   />
                 </div>
+                <FieldError message={formErrors.phone} />
               </div>
 
               <div className="md:col-span-2">
                 <FieldLabel>Password Owner</FieldLabel>
-                <div className={inputWrapClassName}>
+                <div className={getInputWrapClassName(formErrors.password)}>
                   <Lock
                     size={19}
                     className="absolute top-1/2 left-4 -translate-y-1/2 text-emerald-500"
@@ -421,6 +618,7 @@ export default function RegisterMitraPage() {
                     onChange={handleInputChange("password")}
                     placeholder="Minimal 6 karakter untuk login owner"
                     className="w-full rounded-2xl bg-transparent py-3.5 pr-12 pl-12 text-sm font-semibold text-gray-900 outline-none placeholder:text-gray-400"
+                    aria-invalid={Boolean(formErrors.password)}
                   />
                   <button
                     type="button"
@@ -433,11 +631,12 @@ export default function RegisterMitraPage() {
                     {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                   </button>
                 </div>
+                <FieldError message={formErrors.password} />
               </div>
 
               <div className="md:col-span-2">
                 <FieldLabel>Alamat Pickup</FieldLabel>
-                <div className={inputWrapClassName}>
+                <div className={getInputWrapClassName(formErrors.address)}>
                   <MapPin
                     size={19}
                     className="absolute top-4 left-4 text-emerald-500"
@@ -449,8 +648,10 @@ export default function RegisterMitraPage() {
                     onChange={handleInputChange("address")}
                     placeholder="Tulis alamat lengkap dan patokan utama."
                     className={`${inputClassName} resize-none py-4`}
+                    aria-invalid={Boolean(formErrors.address)}
                   />
                 </div>
+                <FieldError message={formErrors.address} />
               </div>
             </div>
           </section>
@@ -490,7 +691,7 @@ export default function RegisterMitraPage() {
             <div className="grid gap-4 md:grid-cols-3">
               <div>
                 <FieldLabel>Jam Pickup</FieldLabel>
-                <div className={inputWrapClassName}>
+                <div className={getInputWrapClassName(formErrors.pickupWindow)}>
                   <Clock3
                     size={19}
                     className="absolute top-1/2 left-4 -translate-y-1/2 text-emerald-500"
@@ -502,13 +703,15 @@ export default function RegisterMitraPage() {
                     onChange={handleInputChange("pickupWindow")}
                     placeholder="17:00 - 21:00"
                     className={inputClassName}
+                    aria-invalid={Boolean(formErrors.pickupWindow)}
                   />
                 </div>
+                <FieldError message={formErrors.pickupWindow} />
               </div>
 
               <div>
                 <FieldLabel>Estimasi Surplus</FieldLabel>
-                <div className={inputWrapClassName}>
+                <div className={getInputWrapClassName(formErrors.averageSurplus)}>
                   <FileText
                     size={19}
                     className="absolute top-1/2 left-4 -translate-y-1/2 text-emerald-500"
@@ -520,13 +723,15 @@ export default function RegisterMitraPage() {
                     onChange={handleInputChange("averageSurplus")}
                     placeholder="10 porsi / hari"
                     className={inputClassName}
+                    aria-invalid={Boolean(formErrors.averageSurplus)}
                   />
                 </div>
+                <FieldError message={formErrors.averageSurplus} />
               </div>
 
               <div>
                 <FieldLabel>Rekening Pencairan</FieldLabel>
-                <div className={inputWrapClassName}>
+                <div className={getInputWrapClassName(formErrors.bankAccount)}>
                   <Banknote
                     size={19}
                     className="absolute top-1/2 left-4 -translate-y-1/2 text-emerald-500"
@@ -537,8 +742,10 @@ export default function RegisterMitraPage() {
                     onChange={handleInputChange("bankAccount")}
                     placeholder="BCA 1234567890"
                     className={inputClassName}
+                    aria-invalid={Boolean(formErrors.bankAccount)}
                   />
                 </div>
+                <FieldError message={formErrors.bankAccount} />
               </div>
             </div>
           </section>
@@ -561,6 +768,7 @@ export default function RegisterMitraPage() {
                   description={item.description}
                   icon={item.icon}
                   fileName={uploadedDocs[item.id]?.name}
+                  error={formErrors[item.id]}
                   onChange={handleUploadChange(item.id)}
                 />
               ))}
@@ -576,7 +784,7 @@ export default function RegisterMitraPage() {
           <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
             <button
               type="submit"
-              disabled={isSubmitting || completion < 100}
+              disabled={isSubmitting}
               className="flex min-h-14 w-full items-center justify-center gap-2 rounded-2xl bg-gray-900 px-6 py-4 text-sm font-extrabold text-white shadow-[0_12px_30px_rgba(15,23,42,0.18)] transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-gray-300 disabled:shadow-none"
             >
               <Send size={18} />

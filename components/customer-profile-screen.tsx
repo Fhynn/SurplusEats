@@ -12,6 +12,7 @@ import {
   LifeBuoy,
   LogOut,
   MapPin,
+  PencilLine,
   Settings,
   ShieldCheck,
   Star,
@@ -225,10 +226,10 @@ export function CustomerProfileScreen() {
             <button
               type="button"
               onClick={() => router.push("/profile/edit")}
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gray-50 text-gray-600 transition-colors hover:bg-emerald-50 hover:text-emerald-600"
+              className="motion-press flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gray-50 text-gray-600 transition-colors hover:bg-emerald-50 hover:text-emerald-600"
               aria-label="Edit profil"
             >
-              <UserRound size={18} />
+              <PencilLine size={18} />
             </button>
           </div>
 
@@ -239,7 +240,7 @@ export function CustomerProfileScreen() {
               return (
                 <div
                   key={stat.label}
-                  className={`rounded-[20px] border p-3 ${stat.className}`}
+                  className={`motion-card rounded-[20px] border p-3 ${stat.className}`}
                 >
                   <Icon size={19} className="mb-2" />
                   <p className="text-[9px] font-extrabold tracking-wider uppercase">
@@ -284,7 +285,7 @@ export function CustomerProfileScreen() {
             <button
               type="button"
               onClick={() => router.push("/profile/vouchers")}
-              className="rounded-[24px] border border-emerald-100 bg-emerald-50 p-4 text-left transition-colors hover:bg-emerald-100"
+              className="motion-card rounded-[24px] border border-emerald-100 bg-emerald-50 p-4 text-left transition-colors hover:bg-emerald-100"
             >
               <WalletCards size={22} className="mb-3 text-emerald-600" />
               <p className="text-sm font-extrabold text-emerald-950">
@@ -297,7 +298,7 @@ export function CustomerProfileScreen() {
             <button
               type="button"
               onClick={() => router.push("/orders")}
-              className="rounded-[24px] border border-amber-100 bg-amber-50 p-4 text-left transition-colors hover:bg-amber-100"
+              className="motion-card rounded-[24px] border border-amber-100 bg-amber-50 p-4 text-left transition-colors hover:bg-amber-100"
             >
               <Star size={22} className="mb-3 text-amber-600" />
               <p className="text-sm font-extrabold text-amber-950">
@@ -323,7 +324,7 @@ export function CustomerProfileScreen() {
                       key={item.route}
                       type="button"
                       onClick={() => router.push(item.route)}
-                      className="group flex w-full items-center gap-3 rounded-[24px] border border-gray-100 bg-white p-4 text-left shadow-sm transition-all hover:border-emerald-100 hover:shadow-md active:scale-[0.99]"
+                      className="motion-card group flex w-full items-center gap-3 rounded-[24px] border border-gray-100 bg-white p-4 text-left shadow-sm transition-all hover:border-emerald-100 hover:shadow-md active:scale-[0.99]"
                     >
                       <span
                         className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${item.className}`}
@@ -352,7 +353,7 @@ export function CustomerProfileScreen() {
           <button
             type="button"
             onClick={() => setIsLogoutOpen(true)}
-            className="flex w-full items-center justify-center gap-2 rounded-2xl border border-red-100 bg-red-50 p-4 text-sm font-extrabold text-red-600 transition-transform active:scale-[0.98]"
+            className="motion-press flex w-full items-center justify-center gap-2 rounded-2xl border border-red-100 bg-red-50 p-4 text-sm font-extrabold text-red-600 transition-transform active:scale-[0.98]"
           >
             <LogOut size={18} />
             Keluar Akun
@@ -361,9 +362,9 @@ export function CustomerProfileScreen() {
       </div>
 
       {isLogoutOpen ? (
-        <div className="absolute inset-0 z-50 flex items-end overflow-y-auto bg-gray-950/30 backdrop-blur-sm">
+        <div className="modal-backdrop-in absolute inset-0 z-[80] flex items-end overflow-y-auto bg-gray-950/30 backdrop-blur-sm">
           <div
-            className="max-h-[92%] w-full overflow-y-auto rounded-t-[36px] bg-white px-6 pt-5 shadow-[0_-24px_70px_rgba(15,23,42,0.22)]"
+            className="sheet-in max-h-[92%] w-full overflow-y-auto rounded-t-[36px] bg-white px-6 pt-5 shadow-[0_-24px_70px_rgba(15,23,42,0.22)]"
             style={{ paddingBottom: "max(2rem, env(safe-area-inset-bottom))" }}
           >
             <div className="mx-auto mb-5 h-1.5 w-12 rounded-full bg-gray-200" />
