@@ -402,8 +402,11 @@ export default function CustomerAccountSettingsPage() {
         </div>
 
         {confirmationType ? (
-          <div className="absolute inset-0 z-50 flex items-end bg-gray-950/35 backdrop-blur-sm">
-            <div className="w-full rounded-t-[36px] bg-white px-6 pt-6 pb-8 shadow-[0_-24px_70px_rgba(15,23,42,0.22)]">
+          <div className="absolute inset-0 z-50 flex items-end overflow-y-auto bg-gray-950/35 backdrop-blur-sm">
+            <div
+              className="max-h-[92%] w-full overflow-y-auto rounded-t-[36px] bg-white px-6 pt-6 shadow-[0_-24px_70px_rgba(15,23,42,0.22)]"
+              style={{ paddingBottom: "max(2rem, env(safe-area-inset-bottom))" }}
+            >
               <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-red-50 text-red-500">
                 {confirmationType === "logout" ? (
                   <LogOut size={30} />
@@ -423,7 +426,7 @@ export default function CustomerAccountSettingsPage() {
                     : "Permintaan hapus akun akan diproses setelah kamu mengonfirmasi tindakan ini."}
                 </p>
               </div>
-              <div className="mt-7 grid grid-cols-2 gap-3">
+              <div className="sticky bottom-0 -mx-6 mt-7 grid grid-cols-2 gap-3 border-t border-gray-100 bg-white px-6 pt-3 pb-1">
                 <button
                   type="button"
                   onClick={() => setConfirmationType(null)}

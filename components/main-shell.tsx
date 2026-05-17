@@ -10,7 +10,7 @@ import { MobileDeviceFrame } from "@/components/mobile-device-frame";
 const NAV_ITEMS = [
   { href: "/home", label: "Beranda", icon: Home },
   { href: "/cart", label: "Keranjang", icon: ShoppingBag },
-  { href: "/profile", label: "Profil", icon: User },
+  { href: "/profile", label: "Akun", icon: User },
 ] as const;
 
 export function MainShell({

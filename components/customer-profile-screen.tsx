@@ -361,8 +361,11 @@ export function CustomerProfileScreen() {
       </div>
 
       {isLogoutOpen ? (
-        <div className="absolute inset-0 z-50 flex items-end bg-gray-950/30 backdrop-blur-sm">
-          <div className="w-full rounded-t-[36px] bg-white px-6 pt-5 pb-8 shadow-[0_-24px_70px_rgba(15,23,42,0.22)]">
+        <div className="absolute inset-0 z-50 flex items-end overflow-y-auto bg-gray-950/30 backdrop-blur-sm">
+          <div
+            className="max-h-[92%] w-full overflow-y-auto rounded-t-[36px] bg-white px-6 pt-5 shadow-[0_-24px_70px_rgba(15,23,42,0.22)]"
+            style={{ paddingBottom: "max(2rem, env(safe-area-inset-bottom))" }}
+          >
             <div className="mx-auto mb-5 h-1.5 w-12 rounded-full bg-gray-200" />
             <div className="mb-6 flex items-start justify-between gap-4">
               <div>
@@ -383,7 +386,7 @@ export function CustomerProfileScreen() {
                 <X size={18} />
               </button>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="sticky bottom-0 -mx-6 grid grid-cols-2 gap-3 border-t border-gray-100 bg-white px-6 pt-3 pb-1">
               <button
                 type="button"
                 onClick={() => setIsLogoutOpen(false)}
