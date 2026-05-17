@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { getCurrentSession } from "@/lib/auth-session";
+import { clearSessionCookie, getCurrentSession } from "@/lib/auth-session";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -10,7 +10,14 @@ export async function GET() {
   const session = await getCurrentSession();
 
   if (!session) {
-    return NextResponse.json({ ok: false, user: null }, { status: 401 });
+    const response = NextResponse.json(
+      { ok: false, user: null },
+      { status: 401 },
+    );
+
+    clearSessionCookie(response);
+
+    return response;
   }
 
   const user = await prisma.user.findUnique({
@@ -22,11 +29,19 @@ export async function GET() {
       phone: true,
       avatarUrl: true,
       role: true,
+      status: true,
     },
   });
 
-  if (!user) {
-    return NextResponse.json({ ok: false, user: null }, { status: 404 });
+  if (!user || user.status !== "ACTIVE") {
+    const response = NextResponse.json(
+      { ok: false, user: null },
+      { status: user ? 403 : 404 },
+    );
+
+    clearSessionCookie(response);
+
+    return response;
   }
 
   return NextResponse.json({

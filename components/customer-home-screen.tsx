@@ -59,11 +59,17 @@ export function CustomerHomeScreen() {
       setIsLoadingFoods(true);
 
       try {
-        const [response, ordersResponse, vouchersResponse] = await Promise.all([
-          fetch("/api/menu-items", { cache: "no-store" }),
-          fetch("/api/orders", { cache: "no-store" }),
-          fetch("/api/vouchers", { cache: "no-store" }),
-        ]);
+        const [meResponse, response, ordersResponse, vouchersResponse] =
+          await Promise.all([
+            fetch("/api/auth/me", { cache: "no-store" }),
+            fetch("/api/menu-items", { cache: "no-store" }),
+            fetch("/api/orders", { cache: "no-store" }),
+            fetch("/api/vouchers", { cache: "no-store" }),
+          ]);
+        const meData = (await meResponse.json()) as {
+          ok: boolean;
+          user?: unknown;
+        };
         const result = (await response.json()) as {
           ok: boolean;
           menuItems?: ApiMenuItem[];
@@ -76,6 +82,13 @@ export function CustomerHomeScreen() {
           ok: boolean;
           vouchers?: unknown[];
         };
+
+        if (!meResponse.ok || !meData.ok || !meData.user) {
+          await fetch("/api/auth/logout", { method: "POST" });
+          router.replace("/");
+          router.refresh();
+          return;
+        }
 
         if (!ignore) {
           setAllFoods(result.menuItems?.map(menuItemToFood) ?? []);
@@ -98,7 +111,7 @@ export function CustomerHomeScreen() {
     return () => {
       ignore = true;
     };
-  }, []);
+  }, [router]);
 
   const foods = useMemo(() => {
     if (activeCategory === "Semua") {

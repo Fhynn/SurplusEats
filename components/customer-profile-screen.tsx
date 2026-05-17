@@ -146,8 +146,15 @@ export function CustomerProfileScreen() {
           vouchers?: unknown[];
         };
 
+        if (!meResponse.ok || !meData.ok || !meData.user) {
+          await fetch("/api/auth/logout", { method: "POST" });
+          router.replace("/");
+          router.refresh();
+          return;
+        }
+
         if (!ignore) {
-          setUser(meData.user ?? null);
+          setUser(meData.user);
           setOrderCount(ordersData.orders?.length ?? 0);
           setVoucherCount(vouchersData.vouchers?.length ?? 0);
         }
@@ -163,7 +170,7 @@ export function CustomerProfileScreen() {
     return () => {
       ignore = true;
     };
-  }, []);
+  }, [router]);
 
   const impactStats = useMemo(
     () => [

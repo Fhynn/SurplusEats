@@ -102,6 +102,42 @@ async function readSession(request: NextRequest) {
   }
 }
 
+async function validateSessionInDatabase(
+  request: NextRequest,
+  session: AuthSession,
+) {
+  try {
+    const validateUrl = new URL("/api/auth/validate-session", request.url);
+    const response = await fetch(validateUrl, {
+      cache: "no-store",
+      headers: {
+        cookie: request.headers.get("cookie") ?? "",
+      },
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const data = (await response.json()) as {
+      ok?: boolean;
+      session?: Omit<AuthSession, "exp">;
+    };
+
+    if (!data.ok || !data.session) {
+      return null;
+    }
+
+    return {
+      ...session,
+      ...data.session,
+      exp: session.exp,
+    };
+  } catch {
+    return null;
+  }
+}
+
 function redirectToLogin(request: NextRequest) {
   const loginUrl = request.nextUrl.clone();
   loginUrl.pathname = "/";
@@ -155,15 +191,24 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const session = await readSession(request);
+  const tokenSession = await readSession(request);
   const isPublicPath = publicPaths.has(pathname);
   const isRegistrationPath =
     pathname === "/register" || pathname === "/register-mitra";
+  const session = tokenSession
+    ? await validateSessionInDatabase(request, tokenSession)
+    : null;
 
   if (isPublicPath) {
-    return session && !isRegistrationPath
-      ? redirectByRole(request, session)
-      : NextResponse.next();
+    if (tokenSession && !session) {
+      return redirectToLoginAndClearSession(request);
+    }
+
+    if (session && !isRegistrationPath) {
+      return redirectByRole(request, session);
+    }
+
+    return NextResponse.next();
   }
 
   if (!session) {
