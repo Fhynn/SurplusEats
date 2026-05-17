@@ -218,7 +218,7 @@ export default function CustomerAddressesPage() {
   return (
     <MobileDeviceFrame backgroundClassName="bg-[#f8fafc]">
       <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-[#f8fafc]">
-        <header className="sticky top-0 z-20 flex items-center justify-between bg-white px-6 pt-10 pb-4 shadow-sm">
+        <header className="sticky top-0 z-20 flex items-center justify-between bg-white px-5 pt-10 pb-4 shadow-sm sm:px-6 md:mx-auto md:w-full md:max-w-5xl md:px-8">
           <div className="flex min-w-0 items-center">
             <Link
               href="/profile/settings"
@@ -246,7 +246,7 @@ export default function CustomerAddressesPage() {
           </button>
         </header>
 
-        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-6 pb-28 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-6 pb-28 [scrollbar-width:none] sm:px-6 md:mx-auto md:w-full md:max-w-5xl md:grid-cols-2 md:px-8 [&::-webkit-scrollbar]:hidden">
           {notice ? (
             <section className="rounded-[24px] border border-red-100 bg-red-50 p-4 text-sm font-bold text-red-700">
               {notice}
@@ -279,6 +279,7 @@ export default function CustomerAddressesPage() {
             </section>
           ) : null}
 
+          <div className="grid gap-4 md:grid-cols-2">
           {!isLoadingAddresses && addresses.map((address) => {
             const isHome = address.kind === "home";
             const Icon = isHome ? Home : Building2;
@@ -363,6 +364,7 @@ export default function CustomerAddressesPage() {
               </article>
             );
           })}
+          </div>
 
           <button
             type="button"
@@ -375,8 +377,8 @@ export default function CustomerAddressesPage() {
         </div>
 
         {isEditorOpen ? (
-          <div className="absolute inset-0 z-50 flex items-end bg-gray-950/35 backdrop-blur-sm">
-            <div className="w-full rounded-t-[40px] bg-white px-6 pt-5 pb-8 shadow-[0_-24px_70px_rgba(15,23,42,0.22)]">
+          <div className="absolute inset-0 z-50 flex items-end bg-gray-950/35 backdrop-blur-sm md:items-center md:justify-center md:p-6">
+            <div className="max-h-[92vh] w-full overflow-y-auto rounded-t-[40px] bg-white px-6 pt-5 pb-8 shadow-[0_-24px_70px_rgba(15,23,42,0.22)] [scrollbar-width:none] md:max-w-xl md:rounded-[32px] md:p-7 [&::-webkit-scrollbar]:hidden">
               <div className="mx-auto mb-5 h-1.5 w-12 rounded-full bg-gray-200" />
 
               <div className="mb-6 flex items-start justify-between gap-4">
@@ -510,8 +512,8 @@ export default function CustomerAddressesPage() {
         ) : null}
 
         {deletingAddress ? (
-          <div className="absolute inset-0 z-50 flex items-end bg-gray-950/35 backdrop-blur-sm">
-            <div className="w-full rounded-t-[36px] bg-white px-6 pt-6 pb-8 shadow-[0_-24px_70px_rgba(15,23,42,0.22)]">
+          <div className="absolute inset-0 z-50 flex items-end bg-gray-950/35 backdrop-blur-sm md:items-center md:justify-center md:p-6">
+            <div className="w-full rounded-t-[36px] bg-white px-6 pt-6 pb-8 shadow-[0_-24px_70px_rgba(15,23,42,0.22)] md:max-w-md md:rounded-[32px]">
               <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-red-50 text-red-500">
                 <Trash2 size={30} />
               </div>

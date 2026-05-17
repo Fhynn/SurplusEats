@@ -611,7 +611,7 @@ export function OwnerMenuManagement() {
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 xl:grid-cols-3">
             {[
               ["Aktif", activeMenuCount, "text-emerald-600"],
               ["Sold Out", soldOutCount, "text-red-600"],
@@ -619,7 +619,7 @@ export function OwnerMenuManagement() {
             ].map(([label, value, className]) => (
               <div
                 key={label}
-                className="min-w-[104px] rounded-[24px] border border-gray-100 bg-white p-4 shadow-[0_2px_15px_rgba(0,0,0,0.03)]"
+                className="rounded-[24px] border border-gray-100 bg-white p-4 shadow-[0_2px_15px_rgba(0,0,0,0.03)]"
               >
                 <p className={`text-xl font-extrabold ${className}`}>
                   {value}

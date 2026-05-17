@@ -124,7 +124,7 @@ function PaymentSuccessContent() {
   return (
     <MobileDeviceFrame backgroundClassName="bg-emerald-500">
       <div className="flex h-full min-h-0 flex-1 flex-col overflow-y-auto bg-emerald-500 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        <section className="px-6 pt-12 pb-8 text-center text-white">
+        <section className="mx-auto w-full max-w-4xl px-5 pt-12 pb-8 text-center text-white sm:px-6 md:px-8">
           <div className="mx-auto mb-6 flex h-24 w-24 items-center justify-center rounded-full bg-white shadow-[0_18px_40px_rgba(15,23,42,0.18)]">
             <CheckCircle2 size={50} className="text-emerald-500" />
           </div>
@@ -141,7 +141,8 @@ function PaymentSuccessContent() {
           </p>
         </section>
 
-        <section className="flex-1 rounded-t-[40px] bg-[#f8fafc] px-5 pt-6 pb-8">
+        <section className="flex-1 rounded-t-[40px] bg-[#f8fafc] px-5 pt-6 pb-8 sm:px-6 md:px-8">
+          <div className="mx-auto w-full max-w-4xl">
           <div className="mb-5 rounded-[28px] border border-emerald-100 bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.06)]">
             <div className="mb-5 flex items-start justify-between gap-4">
               <div className="flex items-center gap-3">
@@ -255,7 +256,7 @@ function PaymentSuccessContent() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Link
               href={`/orders/${order.orderCode}`}
               className="rounded-2xl bg-gray-900 px-4 py-3 text-center text-sm font-extrabold text-white"
@@ -269,6 +270,7 @@ function PaymentSuccessContent() {
               <Home size={17} />
               Home
             </Link>
+          </div>
           </div>
         </section>
       </div>

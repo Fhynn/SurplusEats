@@ -126,8 +126,8 @@ export default function ForgotPasswordPage() {
 
   return (
     <MobileDeviceFrame backgroundClassName="bg-white">
-      <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-white">
-        <div className="sticky top-0 z-20 flex items-center justify-between bg-white px-6 pt-10 pb-4">
+      <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-white md:items-center md:bg-gray-50 md:px-6 md:py-8">
+        <div className="sticky top-0 z-20 flex w-full items-center justify-between bg-white px-6 pt-10 pb-4 md:static md:max-w-3xl md:rounded-t-[32px] md:border-x md:border-t md:border-gray-100 md:px-10 md:pt-8">
           <button
             type="button"
             onClick={handleBack}
@@ -147,7 +147,7 @@ export default function ForgotPasswordPage() {
           </Link>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-12">
+        <div className="min-h-0 w-full flex-1 overflow-y-auto px-6 pb-12 md:max-w-3xl md:flex-none md:rounded-b-[32px] md:border-x md:border-b md:border-gray-100 md:bg-white md:px-10 md:pb-10 md:shadow-[0_24px_70px_rgba(15,23,42,0.08)]">
           <div className="mb-7">
             <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-[24px] bg-emerald-50 text-emerald-600">
               {stage === "done" ? (

@@ -107,7 +107,7 @@ export default function OwnerReviewsPage() {
         </div>
       ) : null}
 
-      <section className="grid gap-4 md:grid-cols-3">
+      <section className="grid gap-4 sm:grid-cols-2">
         <div className="rounded-[28px] border border-gray-100 bg-white p-6 shadow-sm">
           <Star size={24} className="mb-4 fill-amber-400 text-amber-400" />
           <p className="text-xs font-extrabold tracking-wider text-gray-400 uppercase">

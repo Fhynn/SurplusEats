@@ -125,7 +125,7 @@ export default function CustomerHelpPage() {
   return (
     <MobileDeviceFrame backgroundClassName="bg-white">
       <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-white">
-        <header className="sticky top-0 z-20 flex items-center bg-emerald-500 px-6 pt-10 pb-4 shadow-sm">
+        <header className="sticky top-0 z-20 flex items-center bg-emerald-500 px-5 pt-10 pb-4 shadow-sm sm:px-6 md:mx-auto md:w-full md:max-w-5xl md:px-8">
           <Link
             href="/profile/settings"
             className="-ml-2 rounded-full p-2 transition-colors hover:bg-emerald-600"
@@ -139,7 +139,7 @@ export default function CustomerHelpPage() {
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          <section className="rounded-b-[40px] bg-emerald-500 px-6 pt-2 pb-10 text-white shadow-sm">
+          <section className="rounded-b-[40px] bg-emerald-500 px-5 pt-2 pb-10 text-white shadow-sm sm:px-6 md:mx-auto md:w-full md:max-w-5xl md:px-8">
             <h2 className="mb-2 text-2xl font-extrabold tracking-tight">
               Ada yang bisa
               <br />
@@ -160,7 +160,7 @@ export default function CustomerHelpPage() {
             </div>
           </section>
 
-          <div className="space-y-6 px-6 py-8">
+          <div className="mx-auto w-full max-w-5xl space-y-6 px-5 py-8 sm:px-6 md:px-8">
             <section>
               <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                 {categories.map((category) => {
@@ -244,7 +244,7 @@ export default function CustomerHelpPage() {
               <h3 className="mb-4 text-base font-extrabold text-gray-900">
                 Hubungi Kami
               </h3>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <Link
                   href="/support"
                   className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-blue-100 bg-blue-50 p-4 transition-shadow hover:shadow-md"
@@ -273,8 +273,8 @@ export default function CustomerHelpPage() {
         </div>
 
         {selectedFaq ? (
-          <div className="absolute inset-0 z-50 flex items-end bg-gray-950/35 backdrop-blur-sm">
-            <div className="w-full rounded-t-[40px] bg-white px-6 pt-5 pb-8 shadow-[0_-24px_70px_rgba(15,23,42,0.22)]">
+          <div className="absolute inset-0 z-50 flex items-end bg-gray-950/35 backdrop-blur-sm md:items-center md:justify-center md:p-6">
+            <div className="w-full rounded-t-[40px] bg-white px-6 pt-5 pb-8 shadow-[0_-24px_70px_rgba(15,23,42,0.22)] md:max-w-xl md:rounded-[32px] md:p-7">
               <div className="mx-auto mb-5 h-1.5 w-12 rounded-full bg-gray-200" />
 
               <div className="mb-5 flex items-start justify-between gap-4">
@@ -300,7 +300,7 @@ export default function CustomerHelpPage() {
                 {selectedFaq.answer}
               </p>
 
-              <div className="mt-6 grid grid-cols-2 gap-3">
+              <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <button
                   type="button"
                   onClick={() => setSelectedFaq(null)}

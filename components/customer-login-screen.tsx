@@ -93,49 +93,49 @@ export function CustomerLoginScreen() {
           description="Kami sedang memvalidasi email dan password kamu."
         />
       ) : null}
-      <div className="flex h-full min-h-0 flex-col overflow-y-auto bg-white">
-        <section className="relative h-[34%] min-h-[230px] w-full shrink-0 md:min-h-[250px]">
+      <div className="flex h-full min-h-0 w-full min-w-0 flex-col overflow-x-hidden overflow-y-auto bg-white md:grid md:grid-cols-[minmax(0,1.05fr)_minmax(420px,0.95fr)] md:overflow-hidden">
+        <section className="relative h-[34%] min-h-[230px] w-full min-w-0 shrink-0 md:h-full md:min-h-0">
           <Image
             src="https://images.unsplash.com/photo-1598514982205-f36b96d1e8d4?q=80&w=1200&auto=format&fit=crop"
             alt="Healthy food for SurplusEats login"
             fill
             priority
-            sizes="(max-width: 768px) 100vw, 400px"
+            sizes="(max-width: 768px) 100vw, 55vw"
             className="object-cover"
           />
-          <div className="absolute inset-0 bg-gray-950/45" />
-          <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-gray-950/80 to-transparent" />
+          <div className="absolute inset-0 bg-gray-950/45 md:bg-gray-950/50" />
+          <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-gray-950/80 to-transparent md:h-80" />
 
-          <div className="absolute inset-x-6 top-8 z-10 flex items-center justify-between">
+          <div className="absolute inset-x-6 top-8 z-10 flex items-center justify-between md:inset-x-10 md:top-10">
             <div className="flex items-center gap-2 rounded-full border border-white/30 bg-white/20 px-3 py-1.5 backdrop-blur-md">
               <Leaf size={14} className="fill-emerald-400 text-emerald-400" />
               <span className="text-xs font-semibold tracking-wide text-white">
                 SurplusEats
               </span>
             </div>
-            <div className="rounded-full bg-emerald-500/90 px-3 py-1 backdrop-blur-sm">
+            <div className="hidden rounded-full bg-emerald-500/90 px-3 py-1 backdrop-blur-sm sm:block">
               <span className="text-[10px] font-bold text-white">
                 #SaveGoodFood
               </span>
             </div>
           </div>
 
-          <div className="absolute right-6 bottom-7 left-6 z-10">
-            <h1 className="text-[27px] leading-tight font-extrabold tracking-tight text-white md:text-3xl">
+          <div className="absolute right-6 bottom-7 left-6 z-10 md:right-10 md:bottom-12 md:left-10 lg:right-16 lg:bottom-16 lg:left-16">
+            <h1 className="max-w-3xl text-[27px] leading-tight font-extrabold tracking-tight text-white md:text-5xl">
               Masuk dan mulai selamatkan makanan hari ini.
             </h1>
-            <p className="mt-2 text-sm leading-6 font-medium text-emerald-50/95">
+            <p className="mt-2 max-w-2xl text-sm leading-6 font-medium text-emerald-50/95 md:mt-5 md:text-lg md:leading-8">
               Cari makanan surplus terdekat, ambil dengan QR pickup, dan lacak
               semua pesanan dari satu akun.
             </p>
           </div>
         </section>
 
-        <section className="relative z-20 -mt-7 flex flex-1 flex-col rounded-t-[32px] bg-white px-6 pt-6 pb-8 shadow-[0_-15px_40px_rgba(0,0,0,0.15)]">
-          <div className="mx-auto mb-5 h-1.5 w-12 rounded-full bg-gray-200" />
+        <section className="relative z-20 -mt-7 flex min-w-0 flex-1 flex-col rounded-t-[32px] bg-white px-5 pt-6 pb-8 shadow-[0_-15px_40px_rgba(0,0,0,0.15)] sm:px-6 md:mt-0 md:min-h-0 md:justify-center md:overflow-y-auto md:rounded-none md:px-10 md:py-10 md:shadow-none lg:px-16">
+          <div className="mx-auto mb-5 h-1.5 w-12 rounded-full bg-gray-200 md:hidden" />
 
           <form
-            className="flex flex-1 flex-col"
+            className="mx-auto flex w-full max-w-[36rem] flex-1 flex-col md:flex-none"
             onSubmit={handleSubmit}
             autoComplete="off"
           >
@@ -210,7 +210,7 @@ export function CustomerLoginScreen() {
                   </label>
                   <Link
                     href="/forgot-password"
-                    className="text-xs font-bold text-emerald-600 transition-colors hover:text-emerald-700"
+                    className="hidden shrink-0 text-xs font-bold text-emerald-600 transition-colors hover:text-emerald-700 sm:inline"
                   >
                     Lupa password?
                   </Link>
@@ -253,9 +253,15 @@ export function CustomerLoginScreen() {
                     {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                   </button>
                 </div>
+                <Link
+                  href="/forgot-password"
+                  className="ml-1 inline-block text-xs font-bold text-emerald-600 transition-colors hover:text-emerald-700 sm:hidden"
+                >
+                  Lupa password?
+                </Link>
               </div>
 
-              <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <label className="flex cursor-pointer items-center gap-2 text-xs font-bold text-gray-500">
                   <input
                     type="checkbox"
@@ -267,7 +273,7 @@ export function CustomerLoginScreen() {
                 </label>
                 <Link
                   href="/register-mitra"
-                  className="flex items-center gap-1.5 text-xs font-extrabold text-gray-600 hover:text-emerald-600"
+                  className="flex shrink-0 items-center gap-1.5 text-xs font-extrabold text-gray-600 hover:text-emerald-600"
                 >
                   <Store size={14} />
                   Daftar Mitra

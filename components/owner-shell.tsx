@@ -18,9 +18,6 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { FormEvent, ReactNode } from "react";
 import { useState } from "react";
 
-import { LoadingScreen } from "@/components/loading-screen";
-import { useRouteTransition } from "@/components/route-transition-provider";
-
 const shellRoutes = new Set([
   "/owner/dashboard",
   "/owner/menu",
@@ -78,7 +75,6 @@ export function OwnerShell({
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const { isRouteLoading } = useRouteTransition();
   const dashboardTab = searchParams.get("tab");
   const [shellQuery, setShellQuery] = useState("");
   const [isLoggingOut, setIsLoggingOut] = useState(false);
@@ -116,12 +112,6 @@ export function OwnerShell({
 
   return (
     <div className="min-h-screen bg-slate-50 font-[family-name:var(--font-plus-jakarta-sans)] selection:bg-emerald-200">
-      {isRouteLoading ? (
-        <LoadingScreen
-          title="Memuat halaman..."
-          description="Sebentar, SurplusEats sedang membuka dashboard mitra."
-        />
-      ) : null}
       <div className="flex min-h-screen">
         <aside className="hidden w-64 shrink-0 flex-col border-r border-gray-100 bg-white shadow-[4px_0_24px_rgba(0,0,0,0.02)] md:flex">
           <div className="border-b border-gray-50 p-6">
@@ -215,7 +205,7 @@ export function OwnerShell({
         </aside>
 
         <main className="flex h-screen min-w-0 flex-1 flex-col overflow-hidden">
-          <header className="flex h-20 shrink-0 items-center justify-between border-b border-gray-100 bg-white px-8 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
+          <header className="flex h-20 shrink-0 items-center justify-between border-b border-gray-100 bg-white px-4 shadow-[0_4px_20px_rgba(0,0,0,0.02)] md:px-8">
             <form
               className="relative hidden w-96 md:block"
               onSubmit={handleShellSearch}
@@ -269,9 +259,40 @@ export function OwnerShell({
             </div>
           </header>
 
+          <nav className="flex shrink-0 gap-2 overflow-x-auto border-b border-gray-100 bg-white px-4 py-3 [scrollbar-width:none] md:hidden [&::-webkit-scrollbar]:hidden">
+            {navItems.map(({ href, label, icon: Icon }) => {
+              const isActive =
+                (label === "Dashboard" &&
+                  pathname === "/owner/dashboard" &&
+                  dashboardTab !== "orders") ||
+                (label === "Pesanan" &&
+                  ((pathname === "/owner/dashboard" && dashboardTab === "orders") ||
+                    pathname.startsWith("/owner/orders/"))) ||
+                (label === "Kelola Menu" && pathname === "/owner/menu") ||
+                (label === "Saldo" && pathname === "/owner/wallet") ||
+                (label === "Analitik" && pathname === "/owner/analytics") ||
+                (label === "Ulasan" && pathname === "/owner/reviews");
+
+              return (
+                <Link
+                  key={label}
+                  href={href}
+                  className={`motion-press flex shrink-0 items-center gap-2 rounded-2xl px-3 py-2 text-xs font-extrabold ${
+                    isActive
+                      ? "bg-emerald-500 text-white"
+                      : "bg-gray-100 text-gray-600"
+                  }`}
+                >
+                  <Icon size={15} />
+                  {label}
+                </Link>
+              );
+            })}
+          </nav>
+
           <div
             key={`${pathname}-${dashboardTab ?? ""}`}
-            className="app-page-enter flex-1 overflow-y-auto bg-[#f8fafc] p-8 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            className="app-page-enter flex-1 overflow-y-auto bg-[#f8fafc] p-4 [scrollbar-width:none] md:p-8 [&::-webkit-scrollbar]:hidden"
           >
             {children}
           </div>

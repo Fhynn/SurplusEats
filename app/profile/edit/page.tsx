@@ -162,7 +162,7 @@ export default function CustomerEditProfilePage() {
         onSubmit={handleSubmit}
         className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-white"
       >
-        <header className="sticky top-0 z-20 flex items-center bg-white px-6 pt-10 pb-4 shadow-sm">
+        <header className="sticky top-0 z-20 flex items-center bg-white px-5 pt-10 pb-4 shadow-sm sm:px-6 md:mx-auto md:w-full md:max-w-4xl md:px-8">
           <Link
             href="/profile/settings"
             className="-ml-2 rounded-full p-2 transition-colors hover:bg-gray-100"
@@ -175,7 +175,7 @@ export default function CustomerEditProfilePage() {
           </h1>
         </header>
 
-        <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-6 py-6 pb-48 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-5 py-6 pb-48 [scrollbar-width:none] sm:px-6 md:mx-auto md:w-full md:max-w-4xl md:px-8 [&::-webkit-scrollbar]:hidden">
           <div className="mb-6 flex flex-col items-center justify-center">
             <label className="group relative flex h-24 w-24 cursor-pointer items-center justify-center overflow-hidden rounded-full border-4 border-white bg-emerald-50 text-emerald-600 shadow-md">
               {avatarPreview ? (
@@ -322,7 +322,8 @@ export default function CustomerEditProfilePage() {
           </div>
         </div>
 
-        <div className="absolute right-0 bottom-0 left-0 border-t border-gray-50 bg-white p-6">
+        <div className="absolute right-0 bottom-0 left-0 border-t border-gray-50 bg-white p-5 sm:p-6">
+          <div className="mx-auto w-full max-w-4xl">
           <button
             type="submit"
             disabled={isProfileInvalid}
@@ -331,11 +332,12 @@ export default function CustomerEditProfilePage() {
             <Save size={18} />
             Simpan Perubahan
           </button>
+          </div>
         </div>
 
         {isPasswordOpen ? (
-          <div className="absolute inset-0 z-50 flex items-end bg-gray-950/35 backdrop-blur-sm">
-            <div className="w-full rounded-t-[40px] bg-white px-6 pt-5 pb-8 shadow-[0_-24px_70px_rgba(15,23,42,0.22)]">
+          <div className="absolute inset-0 z-50 flex items-end bg-gray-950/35 backdrop-blur-sm md:items-center md:justify-center md:p-6">
+            <div className="w-full rounded-t-[40px] bg-white px-6 pt-5 pb-8 shadow-[0_-24px_70px_rgba(15,23,42,0.22)] md:max-w-xl md:rounded-[32px] md:p-7">
               <div className="mx-auto mb-5 h-1.5 w-12 rounded-full bg-gray-200" />
 
               <div className="mb-6 flex items-start justify-between gap-4">

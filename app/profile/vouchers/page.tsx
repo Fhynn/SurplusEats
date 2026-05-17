@@ -145,7 +145,7 @@ export default function CustomerVouchersPage() {
   return (
     <MobileDeviceFrame backgroundClassName="bg-[#f8fafc]">
       <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-[#f8fafc]">
-        <header className="sticky top-0 z-20 bg-white px-6 pt-10 pb-5 shadow-sm">
+        <header className="sticky top-0 z-20 bg-white px-5 pt-10 pb-5 shadow-sm sm:px-6 md:mx-auto md:w-full md:max-w-5xl md:px-8">
           <div className="mb-5 flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center">
               <Link
@@ -191,7 +191,7 @@ export default function CustomerVouchersPage() {
 
         </header>
 
-        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-6 pb-28 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-6 pb-28 [scrollbar-width:none] sm:px-6 md:mx-auto md:w-full md:max-w-5xl md:px-8 [&::-webkit-scrollbar]:hidden">
           {feedback ? (
             <div
               className={`flex gap-3 rounded-[20px] border p-4 ${
@@ -240,6 +240,7 @@ export default function CustomerVouchersPage() {
             </div>
           ) : null}
 
+          <div className="grid gap-4 lg:grid-cols-2">
           {!isLoadingVouchers && vouchers.map((voucher) => {
             const isAvailable = voucher.status === "available";
             const isInactive = voucher.status !== "available";
@@ -327,6 +328,7 @@ export default function CustomerVouchersPage() {
               </article>
             );
           })}
+          </div>
 
           {!isLoadingVouchers && vouchers.length === 0 ? (
             <div className="rounded-[24px] border border-dashed border-gray-200 bg-white p-6 text-center">
@@ -350,8 +352,8 @@ export default function CustomerVouchersPage() {
         </div>
 
         {selectedVoucher ? (
-          <div className="absolute inset-0 z-50 flex items-end bg-gray-950/35 backdrop-blur-sm">
-            <div className="w-full rounded-t-[40px] bg-white px-6 pt-5 pb-8 shadow-[0_-24px_70px_rgba(15,23,42,0.22)]">
+          <div className="absolute inset-0 z-50 flex items-end bg-gray-950/35 backdrop-blur-sm md:items-center md:justify-center md:p-6">
+            <div className="w-full rounded-t-[40px] bg-white px-6 pt-5 pb-8 shadow-[0_-24px_70px_rgba(15,23,42,0.22)] md:max-w-xl md:rounded-[32px] md:p-7">
               <div className="mx-auto mb-5 h-1.5 w-12 rounded-full bg-gray-200" />
 
               <div className="mb-6 flex items-start justify-between gap-4">

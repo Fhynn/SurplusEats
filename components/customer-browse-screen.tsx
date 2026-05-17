@@ -123,8 +123,8 @@ export function CustomerBrowseScreen() {
 
   return (
     <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-gray-50">
-      <header className="sticky top-0 z-20 rounded-b-3xl bg-white px-6 pt-8 pb-4 shadow-[0_4px_20px_rgba(0,0,0,0.03)]">
-        <div className="mb-5 flex items-center justify-between">
+      <header className="sticky top-0 z-20 rounded-b-3xl bg-white px-6 pt-8 pb-4 shadow-[0_4px_20px_rgba(0,0,0,0.03)] md:rounded-none md:px-8 md:pt-6 lg:px-10">
+        <div className="mx-auto mb-5 flex w-full max-w-7xl items-center justify-between">
           <div className="flex flex-col">
             <span className="mb-0.5 flex items-center gap-1 text-xs font-semibold text-gray-400">
               Lokasi Saat Ini
@@ -153,7 +153,7 @@ export function CustomerBrowseScreen() {
           </div>
         </div>
 
-        <div className="relative flex items-center rounded-2xl border border-emerald-500 bg-white shadow-[0_0_0_4px_rgba(16,185,129,0.1)]">
+        <div className="relative mx-auto flex w-full max-w-7xl items-center rounded-2xl border border-emerald-500 bg-white shadow-[0_0_0_4px_rgba(16,185,129,0.1)]">
           <Search size={20} className="absolute left-4 text-emerald-500" />
           <input
             type="text"
@@ -185,7 +185,7 @@ export function CustomerBrowseScreen() {
         </div>
       </header>
 
-      <main className="min-h-0 flex-1 overflow-y-auto px-6 pt-6 pb-28 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <main className="mx-auto min-h-0 w-full max-w-7xl flex-1 overflow-y-auto px-6 pt-6 pb-28 [scrollbar-width:none] md:px-8 lg:px-10 [&::-webkit-scrollbar]:hidden">
         <section className="group relative mb-8 flex items-center justify-between overflow-hidden rounded-3xl bg-emerald-500 p-5 text-white shadow-[0_8px_20px_rgba(16,185,129,0.25)]">
           <div className="absolute top-0 right-0 -mt-4 -mr-4 h-24 w-24 rounded-full bg-white/10 blur-xl transition-transform duration-700 group-hover:scale-150" />
 
@@ -208,7 +208,7 @@ export function CustomerBrowseScreen() {
           </div>
         </section>
 
-        <section className="-mx-6 flex space-x-3 overflow-x-auto px-6 pb-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <section className="-mx-6 flex space-x-3 overflow-x-auto px-6 pb-4 [scrollbar-width:none] md:mx-0 md:px-0 [&::-webkit-scrollbar]:hidden">
           {CATEGORIES.map((category) => (
             <button
               key={category}
@@ -254,7 +254,7 @@ export function CustomerBrowseScreen() {
             </p>
           </section>
         ) : foods.length > 0 ? (
-          <section className="space-y-4">
+          <section className="space-y-4 md:grid md:grid-cols-2 md:gap-4 md:space-y-0 xl:grid-cols-3">
             {foods.map((food) => (
               <article
                 key={food.id}
@@ -342,9 +342,9 @@ export function CustomerBrowseScreen() {
       </main>
 
       {isFilterOpen ? (
-        <div className="absolute inset-0 z-50 flex items-end bg-gray-950/30 backdrop-blur-sm">
-          <div className="w-full rounded-t-[36px] bg-white px-6 pt-5 pb-8 shadow-[0_-24px_70px_rgba(15,23,42,0.22)]">
-            <div className="mx-auto mb-5 h-1.5 w-12 rounded-full bg-gray-200" />
+        <div className="absolute inset-0 z-50 flex items-end bg-gray-950/30 backdrop-blur-sm md:items-center md:justify-center md:p-6">
+          <div className="w-full rounded-t-[36px] bg-white px-6 pt-5 pb-8 shadow-[0_-24px_70px_rgba(15,23,42,0.22)] md:max-w-lg md:rounded-[32px] md:shadow-[0_24px_80px_rgba(15,23,42,0.24)]">
+            <div className="mx-auto mb-5 h-1.5 w-12 rounded-full bg-gray-200 md:hidden" />
             <div className="mb-5 flex items-start justify-between gap-4">
               <div>
                 <h2 className="text-xl font-extrabold text-gray-950">

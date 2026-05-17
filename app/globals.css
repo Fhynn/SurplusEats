@@ -10,11 +10,13 @@
 }
 
 html {
+  overflow-x: hidden;
   background: #f3f4f6;
 }
 
 body {
   min-height: 100vh;
+  overflow-x: hidden;
   margin: 0;
   background: transparent;
   color: var(--foreground);

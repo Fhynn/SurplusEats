@@ -119,11 +119,11 @@ export default function OwnerSettingsPage() {
             </div>
 
             <div className="space-y-3 text-sm font-semibold text-gray-600">
-              <p className="flex items-center gap-2">
+              <p className="flex min-w-0 items-center gap-2 break-all">
                 <Mail size={17} className="text-gray-400" />
                 {profile.owner.email}
               </p>
-              <p className="flex items-center gap-2">
+              <p className="flex min-w-0 items-center gap-2 break-all">
                 <Phone size={17} className="text-gray-400" />
                 {profile.owner.phone || "-"}
               </p>

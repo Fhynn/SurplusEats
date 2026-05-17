@@ -552,7 +552,7 @@ export default function OwnerDashboardPage() {
     <div
       className={
         activeTab === "orders"
-          ? "h-[calc(100vh-9rem)]"
+          ? "h-[calc(100vh-10rem)] min-h-[620px] md:h-[calc(100vh-9rem)]"
           : "mx-auto max-w-7xl space-y-8"
       }
     >
@@ -765,7 +765,7 @@ export default function OwnerDashboardPage() {
               </h2>
             </div>
             <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
-              <div className="grid grid-cols-4 gap-2">
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                 {[
                   ["Baru", orderSummary.new, "text-amber-600"],
                   ["Siap", orderSummary.ready, "text-purple-600"],
@@ -805,7 +805,7 @@ export default function OwnerDashboardPage() {
             </div>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden pb-2">
+          <div className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <div className="flex h-full min-w-max gap-5">
               {orderColumns.map((column) => {
                 const Icon = column.icon;

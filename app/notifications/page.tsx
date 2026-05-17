@@ -227,7 +227,7 @@ export default function CustomerNotificationsPage() {
   return (
     <MobileDeviceFrame backgroundClassName="bg-[#f8fafc]">
       <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-[#f8fafc]">
-        <header className="sticky top-0 z-20 rounded-b-[32px] bg-white px-6 pt-10 pb-5 shadow-[0_4px_20px_rgba(0,0,0,0.03)]">
+        <header className="sticky top-0 z-20 rounded-b-[32px] bg-white px-5 pt-10 pb-5 shadow-[0_4px_20px_rgba(0,0,0,0.03)] sm:px-6 md:mx-auto md:w-full md:max-w-5xl md:px-8">
           <div className="mb-5 flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <Link
@@ -296,7 +296,7 @@ export default function CustomerNotificationsPage() {
           </div>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6 pb-28 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-6 pb-28 [scrollbar-width:none] sm:px-6 md:mx-auto md:w-full md:max-w-5xl md:px-8 [&::-webkit-scrollbar]:hidden">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-sm font-extrabold tracking-wide text-gray-900">
               Hari Ini
@@ -368,7 +368,7 @@ export default function CustomerNotificationsPage() {
                     </div>
                   </div>
 
-                  <div className="mt-4 grid grid-cols-2 gap-2 border-t border-gray-100 pt-4">
+                  <div className="mt-4 grid grid-cols-1 gap-2 border-t border-gray-100 pt-4 sm:grid-cols-2">
                     {notification.href ? (
                       <Link
                         href={notification.href}

@@ -122,9 +122,9 @@ export function CustomerHomeScreen() {
   }, [activeCategory, allFoods]);
 
   return (
-    <div className="flex h-full min-h-0 flex-1 flex-col overflow-y-auto pb-28 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-      <header className="sticky top-0 z-20 rounded-b-3xl bg-white px-6 pt-8 pb-4 shadow-[0_4px_20px_rgba(0,0,0,0.03)]">
-        <div className="mb-5 flex items-center justify-between">
+    <div className="flex h-full min-h-0 flex-1 flex-col overflow-y-auto pb-28 [scrollbar-width:none] md:pb-0 [&::-webkit-scrollbar]:hidden">
+      <header className="sticky top-0 z-20 rounded-b-3xl bg-white px-6 pt-8 pb-4 shadow-[0_4px_20px_rgba(0,0,0,0.03)] md:rounded-none md:px-8 md:pt-6 lg:px-10">
+        <div className="mx-auto mb-5 flex w-full max-w-7xl items-center justify-between">
           <div className="flex flex-col">
             <span className="mb-0.5 flex items-center gap-1 text-xs font-semibold text-gray-400">
               Lokasi Saat Ini
@@ -161,7 +161,7 @@ export function CustomerHomeScreen() {
         <button
           type="button"
           onClick={() => router.push("/browser")}
-          className="relative flex w-full items-center rounded-2xl border border-transparent bg-gray-100/80 text-left transition-all duration-300 hover:border-emerald-500 hover:bg-white hover:shadow-[0_0_0_4px_rgba(16,185,129,0.1)]"
+          className="relative mx-auto flex w-full max-w-7xl items-center rounded-2xl border border-transparent bg-gray-100/80 text-left transition-all duration-300 hover:border-emerald-500 hover:bg-white hover:shadow-[0_0_0_4px_rgba(16,185,129,0.1)]"
         >
           <Search size={20} className="absolute left-4 text-gray-400" />
           <span className="w-full rounded-2xl py-3.5 pr-4 pl-12 text-sm text-gray-400">
@@ -170,8 +170,8 @@ export function CustomerHomeScreen() {
         </button>
       </header>
 
-      <main className="mt-6 px-6">
-        <section className="group relative mb-5 overflow-hidden rounded-3xl bg-emerald-500 p-5 text-white shadow-[0_8px_20px_rgba(16,185,129,0.25)]">
+      <main className="mx-auto mt-6 w-full max-w-7xl px-6 md:px-8 lg:px-10">
+        <section className="group relative mb-5 overflow-hidden rounded-3xl bg-emerald-500 p-5 text-white shadow-[0_8px_20px_rgba(16,185,129,0.25)] md:p-6">
           <div className="absolute top-0 right-0 -mt-4 -mr-4 h-24 w-24 rounded-full bg-white/10 blur-xl transition-transform duration-700 group-hover:scale-150" />
 
           <div className="relative z-10 mb-5 flex items-start justify-between gap-4">
@@ -234,7 +234,7 @@ export function CustomerHomeScreen() {
           })}
         </section>
 
-        <section className="-mx-6 flex space-x-3 overflow-x-auto px-6 pb-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <section className="-mx-6 flex space-x-3 overflow-x-auto px-6 pb-4 [scrollbar-width:none] md:mx-0 md:px-0 [&::-webkit-scrollbar]:hidden">
           {CATEGORIES.map((category) => (
             <button
               key={category}
@@ -270,7 +270,7 @@ export function CustomerHomeScreen() {
           </button>
         </section>
 
-        <section className="space-y-4">
+        <section className="space-y-4 md:grid md:grid-cols-2 md:gap-4 md:space-y-0 xl:grid-cols-3">
           {isLoadingFoods ? (
             <div className="rounded-[24px] border border-gray-100 bg-white p-6 text-center text-sm font-bold text-gray-500 shadow-sm">
               Memuat menu...

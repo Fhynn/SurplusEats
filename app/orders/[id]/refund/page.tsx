@@ -243,7 +243,7 @@ export default function CustomerRefundRequestPage() {
   if (isSubmitted) {
     return (
       <MobileDeviceFrame backgroundClassName="bg-emerald-500">
-        <div className="flex h-full min-h-0 flex-1 flex-col overflow-y-auto bg-emerald-500 px-6 py-12 text-white [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="flex h-full min-h-0 flex-1 flex-col overflow-y-auto bg-emerald-500 px-5 py-12 text-white [scrollbar-width:none] sm:px-6 [&::-webkit-scrollbar]:hidden">
           <div className="flex flex-1 flex-col items-center justify-center text-center">
             <div className="mb-6 flex h-24 w-24 items-center justify-center rounded-full bg-white shadow-[0_18px_40px_rgba(15,23,42,0.18)]">
               <CheckCircle2 size={50} className="text-emerald-500" />
@@ -303,7 +303,7 @@ export default function CustomerRefundRequestPage() {
   return (
     <MobileDeviceFrame backgroundClassName="bg-[#f8fafc]">
       <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-[#f8fafc]">
-        <header className="sticky top-0 z-20 flex items-center bg-white px-6 pt-10 pb-4 shadow-sm">
+        <header className="sticky top-0 z-20 flex items-center bg-white px-5 pt-10 pb-4 shadow-sm sm:px-6 md:mx-auto md:w-full md:max-w-5xl md:px-8">
           <Link
             href="/orders"
             className="-ml-2 rounded-full p-2 transition-colors hover:bg-gray-100"
@@ -321,7 +321,7 @@ export default function CustomerRefundRequestPage() {
           </div>
         </header>
 
-        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-6 py-6 pb-48 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-6 pb-48 [scrollbar-width:none] sm:px-6 md:mx-auto md:w-full md:max-w-5xl md:px-8 [&::-webkit-scrollbar]:hidden">
           {notice ? (
             <div className="rounded-2xl border border-red-100 bg-red-50 p-4 text-sm font-bold text-red-700">
               {notice}
@@ -379,7 +379,7 @@ export default function CustomerRefundRequestPage() {
                 style={{ width: `${completionPercent}%` }}
               />
             </div>
-            <div className="mt-4 grid grid-cols-2 gap-2">
+            <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
               {completionItems.map((item) => (
                 <div
                   key={item.label}
@@ -631,7 +631,8 @@ export default function CustomerRefundRequestPage() {
           </section>
         </div>
 
-        <div className="absolute right-0 bottom-0 left-0 border-t border-gray-100 bg-white/95 p-6 shadow-[0_-15px_40px_rgba(0,0,0,0.08)] backdrop-blur-md">
+        <div className="absolute right-0 bottom-0 left-0 border-t border-gray-100 bg-white/95 p-5 shadow-[0_-15px_40px_rgba(0,0,0,0.08)] backdrop-blur-md sm:p-6">
+          <div className="mx-auto w-full max-w-5xl">
           <button
             type="button"
             onClick={handleSubmitRefund}
@@ -640,6 +641,7 @@ export default function CustomerRefundRequestPage() {
           >
             {canSubmit ? "Kirim Pengajuan Refund" : "Lengkapi Data Wajib"}
           </button>
+          </div>
         </div>
       </div>
     </MobileDeviceFrame>

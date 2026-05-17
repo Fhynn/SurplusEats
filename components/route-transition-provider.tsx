@@ -12,6 +12,8 @@ import {
   useState,
 } from "react";
 
+import { LoadingScreen } from "@/components/loading-screen";
+
 type RouteTransitionContextValue = {
   isRouteLoading: boolean;
   startRouteLoading: (href?: string) => void;
@@ -211,7 +213,10 @@ export function RouteTransitionProvider({
 
       if (targetPathKey && targetPathKey !== fromPathKey) {
         deferredTimeoutRef.current = setTimeout(() => {
-          beginRouteLoading(fromPathKey);
+          if (!isRouteLoadingRef.current) {
+            beginRouteLoading(fromPathKey);
+          }
+
           settleRouteLoading();
         }, 0);
       } else {
@@ -222,19 +227,9 @@ export function RouteTransitionProvider({
     };
 
     window.history.replaceState = function replaceState(data, unused, url) {
-      const fromPathKey = getCurrentPathKey();
-      const targetPathKey = url ? getTargetPathKey(String(url)) : null;
-
       const result = originalReplaceState(data, unused, url);
 
-      if (targetPathKey && targetPathKey !== fromPathKey) {
-        deferredTimeoutRef.current = setTimeout(() => {
-          beginRouteLoading(fromPathKey);
-          settleRouteLoading();
-        }, 0);
-      } else {
-        deferredTimeoutRef.current = setTimeout(settleRouteLoading, 0);
-      }
+      deferredTimeoutRef.current = setTimeout(settleRouteLoading, 0);
 
       return result;
     };
@@ -258,6 +253,12 @@ export function RouteTransitionProvider({
   return (
     <RouteTransitionContext.Provider value={value}>
       {children}
+      {isRouteLoading ? (
+        <LoadingScreen
+          title="Memuat halaman..."
+          description="Sebentar, SurplusEats sedang membuka halaman berikutnya."
+        />
+      ) : null}
     </RouteTransitionContext.Provider>
   );
 }

@@ -11,7 +11,7 @@ export default function PaymentFailedPage() {
   return (
     <MobileDeviceFrame backgroundClassName="bg-red-500">
       <div className="flex h-full min-h-0 flex-1 flex-col overflow-y-auto bg-red-500 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        <section className="relative px-6 pt-10 pb-8 text-white">
+        <section className="relative mx-auto w-full max-w-4xl px-5 pt-10 pb-8 text-white sm:px-6 md:px-8">
           <button
             type="button"
             onClick={() => router.back()}
@@ -39,7 +39,8 @@ export default function PaymentFailedPage() {
           </p>
         </section>
 
-        <section className="flex-1 rounded-t-[40px] bg-[#f8fafc] px-5 pt-6 pb-8">
+        <section className="flex-1 rounded-t-[40px] bg-[#f8fafc] px-5 pt-6 pb-8 sm:px-6 md:px-8">
+          <div className="mx-auto w-full max-w-4xl">
           <div className="mb-5 rounded-[28px] border border-red-100 bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.06)]">
             <h2 className="text-sm font-extrabold text-gray-950">
               Transaksi Tidak Tercatat
@@ -50,7 +51,7 @@ export default function PaymentFailedPage() {
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <button
               type="button"
               onClick={() => router.push("/cart")}
@@ -67,6 +68,7 @@ export default function PaymentFailedPage() {
               <Home size={17} />
               Home
             </button>
+          </div>
           </div>
         </section>
       </div>

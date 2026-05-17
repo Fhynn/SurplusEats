@@ -110,7 +110,7 @@ export default function CustomerSupportPage() {
   return (
     <MobileDeviceFrame backgroundClassName="bg-[#f8fafc]">
       <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-[#f8fafc]">
-        <header className="sticky top-0 z-20 bg-white px-6 pt-10 pb-5 shadow-sm">
+        <header className="sticky top-0 z-20 bg-white px-5 pt-10 pb-5 shadow-sm sm:px-6 md:mx-auto md:w-full md:max-w-5xl md:px-8">
           <div className="mb-5 flex items-center justify-between gap-3">
             <button
               type="button"
@@ -166,8 +166,8 @@ export default function CustomerSupportPage() {
           </div>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6 pb-40 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          <section className="mb-6 grid grid-cols-1 gap-3">
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-6 pb-40 [scrollbar-width:none] sm:px-6 md:mx-auto md:w-full md:max-w-5xl md:px-8 [&::-webkit-scrollbar]:hidden">
+          <section className="mb-6 grid grid-cols-1 gap-3 md:grid-cols-3">
             {quickTopics.map(({ title, description, icon: Icon }) => (
               <article
                 key={title}
@@ -346,7 +346,7 @@ export default function CustomerSupportPage() {
             </section>
           ) : null}
 
-          <section className="mt-6 grid grid-cols-2 gap-3">
+          <section className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Link
               href="/orders"
               className="rounded-2xl border border-gray-100 bg-white p-4 text-sm font-extrabold text-gray-700 shadow-sm transition-colors hover:bg-gray-50"
@@ -366,9 +366,9 @@ export default function CustomerSupportPage() {
         {mode === "chat" ? (
           <form
             onSubmit={handleSendMessage}
-            className="absolute right-0 bottom-0 left-0 z-20 border-t border-gray-100 bg-white px-6 py-4"
+            className="absolute right-0 bottom-0 left-0 z-20 border-t border-gray-100 bg-white px-5 py-4 sm:px-6"
           >
-            <div className="flex items-center gap-3 rounded-2xl border border-gray-200 bg-gray-50 p-2 focus-within:border-emerald-500 focus-within:bg-white">
+            <div className="mx-auto flex w-full max-w-5xl items-center gap-3 rounded-2xl border border-gray-200 bg-gray-50 p-2 focus-within:border-emerald-500 focus-within:bg-white">
               <input
                 type="text"
                 value={message}

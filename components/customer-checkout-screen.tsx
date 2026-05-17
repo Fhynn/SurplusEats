@@ -133,7 +133,7 @@ export function CustomerCheckoutScreen() {
   return (
     <MobileDeviceFrame backgroundClassName="bg-gray-50">
       <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-gray-50">
-        <header className="sticky top-0 z-20 flex items-center bg-white px-6 pt-10 pb-4 shadow-[0_4px_20px_rgba(0,0,0,0.03)]">
+        <header className="sticky top-0 z-20 flex items-center bg-white px-6 pt-10 pb-4 shadow-[0_4px_20px_rgba(0,0,0,0.03)] md:px-8 md:pt-6 lg:px-10">
           <button
             type="button"
             onClick={() => router.push("/cart")}
@@ -150,7 +150,7 @@ export function CustomerCheckoutScreen() {
           </div>
         </header>
 
-        <main className="min-h-0 flex-1 overflow-y-auto px-6 pt-6 pb-64 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <main className="mx-auto min-h-0 w-full max-w-5xl flex-1 overflow-y-auto px-6 pt-6 pb-64 [scrollbar-width:none] md:px-8 lg:pb-10 [&::-webkit-scrollbar]:hidden">
           {cart.length === 0 ? (
             <div className="rounded-[28px] border border-gray-100 bg-white p-6 text-center shadow-sm">
               <div className="mx-auto mb-5 flex h-20 w-20 items-center justify-center rounded-[26px] bg-emerald-50 text-emerald-600">
@@ -400,6 +400,19 @@ export function CustomerCheckoutScreen() {
                     <span>{formatRp(grandTotal)}</span>
                   </div>
                 </div>
+                {checkoutNotice ? (
+                  <div className="mt-5 hidden rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-xs font-bold text-red-700 lg:block">
+                    {checkoutNotice}
+                  </div>
+                ) : null}
+                <button
+                  type="button"
+                  disabled={!agreePickup || isSubmittingOrder}
+                  onClick={handlePaymentSuccess}
+                  className="mt-5 hidden w-full rounded-2xl bg-gray-900 py-4 text-sm font-extrabold text-white shadow-[0_12px_26px_rgba(15,23,42,0.14)] transition-all duration-300 hover:bg-emerald-500 active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-gray-300 disabled:shadow-none lg:block"
+                >
+                  {isSubmittingOrder ? "Memproses..." : "Bayar Sekarang"}
+                </button>
               </section>
 
               <label className="flex cursor-pointer gap-3 rounded-[24px] border border-gray-100 bg-white p-4 shadow-sm">
@@ -419,7 +432,7 @@ export function CustomerCheckoutScreen() {
         </main>
 
         {cart.length > 0 ? (
-          <div className="absolute right-0 bottom-0 left-0 z-50 rounded-t-[32px] border-t border-gray-50 bg-white/95 p-6 shadow-[0_-15px_40px_rgba(0,0,0,0.08)] backdrop-blur-md">
+          <div className="absolute right-0 bottom-0 left-0 z-50 rounded-t-[32px] border-t border-gray-50 bg-white/95 p-6 shadow-[0_-15px_40px_rgba(0,0,0,0.08)] backdrop-blur-md lg:hidden">
             {checkoutNotice ? (
               <div className="mb-4 rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-xs font-bold text-red-700">
                 {checkoutNotice}

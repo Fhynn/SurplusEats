@@ -161,37 +161,38 @@ export function CustomerRegisterScreen() {
           description="Akun kamu sudah siap. Kami sedang menyiapkan beranda SurplusEats."
         />
       ) : null}
-      <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-white">
-        <header className="sticky top-0 z-20 bg-white px-6 pt-10 pb-4">
+      <div className="flex h-full min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden bg-white md:grid md:grid-cols-[minmax(0,0.92fr)_minmax(480px,1.08fr)]">
+        <header className="sticky top-0 z-20 bg-white px-6 pt-10 pb-4 md:relative md:flex md:h-full md:flex-col md:justify-center md:overflow-hidden md:bg-emerald-600 md:px-10 md:py-12 lg:px-16">
+          <div className="absolute inset-0 hidden bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.24),transparent_34%),radial-gradient(circle_at_bottom_right,rgba(15,23,42,0.20),transparent_38%)] md:block" />
           <div className="mb-5 flex items-center">
             <button
               type="button"
               onClick={() => router.push("/")}
-              className="-ml-2 rounded-full p-2 transition-colors hover:bg-gray-100"
+              className="relative -ml-2 rounded-full p-2 transition-colors hover:bg-gray-100 md:text-white md:hover:bg-white/10"
               aria-label="Kembali ke login"
             >
-              <ChevronLeft size={24} className="text-gray-800" />
+              <ChevronLeft size={24} className="text-gray-800 md:text-white" />
             </button>
-            <h1 className="ml-2 text-xl font-extrabold text-gray-900">
+            <h1 className="relative ml-2 text-xl font-extrabold text-gray-900 md:text-white">
               Buat Akun
             </h1>
           </div>
 
-          <div className="rounded-[28px] bg-emerald-500 p-5 text-white shadow-[0_16px_36px_rgba(16,185,129,0.22)]">
-            <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-white/15">
+          <div className="relative rounded-[28px] bg-emerald-500 p-5 text-white shadow-[0_16px_36px_rgba(16,185,129,0.22)] md:bg-white/10 md:p-8 md:shadow-none md:ring-1 md:ring-white/20">
+            <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-white/15 md:h-14 md:w-14">
               <Leaf size={25} />
             </div>
             <p className="text-xs font-extrabold tracking-[0.2em] text-emerald-100 uppercase">
               Food Hero Account
             </p>
-            <h2 className="mt-2 text-2xl font-extrabold tracking-tight">
+            <h2 className="mt-2 text-2xl font-extrabold tracking-tight md:text-4xl">
               Selamatkan makanan enak dengan harga lebih hemat.
             </h2>
           </div>
         </header>
 
-        <main className="min-h-0 flex-1 overflow-y-auto px-6 pb-12 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          <section className="mb-6 rounded-[24px] border border-gray-100 bg-gray-50 p-4">
+        <main className="min-h-0 min-w-0 flex-1 overflow-y-auto px-5 pb-12 [scrollbar-width:none] sm:px-6 md:px-10 md:py-10 lg:px-16 [&::-webkit-scrollbar]:hidden">
+          <section className="mx-auto mb-6 max-w-3xl rounded-[24px] border border-gray-100 bg-gray-50 p-4">
             <div className="space-y-3">
               {benefits.map((benefit) => (
                 <div key={benefit} className="flex gap-3 text-xs font-medium text-gray-500">
@@ -205,7 +206,10 @@ export function CustomerRegisterScreen() {
             </div>
           </section>
 
-          <form className="space-y-5" onSubmit={handleSubmit}>
+          <form
+            className="mx-auto max-w-3xl space-y-5 md:grid md:grid-cols-2 md:gap-5 md:space-y-0"
+            onSubmit={handleSubmit}
+          >
             <div className="space-y-1.5">
               <label className="ml-1 text-sm font-bold text-gray-700">
                 Nama Lengkap
@@ -296,7 +300,7 @@ export function CustomerRegisterScreen() {
               ) : null}
             </div>
 
-            <section className="rounded-[24px] border border-gray-100 bg-gray-50 p-4">
+            <section className="rounded-[24px] border border-gray-100 bg-gray-50 p-4 md:col-span-2">
               <div className="mb-3 flex items-center gap-2">
                 <UtensilsCrossed size={17} className="text-emerald-500" />
                 <p className="text-sm font-extrabold text-gray-900">
@@ -325,7 +329,7 @@ export function CustomerRegisterScreen() {
               </div>
             </section>
 
-            <label className="flex cursor-pointer gap-3 rounded-[24px] border border-gray-100 bg-white p-4 shadow-sm">
+            <label className="flex cursor-pointer gap-3 rounded-[24px] border border-gray-100 bg-white p-4 shadow-sm md:col-span-2">
               <input
                 type="checkbox"
                 checked={acceptedTerms}
@@ -339,7 +343,7 @@ export function CustomerRegisterScreen() {
             </label>
 
             {notice ? (
-              <div className="rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-xs leading-5 font-bold text-amber-700">
+              <div className="rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-xs leading-5 font-bold text-amber-700 md:col-span-2">
                 {notice}
               </div>
             ) : null}
@@ -347,14 +351,14 @@ export function CustomerRegisterScreen() {
             <button
               type="submit"
               disabled={!isFormReady || isSubmitting}
-              className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gray-900 py-4 text-sm font-extrabold text-white shadow-[0_12px_26px_rgba(15,23,42,0.14)] transition-all hover:bg-emerald-500 active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-gray-300 disabled:shadow-none"
+              className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gray-900 py-4 text-sm font-extrabold text-white shadow-[0_12px_26px_rgba(15,23,42,0.14)] transition-all hover:bg-emerald-500 active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-gray-300 disabled:shadow-none md:col-span-2"
             >
               <HeartHandshake size={18} />
               {isSubmitting ? "Mendaftarkan Akun..." : "Daftar Sekarang"}
             </button>
           </form>
 
-          <div className="mt-6 rounded-[24px] border border-emerald-100 bg-emerald-50 p-4">
+          <div className="mx-auto mt-6 max-w-3xl rounded-[24px] border border-emerald-100 bg-emerald-50 p-4">
             <div className="flex gap-3">
               <ShieldCheck size={20} className="mt-0.5 shrink-0 text-emerald-600" />
               <div>

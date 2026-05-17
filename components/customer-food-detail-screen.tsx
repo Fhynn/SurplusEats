@@ -75,7 +75,7 @@ export function CustomerFoodDetailScreen({
     <MobileDeviceFrame backgroundClassName="bg-gray-50">
       <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-gray-50">
         <div className="min-h-0 flex-1 overflow-y-auto pb-56 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          <section className="relative h-76 w-full shrink-0">
+          <section className="relative h-76 w-full shrink-0 md:h-[420px]">
             <button
               type="button"
               onClick={() => router.push("/home")}
@@ -103,12 +103,12 @@ export function CustomerFoodDetailScreen({
               alt={food.name}
               fill
               priority
-              sizes="(max-width: 768px) 100vw, 400px"
+              sizes="100vw"
               className="object-cover"
             />
             <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-black/10 to-transparent" />
 
-            <div className="absolute right-6 bottom-10 left-6 text-white">
+            <div className="absolute right-6 bottom-10 left-6 text-white md:right-10 md:left-10 lg:right-16 lg:left-16">
               <div className="mb-3 flex flex-wrap gap-2">
                 <span className="rounded-full bg-emerald-500 px-3 py-1 text-[10px] font-extrabold">
                   Hemat {savedPercent}%
@@ -117,7 +117,7 @@ export function CustomerFoodDetailScreen({
                   {food.category}
                 </span>
               </div>
-              <h1 className="text-3xl leading-tight font-extrabold tracking-tight">
+              <h1 className="max-w-4xl text-3xl leading-tight font-extrabold tracking-tight md:text-5xl">
                 {food.name}
               </h1>
               <p className="mt-2 flex items-center gap-1.5 text-sm font-semibold text-white/90">
@@ -127,8 +127,8 @@ export function CustomerFoodDetailScreen({
             </div>
           </section>
 
-          <section className="relative z-20 -mt-8 min-h-full rounded-t-[40px] bg-white px-6 pt-7 pb-6 shadow-[0_-10px_40px_rgba(0,0,0,0.1)]">
-            <div className="mx-auto mb-6 h-1.5 w-12 rounded-full bg-gray-200" />
+          <section className="relative z-20 -mt-8 min-h-full rounded-t-[40px] bg-white px-6 pt-7 pb-6 shadow-[0_-10px_40px_rgba(0,0,0,0.1)] md:mx-auto md:max-w-5xl md:rounded-[36px] md:px-8">
+            <div className="mx-auto mb-6 h-1.5 w-12 rounded-full bg-gray-200 md:hidden" />
 
             <div className="mb-6 grid grid-cols-3 gap-3">
               <div className="rounded-[20px] border border-amber-100 bg-amber-50 p-3 text-center">
@@ -323,7 +323,7 @@ export function CustomerFoodDetailScreen({
           </section>
         </div>
 
-        <div className="absolute right-0 bottom-0 left-0 z-50 rounded-t-[32px] border-t border-gray-50 bg-white/95 p-6 shadow-[0_-15px_40px_rgba(0,0,0,0.08)] backdrop-blur-md">
+        <div className="absolute right-0 bottom-0 left-0 z-50 rounded-t-[32px] border-t border-gray-50 bg-white/95 p-6 shadow-[0_-15px_40px_rgba(0,0,0,0.08)] backdrop-blur-md lg:right-8 lg:bottom-8 lg:left-auto lg:w-[420px] lg:rounded-[32px] lg:border lg:border-gray-100 lg:shadow-[0_24px_80px_rgba(15,23,42,0.18)]">
           <div className="mb-4 flex items-center justify-between gap-4">
             <div>
               <p className="mb-0.5 text-[11px] font-medium text-gray-400 line-through">

@@ -138,8 +138,8 @@ export default function CustomerOrdersPage() {
   return (
     <MobileDeviceFrame backgroundClassName="bg-[#f8fafc]">
       <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-[#f8fafc]">
-        <header className="sticky top-0 z-20 bg-white px-6 pt-10 pb-4 shadow-sm">
-          <div className="mb-5 flex items-start justify-between gap-4">
+        <header className="sticky top-0 z-20 bg-white px-6 pt-10 pb-4 shadow-sm md:px-8 md:pt-6 lg:px-10">
+          <div className="mx-auto mb-5 flex w-full max-w-6xl items-start justify-between gap-4">
             <div>
               <p className="text-xs font-extrabold tracking-[0.18em] text-emerald-600 uppercase">
                 Order Center
@@ -158,7 +158,7 @@ export default function CustomerOrdersPage() {
             </div>
           </div>
 
-          <div className="flex gap-4 border-b border-gray-100">
+          <div className="mx-auto flex w-full max-w-6xl gap-4 border-b border-gray-100">
             <button
               type="button"
               onClick={() => {
@@ -191,7 +191,7 @@ export default function CustomerOrdersPage() {
             </button>
           </div>
 
-          <div className="relative mt-4">
+          <div className="relative mx-auto mt-4 w-full max-w-6xl">
             <Search
               size={18}
               className="absolute top-1/2 left-4 -translate-y-1/2 text-gray-400"
@@ -206,7 +206,7 @@ export default function CustomerOrdersPage() {
           </div>
         </header>
 
-        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-6 pb-28 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="mx-auto min-h-0 w-full max-w-6xl flex-1 space-y-4 overflow-y-auto px-6 py-6 pb-28 [scrollbar-width:none] md:px-8 lg:px-10 [&::-webkit-scrollbar]:hidden">
           {activeTab === "aktif" ? (
             <section className="rounded-[28px] border border-emerald-100 bg-emerald-50 p-5">
               <div className="mb-4 flex items-start gap-3">
@@ -441,9 +441,9 @@ export default function CustomerOrdersPage() {
         </div>
 
         {reviewOrder ? (
-          <div className="absolute inset-0 z-50 flex items-end bg-gray-950/30 backdrop-blur-sm">
-            <div className="w-full rounded-t-[40px] bg-white px-6 pt-5 pb-8 shadow-[0_-24px_70px_rgba(15,23,42,0.22)]">
-              <div className="mx-auto mb-5 h-1.5 w-12 rounded-full bg-gray-200" />
+          <div className="absolute inset-0 z-50 flex items-end bg-gray-950/30 backdrop-blur-sm md:items-center md:justify-center md:p-6">
+            <div className="w-full rounded-t-[40px] bg-white px-6 pt-5 pb-8 shadow-[0_-24px_70px_rgba(15,23,42,0.22)] md:max-w-xl md:rounded-[32px] md:shadow-[0_24px_80px_rgba(15,23,42,0.24)]">
+              <div className="mx-auto mb-5 h-1.5 w-12 rounded-full bg-gray-200 md:hidden" />
 
               <div className="mb-6 flex items-start justify-between gap-4">
                 <div className="flex min-w-0 items-center gap-3">

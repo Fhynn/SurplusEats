@@ -189,7 +189,7 @@ export default function CustomerAccountSettingsPage() {
   return (
     <MobileDeviceFrame backgroundClassName="bg-[#f8fafc]">
       <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-[#f8fafc]">
-        <header className="sticky top-0 z-20 flex items-center justify-between bg-white px-6 pt-10 pb-4 shadow-sm">
+        <header className="sticky top-0 z-20 flex items-center justify-between bg-white px-5 pt-10 pb-4 shadow-sm sm:px-6 md:mx-auto md:w-full md:max-w-5xl md:px-8">
           <div className="flex items-center gap-3">
             <Link
               href="/profile"
@@ -204,7 +204,7 @@ export default function CustomerAccountSettingsPage() {
           </div>
         </header>
 
-        <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-6 py-6 pb-28 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-5 py-6 pb-28 [scrollbar-width:none] sm:px-6 md:mx-auto md:w-full md:max-w-5xl md:px-8 [&::-webkit-scrollbar]:hidden">
           <section className="rounded-[24px] border border-gray-100 bg-white p-6 shadow-sm">
             <div className="flex items-center gap-4">
               <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full border-2 border-white bg-emerald-50 text-emerald-600 shadow-sm">
@@ -283,7 +283,7 @@ export default function CustomerAccountSettingsPage() {
               </div>
             </div>
 
-            <div className="space-y-3">
+            <div className="grid gap-3 md:grid-cols-2">
               {preferenceItems.map(({ key, title, description, icon: Icon }) => (
                 <div
                   key={key}
@@ -402,9 +402,9 @@ export default function CustomerAccountSettingsPage() {
         </div>
 
         {confirmationType ? (
-          <div className="modal-backdrop-in absolute inset-0 z-50 flex items-end overflow-y-auto bg-gray-950/35 backdrop-blur-sm">
+          <div className="modal-backdrop-in absolute inset-0 z-50 flex items-end overflow-y-auto bg-gray-950/35 backdrop-blur-sm md:items-center md:justify-center md:p-6">
             <div
-              className="sheet-in max-h-[92%] w-full overflow-y-auto rounded-t-[36px] bg-white px-6 pt-6 shadow-[0_-24px_70px_rgba(15,23,42,0.22)]"
+              className="sheet-in max-h-[92%] w-full overflow-y-auto rounded-t-[36px] bg-white px-6 pt-6 shadow-[0_-24px_70px_rgba(15,23,42,0.22)] md:max-w-md md:rounded-[32px]"
               style={{ paddingBottom: "max(2rem, env(safe-area-inset-bottom))" }}
             >
               <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-red-50 text-red-500">

@@ -16,9 +16,6 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { ReactNode } from "react";
 import { useState } from "react";
 
-import { LoadingScreen } from "@/components/loading-screen";
-import { useRouteTransition } from "@/components/route-transition-provider";
-
 const adminNavItems = [
   {
     href: "/admin/dashboard",
@@ -121,7 +118,6 @@ export function AdminShell({ children }: Readonly<{ children: ReactNode }>) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const { isRouteLoading } = useRouteTransition();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const dashboardTab = searchParams.get("tab");
   const pageLabel =
@@ -141,12 +137,6 @@ export function AdminShell({ children }: Readonly<{ children: ReactNode }>) {
 
   return (
     <div className="min-h-screen bg-gray-50 font-[family-name:var(--font-plus-jakarta-sans)] text-gray-900 selection:bg-emerald-200">
-      {isRouteLoading ? (
-        <LoadingScreen
-          title="Memuat halaman..."
-          description="Sebentar, SurplusEats sedang membuka halaman admin."
-        />
-      ) : null}
       <div className="flex min-h-screen">
         <aside className="sticky top-0 hidden h-screen w-[260px] shrink-0 flex-col bg-gray-950 text-white shadow-[12px_0_36px_rgba(0,0,0,0.08)] lg:flex">
           <div className="border-b border-white/10 px-6 py-6">

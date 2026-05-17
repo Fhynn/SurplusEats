@@ -208,8 +208,8 @@ export function CustomerProfileScreen() {
 
   return (
     <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-gray-50">
-      <div className="min-h-0 flex-1 overflow-y-auto pb-28 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        <section className="relative overflow-hidden rounded-b-[40px] bg-white px-6 pt-10 pb-8 shadow-[0_4px_20px_rgba(0,0,0,0.03)]">
+      <div className="min-h-0 flex-1 overflow-y-auto pb-28 [scrollbar-width:none] md:pb-8 [&::-webkit-scrollbar]:hidden">
+        <section className="relative overflow-hidden rounded-b-[40px] bg-white px-6 pt-10 pb-8 shadow-[0_4px_20px_rgba(0,0,0,0.03)] md:mx-auto md:mt-6 md:max-w-5xl md:rounded-[32px] md:px-8 md:pt-8">
           <div className="absolute top-0 right-0 -mt-14 -mr-14 h-56 w-56 rounded-full bg-emerald-50 blur-3xl" />
 
           <div className="relative z-10 mb-7 flex items-start justify-between gap-4 pt-4">
@@ -287,8 +287,8 @@ export function CustomerProfileScreen() {
           </div>
         </section>
 
-        <section className="space-y-6 px-6 pt-6">
-          <div className="grid grid-cols-2 gap-3">
+        <section className="mx-auto max-w-5xl space-y-6 px-6 pt-6 md:px-0">
+          <div className="grid grid-cols-2 gap-3 md:gap-4">
             <button
               type="button"
               onClick={() => router.push("/profile/vouchers")}
@@ -322,7 +322,7 @@ export function CustomerProfileScreen() {
               <h2 className="mb-3 px-1 text-xs font-extrabold tracking-[0.18em] text-gray-400 uppercase">
                 {group.title}
               </h2>
-              <div className="space-y-3">
+              <div className="grid gap-3 md:grid-cols-2">
                 {group.items.map((item) => {
                   const Icon = item.icon;
 
@@ -369,12 +369,12 @@ export function CustomerProfileScreen() {
       </div>
 
       {isLogoutOpen ? (
-        <div className="modal-backdrop-in absolute inset-0 z-[80] flex items-end overflow-y-auto bg-gray-950/30 backdrop-blur-sm">
+        <div className="modal-backdrop-in absolute inset-0 z-[80] flex items-end overflow-y-auto bg-gray-950/30 backdrop-blur-sm md:items-center md:justify-center md:p-6">
           <div
-            className="sheet-in max-h-[92%] w-full overflow-y-auto rounded-t-[36px] bg-white px-6 pt-5 shadow-[0_-24px_70px_rgba(15,23,42,0.22)]"
+            className="sheet-in max-h-[92%] w-full overflow-y-auto rounded-t-[36px] bg-white px-6 pt-5 shadow-[0_-24px_70px_rgba(15,23,42,0.22)] md:max-w-lg md:rounded-[32px] md:shadow-[0_24px_80px_rgba(15,23,42,0.24)]"
             style={{ paddingBottom: "max(2rem, env(safe-area-inset-bottom))" }}
           >
-            <div className="mx-auto mb-5 h-1.5 w-12 rounded-full bg-gray-200" />
+            <div className="mx-auto mb-5 h-1.5 w-12 rounded-full bg-gray-200 md:hidden" />
             <div className="mb-6 flex items-start justify-between gap-4">
               <div>
                 <h2 className="text-xl font-extrabold text-gray-950">

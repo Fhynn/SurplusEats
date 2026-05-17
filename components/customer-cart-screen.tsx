@@ -113,8 +113,8 @@ export function CustomerCartScreen() {
 
   if (cart.length === 0) {
     return (
-      <div className="flex h-full min-h-0 flex-1 flex-col overflow-y-auto bg-gray-50 pb-36 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        <header className="sticky top-0 z-20 flex items-center bg-white/90 px-6 pt-10 pb-4 shadow-[0_4px_20px_rgba(0,0,0,0.03)] backdrop-blur-md">
+      <div className="flex h-full min-h-0 flex-1 flex-col overflow-y-auto bg-gray-50 pb-36 [scrollbar-width:none] md:pb-8 [&::-webkit-scrollbar]:hidden">
+        <header className="sticky top-0 z-20 flex items-center bg-white/90 px-6 pt-10 pb-4 shadow-[0_4px_20px_rgba(0,0,0,0.03)] backdrop-blur-md md:px-8 md:pt-6 lg:px-10">
           <button
             type="button"
             onClick={() => router.push("/home")}
@@ -128,7 +128,7 @@ export function CustomerCartScreen() {
           </h1>
         </header>
 
-        <main className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 text-center">
+        <main className="mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col items-center justify-center px-6 text-center">
           <div className="mb-6 flex h-28 w-28 items-center justify-center rounded-[32px] bg-emerald-50 text-emerald-500">
             <ShoppingBag size={46} />
           </div>
@@ -153,7 +153,7 @@ export function CustomerCartScreen() {
 
   return (
     <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-gray-50">
-      <header className="sticky top-0 z-20 flex items-center justify-between bg-white/90 px-6 pt-10 pb-4 shadow-[0_4px_20px_rgba(0,0,0,0.03)] backdrop-blur-md">
+      <header className="sticky top-0 z-20 flex items-center justify-between bg-white/90 px-6 pt-10 pb-4 shadow-[0_4px_20px_rgba(0,0,0,0.03)] backdrop-blur-md md:px-8 md:pt-6 lg:px-10">
         <div className="flex items-center">
           <button
             type="button"
@@ -182,7 +182,7 @@ export function CustomerCartScreen() {
         </button>
       </header>
 
-      <main className="min-h-0 flex-1 overflow-y-auto px-6 pt-6 pb-64 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <main className="mx-auto min-h-0 w-full max-w-5xl flex-1 overflow-y-auto px-6 pt-6 pb-64 [scrollbar-width:none] md:px-8 lg:pb-10 [&::-webkit-scrollbar]:hidden">
         <section className="mb-5 rounded-[28px] border border-emerald-100 bg-emerald-50 p-5">
           <div className="mb-4 flex items-center justify-between gap-4">
             <div>
@@ -401,10 +401,18 @@ export function CustomerCartScreen() {
               <span>{formatRp(grandTotal)}</span>
             </div>
           </div>
+          <button
+            type="button"
+            onClick={() => router.push("/checkout")}
+            className="mt-5 hidden w-full items-center justify-center gap-2 rounded-2xl bg-emerald-500 py-4 text-sm font-extrabold text-white shadow-[0_8px_20px_rgba(16,185,129,0.25)] transition-all active:scale-[0.98] lg:flex"
+          >
+            Lanjut Pembayaran
+            <ArrowRight size={18} />
+          </button>
         </section>
       </main>
 
-      <div className="absolute right-0 bottom-20 left-0 z-40 border-t border-gray-100 bg-white/95 p-6 shadow-[0_-15px_40px_rgba(0,0,0,0.08)] backdrop-blur-md">
+      <div className="absolute right-0 bottom-20 left-0 z-40 border-t border-gray-100 bg-white/95 p-6 shadow-[0_-15px_40px_rgba(0,0,0,0.08)] backdrop-blur-md lg:hidden">
         <div className="mb-4 flex items-center justify-between">
           <div>
             <p className="text-xs font-medium text-gray-500">Total Checkout</p>
@@ -427,9 +435,9 @@ export function CustomerCartScreen() {
       </div>
 
       {isClearOpen ? (
-        <div className="absolute inset-0 z-50 flex items-end bg-gray-950/30 backdrop-blur-sm">
-          <div className="w-full rounded-t-[36px] bg-white px-6 pt-5 pb-8 shadow-[0_-24px_70px_rgba(15,23,42,0.22)]">
-            <div className="mx-auto mb-5 h-1.5 w-12 rounded-full bg-gray-200" />
+        <div className="absolute inset-0 z-50 flex items-end bg-gray-950/30 backdrop-blur-sm md:items-center md:justify-center md:p-6">
+          <div className="w-full rounded-t-[36px] bg-white px-6 pt-5 pb-8 shadow-[0_-24px_70px_rgba(15,23,42,0.22)] md:max-w-lg md:rounded-[32px] md:shadow-[0_24px_80px_rgba(15,23,42,0.24)]">
+            <div className="mx-auto mb-5 h-1.5 w-12 rounded-full bg-gray-200 md:hidden" />
             <h2 className="text-xl font-extrabold text-gray-950">
               Kosongkan keranjang?
             </h2>

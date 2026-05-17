@@ -152,17 +152,17 @@ export default function OwnerWalletPage() {
                 {transactions.map((transaction) => (
                   <article
                     key={transaction.id}
-                    className="flex items-start justify-between gap-4 rounded-2xl bg-gray-50 p-4"
+                    className="flex flex-col gap-4 rounded-2xl bg-gray-50 p-4 sm:flex-row sm:items-start sm:justify-between"
                   >
-                    <div>
+                    <div className="min-w-0">
                       <p className="text-sm font-extrabold text-gray-950">
                         {transaction.description || transaction.type}
                       </p>
-                      <p className="mt-1 text-xs font-bold text-gray-400">
+                      <p className="mt-1 break-words text-xs font-bold text-gray-400">
                         {transaction.reference || "-"} - {formatTime(transaction.createdAt)}
                       </p>
                     </div>
-                    <div className="text-right">
+                    <div className="shrink-0 text-left sm:text-right">
                       <p className="text-sm font-extrabold text-gray-950">
                         {formatRp(transaction.amount)}
                       </p>

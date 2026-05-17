@@ -179,7 +179,7 @@ export function CustomerHistoryScreen() {
 
   return (
     <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-gray-50">
-      <header className="sticky top-0 z-20 bg-white px-6 pt-10 pb-4 shadow-[0_4px_20px_rgba(0,0,0,0.03)]">
+      <header className="sticky top-0 z-20 bg-white px-5 pt-10 pb-4 shadow-[0_4px_20px_rgba(0,0,0,0.03)] sm:px-6 md:mx-auto md:w-full md:max-w-6xl md:px-8">
         <div className="mb-5 flex items-center">
           <button
             type="button"
@@ -214,7 +214,7 @@ export function CustomerHistoryScreen() {
         </div>
       </header>
 
-      <main className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 pt-6 pb-28 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <main className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 pt-6 pb-28 [scrollbar-width:none] sm:px-6 md:mx-auto md:w-full md:max-w-6xl md:px-8 [&::-webkit-scrollbar]:hidden">
         {notice ? (
           <div className="rounded-[24px] border border-red-100 bg-red-50 p-4 text-sm font-bold text-red-700">
             {notice}
@@ -304,7 +304,7 @@ export function CustomerHistoryScreen() {
               </div>
 
               {order.status === "completed" ? (
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                   <button
                     type="button"
                     onClick={() => setReviewOrder(order)}
@@ -361,8 +361,8 @@ export function CustomerHistoryScreen() {
       </main>
 
       {reviewOrder ? (
-        <div className="absolute inset-0 z-50 flex items-end bg-gray-950/30 backdrop-blur-sm">
-          <div className="w-full rounded-t-[40px] bg-white px-6 pt-5 pb-8 shadow-[0_-24px_70px_rgba(15,23,42,0.22)]">
+        <div className="absolute inset-0 z-50 flex items-end bg-gray-950/30 backdrop-blur-sm md:items-center md:justify-center md:p-6">
+          <div className="w-full rounded-t-[40px] bg-white px-6 pt-5 pb-8 shadow-[0_-24px_70px_rgba(15,23,42,0.22)] md:max-w-xl md:rounded-[32px] md:p-7">
             <div className="mx-auto mb-5 h-1.5 w-12 rounded-full bg-gray-200" />
 
             <div className="mb-6 flex items-start justify-between gap-4">

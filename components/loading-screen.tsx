@@ -27,8 +27,8 @@ export function LoadingScreen({
 
   return (
     <div className={rootClassName}>
-      <div className="sheet-in relative z-10 flex w-full max-w-sm flex-col items-center">
-        <div className={lottieClassName}>
+      <div className="animate-in fade-in relative z-10 flex w-full max-w-sm flex-col items-center">
+        <div className={`grid place-items-center ${lottieClassName}`}>
           <DotLottieReact
             className="h-full w-full"
             src="https://lottie.host/d03f4dd3-8e19-43fb-8df8-313128b905af/ciyiFBwxLd.lottie"
