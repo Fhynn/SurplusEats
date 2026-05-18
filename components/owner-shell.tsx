@@ -120,7 +120,7 @@ export function OwnerShell({
                 <Store size={20} className="text-white" />
               </div>
               <span className="text-xl font-extrabold tracking-tight text-gray-900">
-                Surplus<span className="text-emerald-500">Owner</span>
+                ResQFood <span className="text-emerald-500">Owner</span>
               </span>
             </Link>
           </div>

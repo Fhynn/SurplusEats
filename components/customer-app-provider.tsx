@@ -15,7 +15,7 @@ interface CustomerAppContextValue {
   clearCart: () => void;
 }
 
-const STORAGE_KEY = "surpluseats-cart";
+const STORAGE_KEY = "resqfood-cart";
 
 const CustomerAppContext = createContext<CustomerAppContextValue | null>(null);
 

@@ -97,7 +97,7 @@ export function CustomerLoginScreen() {
         <section className="relative h-[34%] min-h-[230px] w-full min-w-0 shrink-0 md:h-full md:min-h-0">
           <Image
             src="https://images.unsplash.com/photo-1598514982205-f36b96d1e8d4?q=80&w=1200&auto=format&fit=crop"
-            alt="Healthy food for SurplusEats login"
+            alt="Healthy food for ResQFood login"
             fill
             priority
             sizes="(max-width: 768px) 100vw, 55vw"
@@ -110,7 +110,7 @@ export function CustomerLoginScreen() {
             <div className="flex items-center gap-2 rounded-full border border-white/30 bg-white/20 px-3 py-1.5 backdrop-blur-md">
               <Leaf size={14} className="fill-emerald-400 text-emerald-400" />
               <span className="text-xs font-semibold tracking-wide text-white">
-                SurplusEats
+                ResQFood
               </span>
             </div>
             <div className="hidden rounded-full bg-emerald-500/90 px-3 py-1 backdrop-blur-sm sm:block">
@@ -182,7 +182,7 @@ export function CustomerLoginScreen() {
                   />
                   <input
                     id="email"
-                    name="surpluseats-login-email"
+                    name="resqfood-login-email"
                     type="email"
                     value={email}
                     onChange={(event) => setEmail(event.target.value)}
@@ -230,7 +230,7 @@ export function CustomerLoginScreen() {
                   />
                   <input
                     id="password"
-                    name="surpluseats-login-passcode"
+                    name="resqfood-login-passcode"
                     type={showPassword ? "text" : "password"}
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}

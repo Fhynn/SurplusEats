@@ -257,7 +257,7 @@ export default function CustomerRefundRequestPage() {
               Terkirim
             </h1>
             <p className="mt-3 max-w-xs text-sm leading-6 font-medium text-emerald-50">
-              Tim SurplusEats akan meninjau bukti dan memberi keputusan melalui
+              Tim ResQFood akan meninjau bukti dan memberi keputusan melalui
               notifikasi dalam 1x24 jam.
             </p>
 

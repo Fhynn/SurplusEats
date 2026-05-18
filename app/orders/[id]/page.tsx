@@ -484,7 +484,7 @@ export default function CustomerOrderTrackingPage() {
                     Pembatalan Diajukan
                   </h2>
                   <p className="mx-auto mt-2 max-w-xs text-sm leading-6 font-medium text-gray-500">
-                    Tim SurplusEats akan memeriksa status pesanan dan mengirim
+                    Tim ResQFood akan memeriksa status pesanan dan mengirim
                     update refund ke notifikasi kamu.
                   </p>
                   <div className="mt-7 grid grid-cols-2 gap-3">

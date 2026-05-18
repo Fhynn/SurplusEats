@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const sessionCookieName = "surpluseats_session";
+const sessionCookieName = "resqfood_session";
 
 type AuthSession = {
   userId: string;

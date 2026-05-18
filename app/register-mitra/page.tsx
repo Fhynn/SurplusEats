@@ -447,7 +447,7 @@ export default function RegisterMitraPage() {
       {isSubmitting && !isWelcomeLoading ? (
         <LoadingScreen
           title="Mengirim pendaftaran..."
-          description="Dokumen dan data mitra sedang dikirim ke SurplusEats."
+          description="Dokumen dan data mitra sedang dikirim ke ResQFood."
         />
       ) : null}
       {isWelcomeLoading ? (
@@ -476,7 +476,7 @@ export default function RegisterMitraPage() {
           </div>
 
           <p className="text-xs font-extrabold tracking-[0.22em] text-emerald-500 uppercase">
-            SurplusEats Partner
+            ResQFood Partner
           </p>
           <h1 className="mt-3 text-3xl font-extrabold tracking-tight text-gray-950">
             Pendaftaran Mitra Toko

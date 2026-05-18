@@ -36,7 +36,7 @@ const initialMessages: ChatMessage[] = [
   {
     id: 1,
     source: "agent",
-    name: "SurplusEats Care",
+    name: "ResQFood Care",
     text: "Halo, kami siap bantu. Kalau ini soal pickup, kirim order ID agar kami bisa cek lebih cepat.",
     time: "Baru saja",
   },
@@ -89,7 +89,7 @@ export default function CustomerSupportPage() {
       {
         id: currentMessages.length + 2,
         source: "agent",
-        name: "SurplusEats Care",
+        name: "ResQFood Care",
         text: "Pesan sudah kami terima. Tim support akan membantu mengecek detailnya.",
         time: "Sekarang",
       },
@@ -266,7 +266,7 @@ export default function CustomerSupportPage() {
                     Laporan terkirim
                   </h2>
                   <p className="mt-2 text-sm leading-6 font-medium text-gray-500">
-                    Tim SurplusEats akan membalas lewat email yang terhubung ke
+                    Tim ResQFood akan membalas lewat email yang terhubung ke
                     akun kamu.
                   </p>
                   <button

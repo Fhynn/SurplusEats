@@ -429,7 +429,7 @@ export default function CustomerAccountSettingsPage() {
                 </h2>
                 <p className="mx-auto mt-2 max-w-xs text-sm leading-6 font-medium text-gray-500">
                   {confirmationType === "logout"
-                    ? "Kamu akan kembali ke halaman login SurplusEats."
+                    ? "Kamu akan kembali ke halaman login ResQFood."
                     : "Permintaan hapus akun akan diproses setelah kamu mengonfirmasi tindakan ini."}
                 </p>
               </div>

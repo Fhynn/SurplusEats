@@ -1,6 +1,6 @@
 <div align="center">
 
-# SurplusEats
+# ResQFood
 
 Prototype aplikasi web untuk food rescue, pembelian makanan surplus, dashboard owner restoran, dan dashboard admin operasional.
 
@@ -126,7 +126,7 @@ Screenshot files are stored in [`public/screenshots`](public/screenshots).
 
 ### Tentang Project
 
-SurplusEats adalah prototype aplikasi web untuk membantu pelanggan membeli makanan surplus dari restoran atau UMKM dengan harga lebih hemat. Di sisi lain, owner restoran dapat mengelola menu surplus, pesanan, stok, dan pengaturan toko. Admin dapat mengelola pengguna, verifikasi restoran, transaksi, refund, dan laporan analitik.
+ResQFood adalah prototype aplikasi web untuk membantu pelanggan membeli makanan surplus dari restoran atau UMKM dengan harga lebih hemat. Di sisi lain, owner restoran dapat mengelola menu surplus, pesanan, stok, dan pengaturan toko. Admin dapat mengelola pengguna, verifikasi restoran, transaksi, refund, dan laporan analitik.
 
 Project ini masih berada pada tahap pengerjaan. Fondasi backend sudah dimulai dengan Neon PostgreSQL, Prisma, Vercel Blob, seed data, API awal, session login, password hash, dan route guard berbasis role. Sebagian layar masih memakai mock data dan state lokal sampai proses penyambungan API selesai. Integrasi penuh Neon Auth SDK dan payment gateway masih dalam tahap berikutnya.
 
@@ -390,7 +390,7 @@ public/
 
 ### About The Project
 
-SurplusEats is a web application prototype for helping customers buy surplus food from restaurants or small businesses at a more affordable price. Restaurant owners can manage surplus menus, orders, stock, and store settings. Admins can manage users, restaurant verification, transactions, refunds, and analytics.
+ResQFood is a web application prototype for helping customers buy surplus food from restaurants or small businesses at a more affordable price. Restaurant owners can manage surplus menus, orders, stock, and store settings. Admins can manage users, restaurant verification, transactions, refunds, and analytics.
 
 This project is still in development. The backend foundation has started with Neon PostgreSQL, Prisma, Vercel Blob, seed data, early API routes, login sessions, password hashing, and role-based route guards. Some screens still use mocked data and local state while API wiring is completed. Full Neon Auth SDK integration and the real payment gateway are still next-step work.
 
@@ -659,7 +659,7 @@ Created and developed by:
 **Fhynn**  
 GitHub: [@Fhynn](https://github.com/Fhynn)
 
-The project name **SurplusEats**, UI structure, product flow, and author identity in this README must not be removed, renamed, or claimed as someone else's work without permission from the project owner.
+The project name **ResQFood**, UI structure, product flow, and author identity in this README must not be removed, renamed, or claimed as someone else's work without permission from the project owner.
 
 Copyright (c) 2026 **Fhynn**. All rights reserved.
 

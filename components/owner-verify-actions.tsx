@@ -23,7 +23,7 @@ export function OwnerVerifyActions() {
   return (
     <div className="grid grid-cols-2 gap-3">
       <a
-        href="mailto:support@surpluseats.id"
+        href="mailto:support@resqfood.id"
         className="flex items-center justify-center gap-2 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3.5 text-sm font-extrabold text-blue-700 transition-colors hover:bg-blue-100"
       >
         <HelpCircle size={17} />

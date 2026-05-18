@@ -304,7 +304,7 @@ export default function CustomerEditProfilePage() {
                 <input
                   id="password"
                   type="password"
-                  value="surpluseats"
+                  value="resqfood"
                   readOnly
                   className="w-full bg-transparent py-3.5 pr-16 pl-11 text-sm font-bold text-gray-900 outline-none"
                 />

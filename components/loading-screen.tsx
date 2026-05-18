@@ -10,7 +10,7 @@ type LoadingScreenProps = {
 
 export function LoadingScreen({
   title = "Memuat...",
-  description = "Sebentar, SurplusEats sedang menyiapkan halaman.",
+  description = "Sebentar, ResQFood sedang menyiapkan halaman.",
   scope = "page",
 }: LoadingScreenProps) {
   const isFrame = scope === "frame";

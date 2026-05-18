@@ -94,7 +94,7 @@ export function MainShell({
               <Home size={21} />
             </span>
             <span className="text-xl font-extrabold tracking-tight text-gray-950">
-              Surplus<span className="text-emerald-500">Eats</span>
+              ResQ<span className="text-emerald-500">Food</span>
             </span>
           </Link>
 

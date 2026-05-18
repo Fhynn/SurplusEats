@@ -25,10 +25,10 @@ function hashPassword(password) {
 
 async function main() {
   const email = (
-    process.env.SEED_ADMIN_EMAIL || "admin@surpluseats.local"
+    process.env.SEED_ADMIN_EMAIL || "admin@resqfood.local"
   ).toLowerCase();
   const password = process.env.SEED_ADMIN_PASSWORD || "admin123";
-  const name = process.env.SEED_ADMIN_NAME || "Admin SurplusEats";
+  const name = process.env.SEED_ADMIN_NAME || "Admin ResQFood";
 
   await prisma.user.upsert({
     where: { email },

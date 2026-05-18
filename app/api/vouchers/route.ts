@@ -44,7 +44,7 @@ export async function GET() {
       label: formatRp(voucher.discount),
       discount: voucher.discount,
       title: voucher.title,
-      description: voucher.description || "Voucher aktif SurplusEats.",
+      description: voucher.description || "Voucher aktif ResQFood.",
       meta: voucher.endsAt
         ? `Berlaku sampai ${new Intl.DateTimeFormat("id-ID", {
             day: "2-digit",

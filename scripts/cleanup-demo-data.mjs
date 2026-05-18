@@ -108,7 +108,7 @@ async function main() {
   deleted.applications += (
     await prisma.restaurantApplication.deleteMany({
       where: {
-        email: "owner@surpluseats.local",
+        email: "owner@resqfood.local",
         businessName: "Bakehouse Bakery",
       },
     })
@@ -123,7 +123,7 @@ async function main() {
   deleted.users += (
     await prisma.user.deleteMany({
       where: {
-        email: { in: ["owner@surpluseats.local", "customer@surpluseats.local"] },
+        email: { in: ["owner@resqfood.local", "customer@resqfood.local"] },
       },
     })
   ).count;

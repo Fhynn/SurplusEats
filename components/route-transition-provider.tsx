@@ -256,7 +256,7 @@ export function RouteTransitionProvider({
       {isRouteLoading ? (
         <LoadingScreen
           title="Memuat halaman..."
-          description="Sebentar, SurplusEats sedang membuka halaman berikutnya."
+          description="Sebentar, ResQFood sedang membuka halaman berikutnya."
         />
       ) : null}
     </RouteTransitionContext.Provider>

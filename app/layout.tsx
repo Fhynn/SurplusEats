@@ -12,8 +12,8 @@ const plusJakartaSans = Plus_Jakarta_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "SurplusEats",
-  description: "Customer experience for SurplusEats.",
+  title: "ResQFood",
+  description: "Customer experience for ResQFood.",
 };
 
 export const viewport: Viewport = {

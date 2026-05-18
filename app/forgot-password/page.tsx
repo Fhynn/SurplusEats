@@ -168,7 +168,7 @@ export default function ForgotPasswordPage() {
             </h1>
             <p className="mt-3 text-sm leading-6 font-medium text-gray-500">
               {stage === "email"
-                ? "Masukkan email akun SurplusEats. Kami akan mengirim kode OTP untuk memastikan akun benar milik kamu."
+                ? "Masukkan email akun ResQFood. Kami akan mengirim kode OTP untuk memastikan akun benar milik kamu."
                 : stage === "reset"
                   ? `Kode OTP dikirim ke ${email || "email kamu"}. Masukkan kode, lalu buat password baru.`
                   : "Akun sudah siap digunakan lagi dengan password baru."}

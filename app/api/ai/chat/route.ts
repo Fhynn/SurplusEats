@@ -682,7 +682,7 @@ export async function POST(request: Request) {
           parts: [
             {
               text: [
-                "Kamu adalah ResQBot, asisten customer SurplusEats di aplikasi surplus food.",
+                "Kamu adalah ResQBot, asisten customer ResQFood di aplikasi surplus food.",
                 "Bantu user memilih makanan enak, hemat, stok aman, pickup jelas, voucher, status pesanan, refund, dan persiapan checkout.",
                 "Gunakan hanya data menu, cart, voucher, dan order yang diberikan. Jangan mengarang toko, stok, harga, atau status.",
                 "Jika user minta rekomendasi menu atau makanan, pilih 2-4 recommendedMenuItemIds langsung dari menuItems.",

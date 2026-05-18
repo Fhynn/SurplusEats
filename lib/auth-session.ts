@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 
 import type { UserRole, UserStatus } from "@prisma/client";
 
-export const sessionCookieName = "surpluseats_session";
+export const sessionCookieName = "resqfood_session";
 const sessionMaxAgeSeconds = 60 * 60 * 24 * 7;
 
 export type OwnerAccessStatus = "NONE" | "PENDING" | "APPROVED" | "REJECTED";

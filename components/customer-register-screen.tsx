@@ -158,7 +158,7 @@ export function CustomerRegisterScreen() {
         <WelcomeLoadingOverlay
           scope="frame"
           title="Selamat datang!"
-          description="Akun kamu sudah siap. Kami sedang menyiapkan beranda SurplusEats."
+          description="Akun kamu sudah siap. Kami sedang menyiapkan beranda ResQFood."
         />
       ) : null}
       <div className="flex h-full min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden bg-white md:grid md:grid-cols-[minmax(0,0.92fr)_minmax(480px,1.08fr)]">
@@ -338,7 +338,7 @@ export function CustomerRegisterScreen() {
               />
               <span className="text-xs leading-5 font-medium text-gray-500">
                 Saya setuju dengan ketentuan layanan, kebijakan privasi, dan
-                penggunaan akun SurplusEats.
+                penggunaan akun ResQFood.
               </span>
             </label>
 
@@ -369,7 +369,7 @@ export function CustomerRegisterScreen() {
                   href="/register-mitra"
                   className="mt-1 inline-block text-xs font-extrabold text-emerald-700 hover:text-emerald-800"
                 >
-                  Daftar sebagai mitra SurplusEats
+                  Daftar sebagai mitra ResQFood
                 </Link>
               </div>
             </div>

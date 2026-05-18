@@ -104,7 +104,7 @@ export default function OwnerVerifyPage() {
             </div>
             <div>
               <p className="text-sm font-extrabold text-gray-950">
-                SurplusOwner
+                ResQFood Owner
               </p>
               <p className="text-xs font-semibold text-gray-400">
                 Menunggu admin
