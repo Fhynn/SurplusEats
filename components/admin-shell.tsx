@@ -146,7 +146,7 @@ export function AdminShell({ children }: Readonly<{ children: ReactNode }>) {
               </div>
               <div>
                 <p className="text-xl font-extrabold tracking-tight">
-                  Surplus<span className="text-emerald-400">Admin</span>
+                  ResQfood <span className="text-emerald-400">admin</span>
                 </p>
                 <p className="text-xs font-semibold text-gray-400">
                   {pageLabel}
@@ -212,7 +212,7 @@ export function AdminShell({ children }: Readonly<{ children: ReactNode }>) {
                 <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gray-950 text-emerald-300">
                   <ShieldCheck size={19} />
                 </span>
-                SurplusAdmin
+                ResQfood admin
               </Link>
               <div className="flex items-center gap-2">
                 <Link
