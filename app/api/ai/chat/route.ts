@@ -115,19 +115,80 @@ function extractJson(text: string) {
   try {
     return JSON.parse(text);
   } catch {
-    const start = text.indexOf("{");
-    const end = text.lastIndexOf("}");
+    for (let start = text.indexOf("{"); start !== -1; start = text.indexOf("{", start + 1)) {
+      let depth = 0;
+      let inString = false;
+      let escaped = false;
 
-    if (start === -1 || end === -1 || end <= start) {
-      return null;
-    }
+      for (let index = start; index < text.length; index += 1) {
+        const character = text[index];
 
-    try {
-      return JSON.parse(text.slice(start, end + 1));
-    } catch {
-      return null;
+        if (inString) {
+          if (escaped) {
+            escaped = false;
+          } else if (character === "\\") {
+            escaped = true;
+          } else if (character === "\"") {
+            inString = false;
+          }
+
+          continue;
+        }
+
+        if (character === "\"") {
+          inString = true;
+          continue;
+        }
+
+        if (character === "{") {
+          depth += 1;
+        } else if (character === "}") {
+          depth -= 1;
+
+          if (depth === 0) {
+            try {
+              return JSON.parse(text.slice(start, index + 1));
+            } catch {
+              break;
+            }
+          }
+        }
+      }
     }
   }
+
+  return null;
+}
+
+function normalizeAiResult(aiResult: AiResult): AiResult {
+  const nestedPayload = extractJson(aiResult.reply);
+  const nestedResult = aiResponseSchema.safeParse(nestedPayload);
+
+  if (nestedResult.success) {
+    return {
+      ...aiResult,
+      ...nestedResult.data,
+      recommendedMenuItemIds: nestedResult.data.recommendedMenuItemIds?.length
+        ? nestedResult.data.recommendedMenuItemIds
+        : aiResult.recommendedMenuItemIds,
+      quickReplies: nestedResult.data.quickReplies?.length
+        ? nestedResult.data.quickReplies
+        : aiResult.quickReplies,
+      checkoutReady: nestedResult.data.checkoutReady ?? aiResult.checkoutReady,
+    };
+  }
+
+  if (aiResult.reply.trim().startsWith("{")) {
+    return {
+      ...aiResult,
+      reply:
+        aiResult.intent === "recommendation"
+          ? "Aku sudah siapkan rekomendasi yang cocok. Kamu bisa lihat pilihan menunya di bawah."
+          : "Aku sudah memproses jawabanmu. Coba pilih salah satu opsi lanjutan di bawah.",
+    };
+  }
+
+  return aiResult;
 }
 
 function normalizeText(text: string) {
@@ -465,7 +526,7 @@ export async function POST(request: Request) {
 
   if (!session || session.role !== UserRole.CUSTOMER) {
     return NextResponse.json(
-      { ok: false, message: "Login customer diperlukan untuk memakai AI." },
+      { ok: false, message: "Login customer diperlukan untuk memakai ResQBot." },
       { status: session ? 403 : 401 },
     );
   }
@@ -476,7 +537,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         ok: false,
-        message: "Pertanyaan AI belum valid.",
+        message: "Pertanyaan ResQBot belum valid.",
         issues: parsed.error.flatten(),
       },
       { status: 400 },
@@ -484,7 +545,7 @@ export async function POST(request: Request) {
   }
 
   const apiKey = process.env.GEMINI_API_KEY;
-  const model = process.env.GEMINI_MODEL || "gemini-2.5-flash-lite";
+  const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
   const { message, cart = [], history = [] } = parsed.data;
   const now = new Date();
   const [{ menuItems }, user, orders, vouchers] = await Promise.all([
@@ -621,7 +682,7 @@ export async function POST(request: Request) {
           parts: [
             {
               text: [
-                "Kamu adalah SurplusEats AI, asisten customer di aplikasi surplus food.",
+                "Kamu adalah ResQBot, asisten customer SurplusEats di aplikasi surplus food.",
                 "Bantu user memilih makanan enak, hemat, stok aman, pickup jelas, voucher, status pesanan, refund, dan persiapan checkout.",
                 "Gunakan hanya data menu, cart, voucher, dan order yang diberikan. Jangan mengarang toko, stok, harga, atau status.",
                 "Jika user minta rekomendasi menu atau makanan, pilih 2-4 recommendedMenuItemIds langsung dari menuItems.",
@@ -670,7 +731,7 @@ export async function POST(request: Request) {
         message:
           quotaMessage ||
           geminiData.error?.message ||
-          "AI belum bisa merespons. Coba lagi sebentar.",
+          "ResQBot belum bisa merespons. Coba lagi sebentar.",
       },
       { status: 502 },
     );
@@ -687,7 +748,7 @@ export async function POST(request: Request) {
     : {
         reply:
           generatedText ||
-          "Aku belum bisa membaca jawaban AI. Coba tanya ulang dengan lebih singkat.",
+          "Aku belum bisa membaca jawaban ResQBot. Coba tanya ulang dengan lebih singkat.",
         intent: "general",
         recommendedMenuItemIds: [],
         checkoutReady: false,
@@ -699,7 +760,7 @@ export async function POST(request: Request) {
   )
     ? buildRepeatedReplyFallback(menuItems)
     : null;
-  const aiResult = repeatedReplyFallback || rawAiResult;
+  const aiResult = normalizeAiResult(repeatedReplyFallback || rawAiResult);
 
   return NextResponse.json(
     buildChatResponse(ensureRecommendationCards(aiResult, menuItems, message), menuItems),

@@ -83,7 +83,7 @@ export function CustomerAiAssistantScreen() {
       id: "welcome",
       role: "assistant",
       content:
-        "Halo, aku SurplusEats AI. Aku bisa bantu pilih menu enak, cari diskon paling worth it, siapin keranjang, dan arahkan kamu ke checkout.",
+        "Halo, aku ResQBot. Aku bisa bantu pilih menu enak, cari diskon paling worth it, siapin keranjang, dan arahkan kamu ke checkout.",
       quickReplies: starterPrompts.slice(0, 3),
     },
   ]);
@@ -167,7 +167,7 @@ export function CustomerAiAssistantScreen() {
       const data = (await response.json()) as AiChatResponse;
 
       if (!response.ok || !data.ok) {
-        throw new Error(data.message || "AI belum bisa merespons.");
+        throw new Error(data.message || "ResQBot belum bisa merespons.");
       }
 
       setMessages((currentMessages) => [
@@ -190,7 +190,7 @@ export function CustomerAiAssistantScreen() {
           content:
             error instanceof Error
               ? error.message
-              : "AI sedang tidak bisa dipakai. Coba lagi sebentar.",
+              : "ResQBot sedang tidak bisa dipakai. Coba lagi sebentar.",
         },
       ]);
     } finally {
@@ -219,7 +219,7 @@ export function CustomerAiAssistantScreen() {
             </div>
             <div className="min-w-0">
               <p className="text-[11px] font-extrabold tracking-[0.12em] text-emerald-600 uppercase md:text-xs">
-                SurplusEats AI
+                ResQBot
               </p>
               <h1 className="mt-1 text-[1.35rem] leading-tight font-extrabold tracking-tight text-gray-950 md:text-2xl">
                 Asisten Checkout & Rekomendasi
@@ -407,7 +407,7 @@ export function CustomerAiAssistantScreen() {
               <article className="flex justify-start">
                 <div className="flex items-center gap-2 rounded-[24px] border border-gray-100 bg-white px-4 py-3 text-sm font-extrabold text-gray-500 shadow-sm">
                   <Loader2 size={16} className="animate-spin text-emerald-500" />
-                  AI sedang memilih jawaban...
+                  ResQBot sedang memilih jawaban...
                 </div>
               </article>
             ) : null}
@@ -425,7 +425,7 @@ export function CustomerAiAssistantScreen() {
             ref={inputRef}
             value={input}
             onChange={(event) => setInput(event.target.value)}
-            placeholder="Tanya AI soal menu atau checkout..."
+            placeholder="Tanya ResQBot soal menu atau checkout..."
             className="h-12 min-w-0 flex-1 rounded-[20px] border border-gray-200 bg-gray-50 px-4 text-[13px] font-bold text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-100 md:rounded-2xl md:text-sm"
             disabled={isSending}
           />
@@ -433,7 +433,7 @@ export function CustomerAiAssistantScreen() {
             type="submit"
             disabled={isSending || input.trim().length < 2}
             className="motion-press flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-emerald-500 text-white shadow-[0_10px_24px_rgba(16,185,129,0.25)] disabled:bg-gray-300 disabled:shadow-none"
-            aria-label="Kirim pertanyaan ke AI"
+            aria-label="Kirim pertanyaan ke ResQBot"
           >
             {isSending ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
           </button>
