@@ -5,7 +5,9 @@ import {
   Building2,
   CheckCircle2,
   ChevronLeft,
+  ExternalLink,
   Home,
+  Navigation,
   MapPin,
   Plus,
   Save,
@@ -23,6 +25,8 @@ type SavedAddress = {
   label: string;
   detail: string;
   note: string;
+  latitude: number | null;
+  longitude: number | null;
   kind: AddressKind;
   isPrimary: boolean;
 };
@@ -31,6 +35,8 @@ type AddressDraft = {
   label: string;
   detail: string;
   note: string;
+  latitude: string;
+  longitude: string;
   kind: AddressKind;
 };
 
@@ -39,6 +45,8 @@ type ApiAddress = {
   label: string;
   addressLine: string;
   notes: string | null;
+  latitude: number | null;
+  longitude: number | null;
   isPrimary: boolean;
 };
 
@@ -46,6 +54,8 @@ const emptyDraft: AddressDraft = {
   label: "",
   detail: "",
   note: "",
+  latitude: "",
+  longitude: "",
   kind: "home",
 };
 
@@ -55,9 +65,45 @@ function mapApiAddress(address: ApiAddress): SavedAddress {
     label: address.label,
     detail: address.addressLine,
     note: address.notes ?? "",
+    latitude: address.latitude,
+    longitude: address.longitude,
     kind: address.label.toLowerCase().includes("kantor") ? "office" : "home",
     isPrimary: address.isPrimary,
   };
+}
+
+function getCoordinateError(draft: AddressDraft) {
+  const latitude = draft.latitude.trim();
+  const longitude = draft.longitude.trim();
+
+  if (!latitude && !longitude) {
+    return "Titik maps wajib diisi. Klik Ambil Lokasi atau isi latitude dan longitude manual.";
+  }
+
+  if (!latitude || !longitude) {
+    return "Latitude dan longitude harus diisi bersama.";
+  }
+
+  const latitudeNumber = Number(latitude);
+  const longitudeNumber = Number(longitude);
+
+  if (!Number.isFinite(latitudeNumber) || latitudeNumber < -90 || latitudeNumber > 90) {
+    return "Latitude harus berada di antara -90 dan 90.";
+  }
+
+  if (
+    !Number.isFinite(longitudeNumber) ||
+    longitudeNumber < -180 ||
+    longitudeNumber > 180
+  ) {
+    return "Longitude harus berada di antara -180 dan 180.";
+  }
+
+  return "";
+}
+
+function getMapsUrl(latitude: number, longitude: number) {
+  return `https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`;
 }
 
 export default function CustomerAddressesPage() {
@@ -70,9 +116,12 @@ export default function CustomerAddressesPage() {
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [isLoadingAddresses, setIsLoadingAddresses] = useState(true);
   const [isSavingAddress, setIsSavingAddress] = useState(false);
+  const [isLocatingAddress, setIsLocatingAddress] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
-  const isDraftInvalid = !draft.label.trim() || !draft.detail.trim();
+  const coordinateError = getCoordinateError(draft);
+  const isDraftInvalid =
+    !draft.label.trim() || !draft.detail.trim() || Boolean(coordinateError);
 
   const loadAddresses = useCallback(async () => {
     setIsLoadingAddresses(true);
@@ -113,6 +162,8 @@ export default function CustomerAddressesPage() {
       label: address.label,
       detail: address.detail,
       note: address.note,
+      latitude: address.latitude?.toString() ?? "",
+      longitude: address.longitude?.toString() ?? "",
       kind: address.kind,
     });
     setEditingAddressId(address.id);
@@ -123,6 +174,37 @@ export default function CustomerAddressesPage() {
     setIsEditorOpen(false);
     setEditingAddressId(null);
     setDraft(emptyDraft);
+    setIsLocatingAddress(false);
+  };
+
+  const handleUseCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      setNotice("Browser belum mendukung akses lokasi.");
+      return;
+    }
+
+    setIsLocatingAddress(true);
+    setNotice(null);
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setDraft((currentDraft) => ({
+          ...currentDraft,
+          latitude: position.coords.latitude.toFixed(6),
+          longitude: position.coords.longitude.toFixed(6),
+        }));
+        setIsLocatingAddress(false);
+      },
+      () => {
+        setNotice("Lokasi gagal diambil. Izinkan akses lokasi atau isi manual.");
+        setIsLocatingAddress(false);
+      },
+      {
+        enableHighAccuracy: true,
+        maximumAge: 60_000,
+        timeout: 12_000,
+      },
+    );
   };
 
   const handleSaveAddress = async () => {
@@ -134,6 +216,8 @@ export default function CustomerAddressesPage() {
       label: draft.label.trim(),
       detail: draft.detail.trim(),
       note: draft.note.trim(),
+      latitude: draft.latitude.trim() ? Number(draft.latitude) : undefined,
+      longitude: draft.longitude.trim() ? Number(draft.longitude) : undefined,
       kind: draft.kind,
     };
 
@@ -171,6 +255,18 @@ export default function CustomerAddressesPage() {
   };
 
   const handleSetPrimary = async (addressId: string) => {
+    const selectedAddress = addresses.find((address) => address.id === addressId);
+
+    if (
+      selectedAddress &&
+      (selectedAddress.latitude === null || selectedAddress.longitude === null)
+    ) {
+      setNotice(
+        "Alamat utama wajib punya titik maps. Edit alamat lalu klik Ambil Lokasi.",
+      );
+      return;
+    }
+
     try {
       const response = await fetch(`/api/addresses/${addressId}`, {
         method: "PATCH",
@@ -332,6 +428,18 @@ export default function CustomerAddressesPage() {
                         {address.note}
                       </p>
                     ) : null}
+                    {address.latitude !== null && address.longitude !== null ? (
+                      <a
+                        href={getMapsUrl(address.latitude, address.longitude)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-2 inline-flex items-center gap-1.5 rounded-xl bg-emerald-50 px-3 py-2 text-[11px] font-extrabold text-emerald-700 transition-colors hover:bg-emerald-100"
+                      >
+                        <MapPin size={13} />
+                        Buka lokasi maps
+                        <ExternalLink size={12} />
+                      </a>
+                    ) : null}
                   </div>
                 </div>
 
@@ -487,6 +595,72 @@ export default function CustomerAddressesPage() {
                     className="h-12 w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 text-sm font-bold text-gray-900 outline-none placeholder:text-gray-400 focus:border-emerald-500 focus:bg-white"
                   />
                 </label>
+
+                <section className="rounded-[24px] border border-emerald-100 bg-emerald-50/60 p-4">
+                  <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-sm font-extrabold text-gray-900">
+                        Titik Maps
+                      </p>
+                      <p className="mt-1 text-xs leading-5 font-semibold text-gray-500">
+                        Wajib diisi agar rute pickup dan checkout bisa dipakai.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleUseCurrentLocation}
+                      disabled={isLocatingAddress}
+                      className="inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-4 py-3 text-xs font-extrabold text-white transition-colors hover:bg-emerald-600 disabled:bg-gray-300"
+                    >
+                      <Navigation size={15} />
+                      {isLocatingAddress ? "Mengambil..." : "Ambil Lokasi"}
+                    </button>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="block">
+                      <span className="mb-2 block text-xs font-extrabold text-gray-700">
+                        Latitude
+                      </span>
+                      <input
+                        type="number"
+                        step="any"
+                        value={draft.latitude}
+                        onChange={(event) =>
+                          setDraft((currentDraft) => ({
+                            ...currentDraft,
+                            latitude: event.target.value,
+                          }))
+                        }
+                        placeholder="-6.200000"
+                        className="h-11 w-full rounded-2xl border border-emerald-100 bg-white px-3 text-sm font-bold text-gray-900 outline-none placeholder:text-gray-300 focus:border-emerald-500"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="mb-2 block text-xs font-extrabold text-gray-700">
+                        Longitude
+                      </span>
+                      <input
+                        type="number"
+                        step="any"
+                        value={draft.longitude}
+                        onChange={(event) =>
+                          setDraft((currentDraft) => ({
+                            ...currentDraft,
+                            longitude: event.target.value,
+                          }))
+                        }
+                        placeholder="106.816666"
+                        className="h-11 w-full rounded-2xl border border-emerald-100 bg-white px-3 text-sm font-bold text-gray-900 outline-none placeholder:text-gray-300 focus:border-emerald-500"
+                      />
+                    </label>
+                  </div>
+                  {coordinateError ? (
+                    <p className="mt-3 text-xs leading-5 font-bold text-red-600">
+                      {coordinateError}
+                    </p>
+                  ) : null}
+                </section>
               </div>
 
               <div className="mt-6 flex gap-3">

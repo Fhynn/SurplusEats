@@ -4,6 +4,8 @@ import {
   OrderStatus,
   PaymentStatus,
   UserRole,
+  WalletTransactionStatus,
+  WalletTransactionType,
 } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -26,6 +28,7 @@ const checkoutSchema = z.object({
     )
     .min(1),
   note: z.string().optional(),
+  voucherCode: z.string().trim().min(1).max(40).optional(),
 });
 
 export async function GET(request: Request) {
@@ -108,9 +111,30 @@ export async function POST(request: Request) {
     );
   }
 
+  const customerPickupAddress = await prisma.address.findFirst({
+    where: {
+      userId: customer.id,
+      latitude: { not: null },
+      longitude: { not: null },
+    },
+    orderBy: [{ isPrimary: "desc" }, { createdAt: "desc" }],
+  });
+
+  if (!customerPickupAddress) {
+    return NextResponse.json(
+      {
+        ok: false,
+        message:
+          "Checkout wajib memakai alamat customer dengan titik maps. Tambahkan alamat dan klik Ambil Lokasi dulu.",
+      },
+      { status: 400 },
+    );
+  }
+
   try {
     const order = await prisma.$transaction(async (tx: PrismaTransactionClient) => {
       const requestedIds = data.items.map((item) => item.menuItemId);
+      const voucherCode = data.voucherCode?.trim().toUpperCase();
       const menuItems = await tx.menuItem.findMany({
         where: {
           id: { in: requestedIds },
@@ -127,6 +151,15 @@ export async function POST(request: Request) {
 
       if (menuItems.length !== requestedIds.length) {
         throw new Error("Sebagian menu tidak tersedia.");
+      }
+
+      if (
+        menuItems[0].restaurant.latitude === null ||
+        menuItems[0].restaurant.longitude === null
+      ) {
+        throw new Error(
+          "Restoran belum punya titik lokasi. Mitra wajib melengkapi lokasi toko sebelum menerima order.",
+        );
       }
 
       const restaurantId = menuItems[0].restaurantId;
@@ -151,7 +184,80 @@ export async function POST(request: Request) {
         return total + (menuItem?.discountedPrice || 0) * cartItem.quantity;
       }, 0);
       const serviceFee = 2000;
-      const total = subtotal + serviceFee;
+      let voucherDiscount = 0;
+      let appliedVoucherClaimId: string | null = null;
+
+      if (voucherCode) {
+        const now = new Date();
+        const voucher = await tx.voucher.findFirst({
+          where: {
+            code: voucherCode,
+            active: true,
+            OR: [{ startsAt: null }, { startsAt: { lte: now } }],
+            AND: [{ OR: [{ endsAt: null }, { endsAt: { gte: now } }] }],
+          },
+        });
+
+        if (!voucher) {
+          throw new Error("Voucher tidak valid atau sudah tidak berlaku.");
+        }
+
+        if (subtotal < voucher.minSpend) {
+          throw new Error(
+            `Minimum transaksi voucher adalah ${new Intl.NumberFormat("id-ID", {
+              style: "currency",
+              currency: "IDR",
+              maximumFractionDigits: 0,
+            }).format(voucher.minSpend)}.`,
+          );
+        }
+
+        const existingRedemption = await tx.voucherRedemption.findFirst({
+          where: {
+            voucherId: voucher.id,
+            userId: customer.id,
+            orderId: { not: null },
+          },
+        });
+
+        if (existingRedemption) {
+          throw new Error("Voucher sudah pernah dipakai oleh akun ini.");
+        }
+
+        const voucherClaim = await tx.voucherRedemption.findFirst({
+          where: {
+            voucherId: voucher.id,
+            userId: customer.id,
+            orderId: null,
+          },
+          select: {
+            id: true,
+          },
+        });
+
+        if (!voucherClaim) {
+          throw new Error("Klaim voucher dulu sebelum checkout.");
+        }
+
+        if (voucher.quota !== null) {
+          const usedCount = await tx.voucherRedemption.count({
+            where: {
+              voucherId: voucher.id,
+              orderId: { not: null },
+            },
+          });
+
+          if (usedCount >= voucher.quota) {
+            throw new Error("Kuota voucher sudah habis.");
+          }
+        }
+
+        voucherDiscount = Math.min(voucher.discount, subtotal);
+        appliedVoucherClaimId = voucherClaim.id;
+      }
+
+      const total = Math.max(0, subtotal - voucherDiscount) + serviceFee;
+      const merchantIncome = Math.max(0, total - serviceFee);
       const orderCode = createOrderCode();
 
       const createdOrder = await tx.order.create({
@@ -162,6 +268,7 @@ export async function POST(request: Request) {
           status: OrderStatus.CONFIRMED,
           paymentStatus: PaymentStatus.PAID,
           subtotal,
+          discount: voucherDiscount,
           serviceFee,
           total,
           pickupCode: Math.floor(100000 + Math.random() * 900000).toString(),
@@ -192,6 +299,27 @@ export async function POST(request: Request) {
         include: {
           items: true,
           restaurant: true,
+        },
+      });
+
+      if (appliedVoucherClaimId) {
+        await tx.voucherRedemption.update({
+          where: { id: appliedVoucherClaimId },
+          data: {
+            orderId: createdOrder.id,
+            redeemedAt: new Date(),
+          },
+        });
+      }
+
+      await tx.walletTransaction.create({
+        data: {
+          restaurantId,
+          type: WalletTransactionType.ORDER_INCOME,
+          status: WalletTransactionStatus.PENDING,
+          amount: merchantIncome,
+          reference: orderCode,
+          description: `Order ${orderCode} dari ${customer.name}`,
         },
       });
 
@@ -226,6 +354,13 @@ export async function POST(request: Request) {
           });
         }
       }
+
+      await tx.cartItem.deleteMany({
+        where: {
+          userId: customer.id,
+          menuItemId: { in: requestedIds },
+        },
+      });
 
       const ownerId = menuItems[0].restaurant.ownerId;
       await tx.notification.createMany({

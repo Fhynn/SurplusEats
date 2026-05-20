@@ -30,7 +30,9 @@ export function MainShell({
   ) => {
     const isActive =
       pathname === href ||
-      (href === "/home" && ["/browse", "/browser"].includes(pathname));
+      (href === "/home" &&
+        (["/browse", "/browser"].includes(pathname) ||
+          pathname.startsWith("/stores/")));
 
     if (variant === "desktop") {
       return (

@@ -7,6 +7,7 @@ import {
   ChevronRight,
   Clock3,
   MessageSquare,
+  Navigation,
   PackageCheck,
   QrCode,
   RefreshCcw,
@@ -20,6 +21,10 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import { MobileDeviceFrame } from "@/components/mobile-device-frame";
+import {
+  getCustomerLocationFromAddresses,
+  type ApiCustomerAddress,
+} from "@/lib/customer-location";
 import {
   apiOrderToCard,
   type ApiOrder,
@@ -50,6 +55,11 @@ export default function CustomerOrdersPage() {
   const [reviewComment, setReviewComment] = useState("");
   const [allOrders, setAllOrders] = useState<CustomerOrderCard[]>([]);
   const [isLoadingOrders, setIsLoadingOrders] = useState(true);
+  const [isSubmittingReview, setIsSubmittingReview] = useState(false);
+  const [notice, setNotice] = useState<{
+    type: "success" | "error";
+    message: string;
+  } | null>(null);
   const activeOrders = useMemo(
     () =>
       allOrders.filter(
@@ -88,18 +98,37 @@ export default function CustomerOrdersPage() {
       setIsLoadingOrders(true);
 
       try {
-        const response = await fetch("/api/orders", { cache: "no-store" });
+        const [response, addressesResponse] = await Promise.all([
+          fetch("/api/orders", { cache: "no-store" }),
+          fetch("/api/addresses", { cache: "no-store" }),
+        ]);
         const result = (await response.json()) as {
           ok: boolean;
           orders?: ApiOrder[];
         };
+        const addressesData = (await addressesResponse.json()) as {
+          ok: boolean;
+          addresses?: ApiCustomerAddress[];
+        };
 
         if (!ignore) {
-          setAllOrders(result.orders?.map(apiOrderToCard) ?? []);
+          const customerLocation = getCustomerLocationFromAddresses(
+            addressesData.addresses ?? [],
+          );
+
+          setAllOrders(
+            result.orders?.map((order) =>
+              apiOrderToCard(order, customerLocation.coordinates),
+            ) ?? [],
+          );
         }
       } catch {
         if (!ignore) {
           setAllOrders([]);
+          setNotice({
+            type: "error",
+            message: "Pesanan gagal dimuat.",
+          });
         }
       } finally {
         if (!ignore) {
@@ -127,12 +156,63 @@ export default function CustomerOrdersPage() {
     setReviewComment("");
   };
 
-  const handleSubmitReview = () => {
-    if (rating <= 0) {
+  const handleOpenReview = (order: CustomerOrderCard) => {
+    setReviewOrder(order);
+    setRating(order.reviewRating ?? 0);
+    setReviewComment(order.reviewComment ?? "");
+  };
+
+  const handleSubmitReview = async () => {
+    if (!reviewOrder || rating <= 0 || isSubmittingReview) {
       return;
     }
 
-    handleCloseReview();
+    setIsSubmittingReview(true);
+
+    try {
+      const response = await fetch("/api/reviews", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          orderCode: reviewOrder.id,
+          rating,
+          comment: reviewComment.trim() || undefined,
+        }),
+      });
+      const data = (await response.json()) as {
+        ok: boolean;
+        message?: string;
+      };
+
+      if (!response.ok || !data.ok) {
+        throw new Error(data.message || "Ulasan gagal disimpan.");
+      }
+
+      setAllOrders((currentOrders) =>
+        currentOrders.map((order) =>
+          order.id === reviewOrder.id
+            ? {
+                ...order,
+                reviewRating: rating,
+                reviewComment: reviewComment.trim() || null,
+              }
+            : order,
+        ),
+      );
+      setNotice({
+        type: "success",
+        message: "Ulasan berhasil disimpan.",
+      });
+      handleCloseReview();
+    } catch (error) {
+      setNotice({
+        type: "error",
+        message:
+          error instanceof Error ? error.message : "Ulasan gagal disimpan.",
+      });
+    } finally {
+      setIsSubmittingReview(false);
+    }
   };
 
   return (
@@ -272,6 +352,18 @@ export default function CustomerOrdersPage() {
             </div>
           ) : null}
 
+          {notice ? (
+            <div
+              className={`rounded-[24px] border p-4 text-sm font-bold ${
+                notice.type === "success"
+                  ? "border-emerald-100 bg-emerald-50 text-emerald-700"
+                  : "border-red-100 bg-red-50 text-red-700"
+              }`}
+            >
+              {notice.message}
+            </div>
+          ) : null}
+
           {visibleOrders.map((order) => {
             const isTrackable =
               order.status === "ready" || order.status === "preparing";
@@ -338,6 +430,12 @@ export default function CustomerOrdersPage() {
                         Ketuk kartu untuk melihat live tracking
                       </p>
                     ) : null}
+                    {order.status === "completed" && order.reviewRating ? (
+                      <p className="mt-2 inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-extrabold text-amber-700">
+                        <Star size={11} className="fill-amber-500 text-amber-500" />
+                        Sudah diulas {order.reviewRating}/5
+                      </p>
+                    ) : null}
                   </div>
                 </div>
 
@@ -354,17 +452,41 @@ export default function CustomerOrdersPage() {
                     </div>
 
                     {order.status === "ready" ? (
-                      <span className="flex shrink-0 items-center gap-1.5 rounded-xl bg-gray-900 px-4 py-2 text-xs font-bold whitespace-nowrap text-white shadow-sm transition-colors group-hover:bg-emerald-500">
-                        <QrCode size={14} />
-                        Ambil Pesanan
-                      </span>
+                      <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
+                        <a
+                          href={order.pickupRouteUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          onClick={(event) => event.stopPropagation()}
+                          className="flex items-center justify-center gap-1.5 rounded-xl bg-emerald-50 px-3 py-2 text-xs font-bold whitespace-nowrap text-emerald-700 transition-colors hover:bg-emerald-100"
+                        >
+                          <Navigation size={14} />
+                          {order.pickupRouteLabel}
+                        </a>
+                        <span className="flex items-center gap-1.5 rounded-xl bg-gray-900 px-4 py-2 text-xs font-bold whitespace-nowrap text-white shadow-sm transition-colors group-hover:bg-emerald-500">
+                          <QrCode size={14} />
+                          Ambil
+                        </span>
+                      </div>
                     ) : null}
 
                     {order.status === "preparing" ? (
-                      <span className="flex shrink-0 items-center gap-1.5 rounded-xl bg-blue-50 px-3 py-2 text-xs font-bold whitespace-nowrap text-blue-600 transition-colors group-hover:bg-blue-100">
-                        Lacak
-                        <ChevronRight size={14} />
-                      </span>
+                      <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
+                        <a
+                          href={order.pickupRouteUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          onClick={(event) => event.stopPropagation()}
+                          className="flex items-center justify-center gap-1.5 rounded-xl bg-emerald-50 px-3 py-2 text-xs font-bold whitespace-nowrap text-emerald-700 transition-colors hover:bg-emerald-100"
+                        >
+                          <Navigation size={14} />
+                          {order.pickupRouteLabel}
+                        </a>
+                        <span className="flex items-center gap-1.5 rounded-xl bg-blue-50 px-3 py-2 text-xs font-bold whitespace-nowrap text-blue-600 transition-colors group-hover:bg-blue-100">
+                          Lacak
+                          <ChevronRight size={14} />
+                        </span>
+                      </div>
                     ) : null}
                   </div>
 
@@ -388,12 +510,12 @@ export default function CustomerOrdersPage() {
                         type="button"
                         onClick={(event) => {
                           event.stopPropagation();
-                          setReviewOrder(order);
+                          handleOpenReview(order);
                         }}
                         className="flex min-h-11 min-w-0 items-center justify-center gap-1 rounded-xl border border-emerald-200 bg-white px-2 text-[11px] font-extrabold whitespace-nowrap text-emerald-600 transition-colors hover:bg-emerald-50"
                       >
                         <MessageSquare size={13} />
-                        Ulas
+                        {order.reviewRating ? "Edit Ulasan" : "Ulas"}
                       </button>
                       <button
                         type="button"
@@ -518,10 +640,14 @@ export default function CustomerOrdersPage() {
               <button
                 type="button"
                 onClick={handleSubmitReview}
-                disabled={rating <= 0}
+                disabled={rating <= 0 || isSubmittingReview}
                 className="w-full rounded-2xl bg-emerald-500 py-4 text-sm font-extrabold text-white shadow-[0_12px_26px_rgba(16,185,129,0.2)] transition-all hover:bg-emerald-600 active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-emerald-200 disabled:shadow-none"
               >
-                Kirim Ulasan
+                {isSubmittingReview
+                  ? "Menyimpan..."
+                  : reviewOrder.reviewRating
+                    ? "Perbarui Ulasan"
+                    : "Kirim Ulasan"}
               </button>
             </div>
           </div>

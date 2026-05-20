@@ -20,9 +20,17 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { MobileDeviceFrame } from "@/components/mobile-device-frame";
+import {
+  getCustomerLocationFromAddresses,
+  type ApiCustomerAddress,
+} from "@/lib/customer-location";
+import {
+  getPickupRouteUrl,
+  type Coordinates,
+} from "@/lib/geo-distance";
 import type { ApiOrder } from "@/lib/order-mapper";
 
-type OrderStatus = "preparing" | "ready";
+type OrderStatus = "preparing" | "ready" | "cancelled";
 type TimelineKey = "confirmed" | "preparing" | "ready";
 
 type TrackingOrder = {
@@ -36,7 +44,11 @@ type TrackingOrder = {
   pickupWindow: string;
   deadline: string;
   image: string;
-  mapQuery: string;
+  pickupRouteUrl: string;
+  pickupRouteLabel: string;
+  apiStatus: string;
+  createdAt: string;
+  pickupTime: string | null;
 };
 
 const cancelReasons = [
@@ -53,10 +65,40 @@ const formatRp = (amount: number) =>
     maximumFractionDigits: 0,
   }).format(amount);
 
-function apiOrderToTracking(order: ApiOrder): TrackingOrder {
+function formatClock(value: string | null) {
+  if (!value) {
+    return "Menunggu";
+  }
+
+  return new Intl.DateTimeFormat("id-ID", {
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
+function getRestaurantCoordinates(order: ApiOrder) {
+  if (order.restaurant.latitude === null || order.restaurant.longitude === null) {
+    return null;
+  }
+
+  return {
+    latitude: order.restaurant.latitude,
+    longitude: order.restaurant.longitude,
+  };
+}
+
+function apiOrderToTracking(
+  order: ApiOrder,
+  customerCoordinates: Coordinates | null = null,
+): TrackingOrder {
   const firstItem = order.items[0];
   const pickupStart = firstItem?.menuItem?.pickupStart || "18:00";
   const pickupEnd = firstItem?.menuItem?.pickupEnd || "21:00";
+  const pickupRoute = getPickupRouteUrl(
+    customerCoordinates,
+    getRestaurantCoordinates(order),
+    `${order.restaurant.name} ${order.restaurant.city}`,
+  );
 
   return {
     id: order.orderCode,
@@ -65,41 +107,50 @@ function apiOrderToTracking(order: ApiOrder): TrackingOrder {
     item: firstItem?.menuNameSnapshot || "Order tanpa item",
     quantity: firstItem?.quantity || 1,
     total: order.total,
-    status: order.status === "READY" ? "ready" : "preparing",
+    status:
+      order.status === "CANCELLED" || order.status === "REFUNDED"
+        ? "cancelled"
+        : order.status === "READY"
+          ? "ready"
+          : "preparing",
     pickupWindow: `${pickupStart} - ${pickupEnd} WIB`,
     deadline: `${pickupEnd} WIB`,
     image: firstItem?.menuItem?.imageUrl || "/placeholder-food.svg",
-    mapQuery: `${order.restaurant.name} ${order.restaurant.city}`,
+    pickupRouteUrl: pickupRoute.url,
+    pickupRouteLabel: pickupRoute.label,
+    apiStatus: order.status,
+    createdAt: order.createdAt,
+    pickupTime: order.pickupTime,
   };
 }
 
-const getTimelineSteps = (status: OrderStatus) =>
+const getTimelineSteps = (order: TrackingOrder) =>
   [
     {
       key: "confirmed",
       title: "Pesanan Dikonfirmasi",
       description: "Restoran sudah menerima detail pesananmu.",
-      time: "19:05",
+      time: formatClock(order.createdAt),
       icon: CheckCircle2,
     },
     {
       key: "preparing",
       title: "Sedang Disiapkan",
       description:
-        status === "ready"
+        order.status === "ready"
           ? "Owner sudah selesai mengemas makanan surplusmu."
           : "Owner sedang mengemas makanan surplusmu.",
-      time: status === "ready" ? "19:15" : "Sekarang",
+      time: order.status === "ready" ? "Selesai" : "Berjalan",
       icon: Package,
     },
     {
       key: "ready",
       title: "Pesanan Siap Diambil",
       description:
-        status === "ready"
+        order.status === "ready"
           ? "Tunjukkan QR ke kasir sebelum batas pickup."
           : "QR pickup akan aktif setelah owner menandai pesanan siap.",
-      time: status === "ready" ? "19:30" : "Menunggu",
+      time: order.status === "ready" ? formatClock(order.pickupTime) : "Menunggu",
       icon: QrCode,
     },
   ] satisfies Array<{
@@ -120,6 +171,8 @@ export default function CustomerOrderTrackingPage() {
   const [selectedReason, setSelectedReason] = useState("");
   const [cancelNote, setCancelNote] = useState("");
   const [isCancelSubmitted, setIsCancelSubmitted] = useState(false);
+  const [isSubmittingCancel, setIsSubmittingCancel] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
 
   useEffect(() => {
     let ignore = false;
@@ -128,16 +181,31 @@ export default function CustomerOrderTrackingPage() {
       setIsLoadingOrder(true);
 
       try {
-        const response = await fetch(`/api/orders/${orderId}`, {
-          cache: "no-store",
-        });
+        const [response, addressesResponse] = await Promise.all([
+          fetch(`/api/orders/${orderId}`, {
+            cache: "no-store",
+          }),
+          fetch("/api/addresses", { cache: "no-store" }),
+        ]);
         const result = (await response.json()) as {
           ok: boolean;
           order?: ApiOrder;
         };
+        const addressesData = (await addressesResponse.json()) as {
+          ok: boolean;
+          addresses?: ApiCustomerAddress[];
+        };
 
         if (!ignore) {
-          setOrder(result.order ? apiOrderToTracking(result.order) : null);
+          const customerLocation = getCustomerLocationFromAddresses(
+            addressesData.addresses ?? [],
+          );
+
+          setOrder(
+            result.order
+              ? apiOrderToTracking(result.order, customerLocation.coordinates)
+              : null,
+          );
         }
       } catch {
         if (!ignore) {
@@ -189,17 +257,57 @@ export default function CustomerOrderTrackingPage() {
   }
 
   const isReady = order.status === "ready";
-  const activeStepIndex = isReady ? 2 : 1;
-  const timelineSteps = getTimelineSteps(order.status);
-  const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-    order.mapQuery,
-  )}`;
-
+  const isCancelled = order.status === "cancelled";
+  const canCancelOrder = ["PENDING", "PAID", "CONFIRMED", "PREPARING"].includes(
+    order.apiStatus,
+  );
+  const activeStepIndex = isReady ? 2 : isCancelled ? 0 : 1;
+  const timelineSteps = getTimelineSteps(order);
   const closeCancelModal = () => {
     setIsCancelOpen(false);
     setSelectedReason("");
     setCancelNote("");
     setIsCancelSubmitted(false);
+    setCancelError(null);
+  };
+  const handleCancelOrder = async () => {
+    if (!selectedReason || isSubmittingCancel) {
+      return;
+    }
+
+    setIsSubmittingCancel(true);
+    setCancelError(null);
+
+    try {
+      const response = await fetch(`/api/orders/${order.id}/cancel`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          reason: selectedReason,
+          note: cancelNote.trim() || undefined,
+        }),
+      });
+      const data = (await response.json()) as {
+        ok: boolean;
+        message?: string;
+        order?: ApiOrder;
+      };
+
+      if (!response.ok || !data.ok || !data.order) {
+        throw new Error(data.message || "Pesanan gagal dibatalkan.");
+      }
+
+      setOrder(apiOrderToTracking(data.order));
+      setIsCancelSubmitted(true);
+    } catch (error) {
+      setCancelError(
+        error instanceof Error ? error.message : "Pesanan gagal dibatalkan.",
+      );
+    } finally {
+      setIsSubmittingCancel(false);
+    }
   };
 
   return (
@@ -222,7 +330,11 @@ export default function CustomerOrderTrackingPage() {
             </div>
             <div
               className={`flex h-9 w-9 items-center justify-center rounded-full border-4 border-white shadow-xl ${
-                isReady ? "animate-bounce bg-emerald-500" : "bg-blue-500"
+                isCancelled
+                  ? "bg-red-500"
+                  : isReady
+                    ? "animate-bounce bg-emerald-500"
+                    : "bg-blue-500"
               }`}
             >
               <Store size={15} className="text-white" />
@@ -249,31 +361,57 @@ export default function CustomerOrderTrackingPage() {
             <div className="mb-6 text-center">
               <div
                 className={`mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full ${
-                  isReady
+                  isCancelled
+                    ? "bg-red-50 text-red-600"
+                    : isReady
                     ? "bg-emerald-50 text-emerald-600"
                     : "bg-blue-50 text-blue-600"
                 }`}
               >
-                {isReady ? <QrCode size={32} /> : <Package size={32} />}
+                {isCancelled ? (
+                  <X size={32} />
+                ) : isReady ? (
+                  <QrCode size={32} />
+                ) : (
+                  <Package size={32} />
+                )}
               </div>
               <p
                 className={`text-xs font-extrabold tracking-[0.18em] uppercase ${
-                  isReady ? "text-emerald-600" : "text-blue-600"
+                  isCancelled
+                    ? "text-red-600"
+                    : isReady
+                      ? "text-emerald-600"
+                      : "text-blue-600"
                 }`}
               >
-                {isReady ? "Ready for Pickup" : "In Preparation"}
+                {isCancelled
+                  ? "Cancelled"
+                  : isReady
+                    ? "Ready for Pickup"
+                    : "In Preparation"}
               </p>
               <h1
                 className={`mt-2 text-2xl font-extrabold ${
-                  isReady ? "text-emerald-600" : "text-blue-600"
+                  isCancelled
+                    ? "text-red-600"
+                    : isReady
+                      ? "text-emerald-600"
+                      : "text-blue-600"
                 }`}
               >
-                {isReady ? "Siap Diambil!" : "Sedang Disiapkan"}
+                {isCancelled
+                  ? "Pesanan Dibatalkan"
+                  : isReady
+                    ? "Siap Diambil!"
+                    : "Sedang Disiapkan"}
               </h1>
               <p className="mt-2 text-sm leading-6 font-medium text-gray-500">
-                {isReady
-                  ? `Datang ke toko sebelum ${order.deadline} dan tunjukkan QR pickup.`
-                  : "Restoran sedang mengemas pesanan. QR pickup akan aktif saat status siap diambil."}
+                {isCancelled
+                  ? "Pesanan ini sudah dibatalkan dan tidak perlu diambil ke restoran."
+                  : isReady
+                    ? `Datang ke toko sebelum ${order.deadline} dan tunjukkan QR pickup.`
+                    : "Restoran sedang mengemas pesanan. QR pickup akan aktif saat status siap diambil."}
               </p>
             </div>
 
@@ -288,14 +426,20 @@ export default function CustomerOrderTrackingPage() {
               <div className="absolute bottom-0 left-0 h-20 w-20 bg-blue-500 opacity-20 blur-[50px]" />
 
               <div className="relative z-10 mb-3 rounded-2xl bg-white p-3 shadow-sm">
-                {isReady ? (
+                {isCancelled ? (
+                  <X size={112} className="text-red-300" />
+                ) : isReady ? (
                   <QrCode size={120} className="text-gray-900" />
                 ) : (
                   <Package size={112} className="text-gray-300" />
                 )}
               </div>
               <p className="relative z-10 text-center text-xs font-bold tracking-widest text-gray-500 uppercase">
-                {isReady ? "Tunjukkan QR ke Kasir" : "QR Belum Aktif"}
+                {isCancelled
+                  ? "Pickup Dibatalkan"
+                  : isReady
+                    ? "Tunjukkan QR ke Kasir"
+                    : "QR Belum Aktif"}
               </p>
             </div>
 
@@ -429,13 +573,13 @@ export default function CustomerOrderTrackingPage() {
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <a
-                href={mapsUrl}
+                href={order.pickupRouteUrl}
                 target="_blank"
                 rel="noreferrer"
                 className="flex flex-col items-center justify-center gap-2 rounded-2xl bg-blue-50 p-4 text-blue-600 transition-colors hover:bg-blue-100"
               >
                 <Navigation size={20} />
-                <span className="text-xs font-bold">Arahkan Lokasi</span>
+                <span className="text-xs font-bold">{order.pickupRouteLabel}</span>
               </a>
               <Link
                 href={`/support?order=${order.id}`}
@@ -447,26 +591,37 @@ export default function CustomerOrderTrackingPage() {
             </div>
 
             <Link
-              href="/payment-success"
+              href={`/payment-success?order=${order.id}`}
               className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl border border-emerald-100 bg-emerald-50 py-4 text-sm font-extrabold text-emerald-700 transition-colors hover:bg-emerald-100"
             >
               <ReceiptText size={18} />
               Lihat Receipt
             </Link>
 
-            <button
-              type="button"
-              onClick={() => setIsCancelOpen(true)}
-              className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl border border-red-100 bg-red-50 py-4 text-sm font-extrabold text-red-600 transition-colors hover:bg-red-100"
-            >
-              <X size={18} />
-              Batalkan Pesanan
-            </button>
-            <p className="mt-3 text-center text-[11px] leading-5 font-medium text-gray-400">
-              {isReady
-                ? "Pembatalan setelah pesanan siap diambil akan direview sebagai refund manual."
-                : "Pembatalan sebelum pesanan siap diproses lebih cepat oleh support."}
-            </p>
+            {canCancelOrder ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setIsCancelOpen(true)}
+                  className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl border border-red-100 bg-red-50 py-4 text-sm font-extrabold text-red-600 transition-colors hover:bg-red-100"
+                >
+                  <X size={18} />
+                  Batalkan Pesanan
+                </button>
+                <p className="mt-3 text-center text-[11px] leading-5 font-medium text-gray-400">
+                  Pembatalan sebelum pesanan siap akan mengembalikan stok dan
+                  memperbarui status pembayaran.
+                </p>
+              </>
+            ) : isReady ? (
+              <Link
+                href={`/orders/${order.id}/refund`}
+                className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl border border-amber-100 bg-amber-50 py-4 text-sm font-extrabold text-amber-700 transition-colors hover:bg-amber-100"
+              >
+                <AlertTriangle size={18} />
+                Ajukan Refund
+              </Link>
+            ) : null}
           </section>
         </div>
 
@@ -481,11 +636,11 @@ export default function CustomerOrderTrackingPage() {
                     <CheckCircle2 size={34} />
                   </div>
                   <h2 className="text-xl font-extrabold text-gray-950">
-                    Pembatalan Diajukan
+                    Pesanan Dibatalkan
                   </h2>
                   <p className="mx-auto mt-2 max-w-xs text-sm leading-6 font-medium text-gray-500">
-                    Tim ResQFood akan memeriksa status pesanan dan mengirim
-                    update refund ke notifikasi kamu.
+                    Status pesanan sudah diperbarui, stok dikembalikan, dan
+                    notifikasi dikirim ke restoran.
                   </p>
                   <div className="mt-7 grid grid-cols-2 gap-3">
                     <button
@@ -534,9 +689,9 @@ export default function CustomerOrderTrackingPage() {
                     <p className="text-sm leading-6 font-semibold text-amber-800">
                       Status saat ini:{" "}
                       <span className="font-extrabold">
-                        {isReady ? "Siap diambil" : "Sedang disiapkan"}
+                        Sedang disiapkan
                       </span>
-                      . Refund akan mengikuti status terakhir restoran.
+                      . Pembatalan akan langsung memperbarui status pesanan.
                     </p>
                   </div>
 
@@ -581,13 +736,19 @@ export default function CustomerOrderTrackingPage() {
                     className="mb-5 w-full resize-none rounded-[24px] border border-gray-200 bg-gray-50 p-4 text-sm font-medium text-gray-900 outline-none transition-all placeholder:text-gray-400 focus:border-red-300 focus:bg-white focus:ring-4 focus:ring-red-50"
                   />
 
+                  {cancelError ? (
+                    <p className="mb-4 rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-xs font-bold text-red-700">
+                      {cancelError}
+                    </p>
+                  ) : null}
+
                   <button
                     type="button"
-                    onClick={() => setIsCancelSubmitted(true)}
-                    disabled={!selectedReason}
+                    onClick={() => void handleCancelOrder()}
+                    disabled={!selectedReason || isSubmittingCancel}
                     className="w-full rounded-2xl bg-red-500 py-4 text-sm font-extrabold text-white shadow-[0_12px_26px_rgba(239,68,68,0.18)] transition-all hover:bg-red-600 active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-red-200 disabled:shadow-none"
                   >
-                    Ajukan Pembatalan
+                    {isSubmittingCancel ? "Membatalkan..." : "Batalkan Pesanan"}
                   </button>
                 </>
               )}

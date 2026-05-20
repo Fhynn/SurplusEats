@@ -1,11 +1,62 @@
 import { UserRole } from "@prisma/client";
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import { getCurrentSession } from "@/lib/auth-session";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+const coordinateSchema = z.preprocess(
+  (value) => (value === "" || value === null ? undefined : value),
+  z.coerce.number().finite().optional(),
+);
+
+const updateRestaurantLocationSchema = z
+  .object({
+    latitude: coordinateSchema,
+    longitude: coordinateSchema,
+  })
+  .superRefine((data, ctx) => {
+    if (data.latitude === undefined && data.longitude === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["latitude"],
+        message: "Titik lokasi toko wajib diisi.",
+      });
+    }
+
+    if (
+      (data.latitude === undefined && data.longitude !== undefined) ||
+      (data.latitude !== undefined && data.longitude === undefined)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["latitude"],
+        message: "Latitude dan longitude lokasi toko harus diisi bersama.",
+      });
+    }
+
+    if (data.latitude !== undefined && (data.latitude < -90 || data.latitude > 90)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["latitude"],
+        message: "Latitude lokasi toko harus berada di antara -90 dan 90.",
+      });
+    }
+
+    if (
+      data.longitude !== undefined &&
+      (data.longitude < -180 || data.longitude > 180)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["longitude"],
+        message: "Longitude lokasi toko harus berada di antara -180 dan 180.",
+      });
+    }
+  });
 
 export async function GET() {
   const session = await getCurrentSession();
@@ -20,12 +71,19 @@ export async function GET() {
   const user = await prisma.user.findUnique({
     where: { id: session.userId },
     include: {
-      applications: { orderBy: { submittedAt: "desc" }, take: 1 },
+      applications: {
+        include: {
+          documents: true,
+        },
+        orderBy: { submittedAt: "desc" },
+        take: 1,
+      },
       ownedRestaurants: {
         include: {
           menuItems: true,
           orders: true,
           reviews: true,
+          verificationDocuments: true,
         },
         orderBy: { createdAt: "desc" },
         take: 1,
@@ -50,5 +108,54 @@ export async function GET() {
     },
     restaurant: user.ownedRestaurants[0] ?? null,
     latestApplication: user.applications[0] ?? null,
+  });
+}
+
+export async function PATCH(request: Request) {
+  const session = await getCurrentSession();
+
+  if (!session || session.role !== UserRole.OWNER) {
+    return NextResponse.json(
+      { ok: false, message: "Akses owner diperlukan." },
+      { status: session ? 403 : 401 },
+    );
+  }
+
+  const parsed = updateRestaurantLocationSchema.safeParse(await request.json());
+
+  if (!parsed.success) {
+    return NextResponse.json(
+      {
+        ok: false,
+        message: "Titik lokasi toko tidak valid.",
+        issues: parsed.error.flatten(),
+      },
+      { status: 400 },
+    );
+  }
+
+  const restaurant = await prisma.restaurant.findFirst({
+    where: { ownerId: session.userId },
+    orderBy: { createdAt: "desc" },
+  });
+
+  if (!restaurant) {
+    return NextResponse.json(
+      { ok: false, message: "Restoran owner belum tersedia." },
+      { status: 404 },
+    );
+  }
+
+  const updatedRestaurant = await prisma.restaurant.update({
+    where: { id: restaurant.id },
+    data: {
+      latitude: parsed.data.latitude,
+      longitude: parsed.data.longitude,
+    },
+  });
+
+  return NextResponse.json({
+    ok: true,
+    restaurant: updatedRestaurant,
   });
 }

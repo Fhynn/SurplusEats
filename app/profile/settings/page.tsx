@@ -7,6 +7,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Edit2,
+  Heart,
   HelpCircle,
   LockKeyhole,
   LogOut,
@@ -35,6 +36,14 @@ const accountMenus = [
     description: "Kelola alamat pickup favorit",
     icon: MapPin,
     iconClassName: "bg-blue-50 text-blue-600 group-hover:bg-blue-100",
+    badge: undefined,
+  },
+  {
+    href: "/profile/favorites",
+    label: "Favorit Saya",
+    description: "Menu tersimpan untuk dibeli ulang",
+    icon: Heart,
+    iconClassName: "bg-red-50 text-red-500 group-hover:bg-red-100",
     badge: undefined,
   },
   {

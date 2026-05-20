@@ -112,11 +112,14 @@ model User {
   addresses        Address[]
   applications     RestaurantApplication[]
   cartItems        CartItem[]
+  favoriteMenuItems FavoriteMenuItem[]
   notifications    Notification[]
   orders           Order[]                 @relation("CustomerOrders")
   ownedRestaurants Restaurant[]            @relation("RestaurantOwner")
+  orderMessages    OrderMessage[]
   refunds          RefundRequest[]         @relation("CustomerRefunds")
   reviews          Review[]
+  supportTickets   SupportTicket[]
   uploadedAssets   Asset[]                 @relation("AssetUploader")
   adminLogs        AdminActionLog[]        @relation("AdminActionActor")
 
@@ -132,6 +135,8 @@ model Address {
   phone       String
   addressLine String
   city        String
+  latitude    Float?
+  longitude   Float?
   notes       String?
   isPrimary   Boolean  @default(false)
   createdAt   DateTime @default(now())
@@ -152,6 +157,8 @@ model RestaurantApplication {
   businessType  String
   address       String
   city          String
+  latitude      Float?
+  longitude     Float?
   description   String?
   status        ApplicationStatus @default(PENDING)
   adminNote     String?
@@ -178,6 +185,8 @@ model Restaurant {
   description   String?
   address       String
   city          String
+  latitude      Float?
+  longitude     Float?
   phone         String?
   imageUrl      String?
   bannerUrl     String?
@@ -222,6 +231,7 @@ model MenuItem {
   updatedAt       DateTime       @updatedAt
 
   cartItems  CartItem[]
+  favoritedBy FavoriteMenuItem[]
   orderItems OrderItem[]
   restaurant Restaurant  @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
 
@@ -246,6 +256,20 @@ model CartItem {
   @@index([userId])
 }
 
+model FavoriteMenuItem {
+  id         String   @id @default(cuid())
+  userId     String
+  menuItemId String
+  createdAt  DateTime @default(now())
+
+  menuItem MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, menuItemId])
+  @@index([userId, createdAt])
+  @@index([menuItemId])
+}
+
 model Order {
   id            String        @id @default(cuid())
   orderCode     String        @unique
@@ -268,9 +292,11 @@ model Order {
 
   customer      User           @relation("CustomerOrders", fields: [customerId], references: [id], onDelete: Cascade)
   items         OrderItem[]
+  messages      OrderMessage[]
   refundRequest RefundRequest?
   restaurant    Restaurant     @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
   review        Review?
+  supportTickets SupportTicket[]
 
   @@index([customerId, status])
   @@index([restaurantId, status])
@@ -292,6 +318,21 @@ model OrderItem {
 
   @@index([orderId])
   @@index([menuItemId])
+}
+
+model OrderMessage {
+  id         String   @id @default(cuid())
+  orderId    String
+  senderId   String
+  senderRole String
+  body       String
+  createdAt  DateTime @default(now())
+
+  order  Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  sender User  @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, createdAt])
+  @@index([senderId])
 }
 
 model RefundRequest {
@@ -383,6 +424,28 @@ model Notification {
 
   @@index([userId, readAt])
   @@index([type])
+}
+
+model SupportTicket {
+  id         String    @id @default(cuid())
+  userId     String
+  orderId    String?
+  orderCode  String?
+  category   String
+  subject    String
+  message    String
+  status     String    @default("OPEN")
+  adminNote  String?
+  resolvedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  order Order? @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@index([orderId])
+  @@index([status, createdAt])
 }
 
 model Review {

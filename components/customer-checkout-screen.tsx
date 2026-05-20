@@ -16,11 +16,17 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { useCustomerApp } from "@/components/customer-app-provider";
 import { MobileDeviceFrame } from "@/components/mobile-device-frame";
 import { formatRp } from "@/lib/customer-data";
+import {
+  defaultCustomerLocation,
+  getCustomerLocationFromAddresses,
+  type ApiCustomerAddress,
+  type CustomerLocation,
+} from "@/lib/customer-location";
 
 const pickupOptions = [
   {
@@ -68,6 +74,15 @@ const paymentOptions: {
 ];
 
 const serviceFee = 2000;
+const SELECTED_VOUCHER_KEY = "resqfood-selected-voucher";
+
+type CheckoutVoucher = {
+  code: string;
+  discount: number;
+  minSpendAmount: number;
+  status: "available" | "used" | "expired";
+  title: string;
+};
 
 export function CustomerCheckoutScreen() {
   const router = useRouter();
@@ -80,13 +95,184 @@ export function CustomerCheckoutScreen() {
   const [notes, setNotes] = useState("");
   const [agreePickup, setAgreePickup] = useState(true);
   const [isSubmittingOrder, setIsSubmittingOrder] = useState(false);
+  const [isLoadingLocation, setIsLoadingLocation] = useState(true);
+  const [customerLocation, setCustomerLocation] = useState<CustomerLocation>(
+    defaultCustomerLocation,
+  );
   const [checkoutNotice, setCheckoutNotice] = useState<string | null>(null);
+  const [voucherCode, setVoucherCode] = useState("");
+  const [activeVoucher, setActiveVoucher] = useState<CheckoutVoucher | null>(
+    null,
+  );
+  const [voucherNotice, setVoucherNotice] = useState<string | null>(null);
+  const [isLoadingVoucher, setIsLoadingVoucher] = useState(false);
 
-  const grandTotal = Math.max(0, cartTotal + serviceFee);
+  const voucherDiscount = activeVoucher
+    ? Math.min(activeVoucher.discount, cartTotal)
+    : 0;
+  const grandTotal = Math.max(0, cartTotal - voucherDiscount) + serviceFee;
   const selectedPickup = pickupOptions.find((item) => item.id === pickupTime);
+  const hasCustomerCoordinates = Boolean(customerLocation.coordinates);
+  const hasRestaurantCoordinates = cart.every(
+    (item) =>
+      item.restaurantLatitude !== null &&
+      item.restaurantLatitude !== undefined &&
+      item.restaurantLongitude !== null &&
+      item.restaurantLongitude !== undefined,
+  );
+  const locationIssue = !hasCustomerCoordinates
+    ? "Tambahkan alamat customer dengan titik maps sebelum checkout."
+    : !hasRestaurantCoordinates
+      ? "Restoran di keranjang belum punya titik lokasi. Minta mitra melengkapi lokasi toko dulu."
+      : "";
+  const canPay =
+    agreePickup &&
+    !isSubmittingOrder &&
+    !isLoadingLocation &&
+    !locationIssue;
+
+  useEffect(() => {
+    let ignore = false;
+
+    async function loadCustomerLocation() {
+      setIsLoadingLocation(true);
+
+      try {
+        const response = await fetch("/api/addresses", { cache: "no-store" });
+        const data = (await response.json()) as {
+          ok: boolean;
+          addresses?: ApiCustomerAddress[];
+        };
+
+        if (!ignore && data.ok) {
+          setCustomerLocation(
+            getCustomerLocationFromAddresses(data.addresses ?? []),
+          );
+        }
+      } catch {
+        if (!ignore) {
+          setCustomerLocation(defaultCustomerLocation);
+        }
+      } finally {
+        if (!ignore) {
+          setIsLoadingLocation(false);
+        }
+      }
+    }
+
+    void loadCustomerLocation();
+
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (cart.length === 0) {
+      setActiveVoucher(null);
+      setVoucherNotice(null);
+      setIsLoadingVoucher(false);
+      return;
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    const selectedVoucherCode = (
+      params.get("voucher") ||
+      window.localStorage.getItem(SELECTED_VOUCHER_KEY) ||
+      ""
+    )
+      .trim()
+      .toUpperCase();
+
+    if (!selectedVoucherCode) {
+      setVoucherCode("");
+      setActiveVoucher(null);
+      setVoucherNotice(null);
+      setIsLoadingVoucher(false);
+      return;
+    }
+
+    let ignore = false;
+
+    async function loadVoucher() {
+      setIsLoadingVoucher(true);
+      setVoucherCode(selectedVoucherCode);
+      setVoucherNotice(null);
+
+      try {
+        const response = await fetch("/api/vouchers", { cache: "no-store" });
+        const data = (await response.json()) as {
+          ok: boolean;
+          message?: string;
+          vouchers?: CheckoutVoucher[];
+        };
+
+        if (!response.ok || !data.ok) {
+          throw new Error(data.message || "Voucher gagal dicek.");
+        }
+
+        const voucher = (data.vouchers ?? []).find(
+          (item) => item.code.toUpperCase() === selectedVoucherCode,
+        );
+
+        if (!voucher || voucher.status !== "available") {
+          window.localStorage.removeItem(SELECTED_VOUCHER_KEY);
+
+          if (!ignore) {
+            setActiveVoucher(null);
+            setVoucherNotice("Voucher tidak tersedia atau sudah pernah dipakai.");
+          }
+
+          return;
+        }
+
+        if (cartTotal < voucher.minSpendAmount) {
+          window.localStorage.removeItem(SELECTED_VOUCHER_KEY);
+
+          if (!ignore) {
+            setActiveVoucher(null);
+            setVoucherNotice(
+              `Minimum transaksi voucher ${formatRp(voucher.minSpendAmount)}.`,
+            );
+          }
+
+          return;
+        }
+
+        window.localStorage.setItem(SELECTED_VOUCHER_KEY, voucher.code);
+
+        if (!ignore) {
+          setActiveVoucher(voucher);
+          setVoucherNotice(null);
+        }
+      } catch (error) {
+        if (!ignore) {
+          setActiveVoucher(null);
+          setVoucherNotice(
+            error instanceof Error ? error.message : "Voucher gagal dicek.",
+          );
+        }
+      } finally {
+        if (!ignore) {
+          setIsLoadingVoucher(false);
+        }
+      }
+    }
+
+    void loadVoucher();
+
+    return () => {
+      ignore = true;
+    };
+  }, [cart.length, cartTotal]);
 
   const handlePaymentSuccess = async () => {
     if (cart.length === 0 || isSubmittingOrder) {
+      return;
+    }
+
+    if (locationIssue) {
+      setCheckoutNotice(locationIssue);
       return;
     }
 
@@ -105,6 +291,7 @@ export function CustomerCheckoutScreen() {
             quantity: item.qty,
           })),
           note: notes.trim() || undefined,
+          voucherCode: activeVoucher?.code,
         }),
       });
       const data = (await response.json()) as {
@@ -120,6 +307,7 @@ export function CustomerCheckoutScreen() {
       }
 
       clearCart();
+      window.localStorage.removeItem(SELECTED_VOUCHER_KEY);
       router.push(`/payment-success?order=${data.order.orderCode}`);
     } catch (error) {
       setCheckoutNotice(
@@ -203,20 +391,42 @@ export function CustomerCheckoutScreen() {
               </section>
 
               <section className="rounded-[28px] border border-gray-100 bg-white p-5 shadow-sm">
-                <div className="mb-4 flex items-center gap-2">
-                  <MapPin size={19} className="text-emerald-500" />
-                  <h2 className="text-sm font-extrabold text-gray-950">
-                    Lokasi Pickup
-                  </h2>
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <MapPin size={19} className="text-emerald-500" />
+                    <h2 className="text-sm font-extrabold text-gray-950">
+                      Lokasi Wajib
+                    </h2>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => router.push("/profile/addresses")}
+                    className="rounded-xl bg-emerald-50 px-3 py-2 text-[11px] font-extrabold text-emerald-700 transition-colors hover:bg-emerald-100"
+                  >
+                    Atur Alamat
+                  </button>
                 </div>
-                <div className="rounded-[22px] border border-gray-100 bg-gray-50 p-4">
+                <div
+                  className={`rounded-[22px] border p-4 ${
+                    locationIssue
+                      ? "border-red-100 bg-red-50"
+                      : "border-emerald-100 bg-emerald-50"
+                  }`}
+                >
                   <p className="text-sm font-extrabold text-gray-950">
-                    Pickup di restoran
+                    {isLoadingLocation
+                      ? "Memeriksa titik lokasi..."
+                      : hasCustomerCoordinates
+                        ? customerLocation.label
+                        : "Alamat bertitik maps belum ada"}
                   </p>
-                  <p className="mt-1 text-xs leading-5 font-medium text-gray-500">
-                    Alamat pickup mengikuti restoran pada item yang kamu
-                    checkout. Detail lokasi muncul di tracking order setelah
-                    checkout berhasil.
+                  <p
+                    className={`mt-1 text-xs leading-5 font-medium ${
+                      locationIssue ? "text-red-700" : "text-emerald-700"
+                    }`}
+                  >
+                    {locationIssue ||
+                      "Rute pickup akan dibuat dari alamat ini ke lokasi toko."}
                   </p>
                 </div>
               </section>
@@ -320,9 +530,39 @@ export function CustomerCheckoutScreen() {
                     </h2>
                   </div>
                 </div>
-                <p className="text-xs leading-5 font-medium text-gray-500">
-                  Voucher diterapkan dari keranjang jika kode voucher masih valid.
-                </p>
+                {isLoadingVoucher ? (
+                  <p className="text-xs leading-5 font-bold text-gray-500">
+                    Mengecek voucher dari keranjang...
+                  </p>
+                ) : activeVoucher ? (
+                  <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3">
+                    <p className="text-xs font-extrabold text-emerald-700">
+                      {activeVoucher.title}
+                    </p>
+                    <div className="mt-2 flex items-center justify-between gap-3 text-xs font-bold text-emerald-800">
+                      <span>{activeVoucher.code}</span>
+                      <span>- {formatRp(voucherDiscount)}</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <p className="text-xs leading-5 font-medium text-gray-500">
+                      Voucher diterapkan dari keranjang jika kode voucher masih valid.
+                    </p>
+                    {voucherCode && voucherNotice ? (
+                      <p className="rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-xs font-bold text-amber-700">
+                        {voucherNotice}
+                      </p>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => router.push("/cart")}
+                      className="rounded-2xl border border-gray-200 px-4 py-2.5 text-xs font-extrabold text-gray-700 transition-colors hover:bg-gray-50"
+                    >
+                      Pilih Voucher
+                    </button>
+                  </div>
+                )}
               </section>
 
               <section className="rounded-[28px] border border-gray-100 bg-white p-5 shadow-sm">
@@ -390,6 +630,12 @@ export function CustomerCheckoutScreen() {
                     <span>Diskon Surplus</span>
                     <span>- {formatRp(totalSaved)}</span>
                   </div>
+                  {activeVoucher ? (
+                    <div className="flex justify-between rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 font-bold text-blue-600">
+                      <span>Voucher {activeVoucher.code}</span>
+                      <span>- {formatRp(voucherDiscount)}</span>
+                    </div>
+                  ) : null}
                   <div className="flex justify-between px-1 text-gray-600">
                     <span>Biaya Layanan</span>
                     <span>{formatRp(serviceFee)}</span>
@@ -407,7 +653,7 @@ export function CustomerCheckoutScreen() {
                 ) : null}
                 <button
                   type="button"
-                  disabled={!agreePickup || isSubmittingOrder}
+                  disabled={!canPay}
                   onClick={handlePaymentSuccess}
                   className="mt-5 hidden w-full rounded-2xl bg-gray-900 py-4 text-sm font-extrabold text-white shadow-[0_12px_26px_rgba(15,23,42,0.14)] transition-all duration-300 hover:bg-emerald-500 active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-gray-300 disabled:shadow-none lg:block"
                 >
@@ -458,7 +704,7 @@ export function CustomerCheckoutScreen() {
             </div>
             <button
               type="button"
-              disabled={!agreePickup || isSubmittingOrder}
+              disabled={!canPay}
               onClick={handlePaymentSuccess}
               className="w-full rounded-2xl bg-gray-900 py-4 text-sm font-extrabold text-white shadow-[0_12px_26px_rgba(15,23,42,0.14)] transition-all duration-300 hover:bg-emerald-500 active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-gray-300 disabled:shadow-none"
             >

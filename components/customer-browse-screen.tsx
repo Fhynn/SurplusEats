@@ -20,7 +20,14 @@ import { useEffect, useMemo, useState } from "react";
 
 import { useCustomerApp } from "@/components/customer-app-provider";
 import { CATEGORIES, formatRp, type Food } from "@/lib/customer-data";
+import {
+  defaultCustomerLocation,
+  getCustomerLocationFromAddresses,
+  type ApiCustomerAddress,
+  type CustomerLocation,
+} from "@/lib/customer-location";
 import { menuItemToFood, type ApiMenuItem } from "@/lib/food-mapper";
+import { applyFoodDistance, sortFoodsByDistance } from "@/lib/geo-distance";
 
 const filterChips = [
   "Terdekat",
@@ -41,6 +48,9 @@ export function CustomerBrowseScreen() {
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [allFoods, setAllFoods] = useState<Food[]>([]);
   const [isLoadingFoods, setIsLoadingFoods] = useState(true);
+  const [customerLocation, setCustomerLocation] = useState<CustomerLocation>(
+    defaultCustomerLocation,
+  );
 
   useEffect(() => {
     let ignore = false;
@@ -55,16 +65,31 @@ export function CustomerBrowseScreen() {
           params.set("q", query.trim());
         }
 
-        const response = await fetch(`/api/menu-items?${params.toString()}`, {
-          cache: "no-store",
-        });
+        const [response, addressesResponse] = await Promise.all([
+          fetch(`/api/menu-items?${params.toString()}`, {
+            cache: "no-store",
+          }),
+          fetch("/api/addresses", { cache: "no-store" }),
+        ]);
         const result = (await response.json()) as {
           ok: boolean;
           menuItems?: ApiMenuItem[];
         };
+        const addressesData = (await addressesResponse.json()) as {
+          ok: boolean;
+          addresses?: ApiCustomerAddress[];
+        };
 
         if (!ignore) {
-          setAllFoods(result.menuItems?.map(menuItemToFood) ?? []);
+          const nextLocation = getCustomerLocationFromAddresses(
+            addressesData.addresses ?? [],
+          );
+          const nextFoods = (result.menuItems?.map(menuItemToFood) ?? []).map(
+            (food) => applyFoodDistance(food, nextLocation.coordinates),
+          );
+
+          setCustomerLocation(nextLocation);
+          setAllFoods(sortFoodsByDistance(nextFoods));
         }
       } catch {
         if (!ignore) {
@@ -118,23 +143,33 @@ export function CustomerBrowseScreen() {
       );
     }
 
-    return nextFoods;
+    return sortFoodsByDistance(nextFoods);
   }, [activeCategory, activeFilter, allFoods, query]);
+
+  const locationStatus = customerLocation.coordinates
+    ? "Lokasi Saat Ini"
+    : customerLocation.hasSavedAddress
+      ? "Titik maps belum aktif"
+      : "Lokasi Saat Ini";
 
   return (
     <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-gray-50">
       <header className="sticky top-0 z-20 rounded-b-3xl bg-white px-6 pt-8 pb-4 shadow-[0_4px_20px_rgba(0,0,0,0.03)] md:rounded-none md:px-8 md:pt-6 lg:px-10">
         <div className="mx-auto mb-5 flex w-full max-w-7xl items-center justify-between">
-          <div className="flex flex-col">
+          <button
+            type="button"
+            onClick={() => router.push("/profile/addresses")}
+            className="flex max-w-[210px] flex-col text-left"
+          >
             <span className="mb-0.5 flex items-center gap-1 text-xs font-semibold text-gray-400">
-              Lokasi Saat Ini
+              {locationStatus}
               <ChevronDown size={14} className="text-emerald-500" />
             </span>
-            <div className="flex items-center gap-1.5 text-sm font-bold text-gray-900">
+            <div className="flex min-w-0 items-center gap-1.5 text-sm font-bold text-gray-900">
               <MapPin size={16} className="text-emerald-500" />
-              Pilih lokasi
+              <span className="truncate">{customerLocation.label}</span>
             </div>
-          </div>
+          </button>
 
           <div className="flex items-center gap-2">
             <button

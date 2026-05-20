@@ -33,6 +33,8 @@ type HistoryOrder = {
   image: string;
   foodId?: string;
   note: string;
+  reviewRating?: number;
+  reviewComment?: string | null;
 };
 
 const statusClassNameByStatus: Record<HistoryOrderStatus, string> = {
@@ -63,9 +65,13 @@ function mapApiOrderToHistory(order: ApiOrder): HistoryOrder | null {
     statusText: card.statusText,
     image: card.image,
     foodId: card.foodId,
+    reviewRating: card.reviewRating,
+    reviewComment: card.reviewComment,
     note:
       card.status === "completed"
-        ? "Pickup selesai dan order sudah tercatat."
+        ? card.reviewRating
+          ? `Sudah diulas ${card.reviewRating}/5.`
+          : "Pickup selesai dan order sudah tercatat."
         : "Order dibatalkan atau pembayaran tidak berhasil.",
   };
 }
@@ -79,7 +85,10 @@ export function CustomerHistoryScreen() {
   const [query, setQuery] = useState("");
   const [isLoadingOrders, setIsLoadingOrders] = useState(true);
   const [isSubmittingReview, setIsSubmittingReview] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{
+    type: "success" | "error";
+    message: string;
+  } | null>(null);
 
   const loadOrders = useCallback(async () => {
     setIsLoadingOrders(true);
@@ -103,11 +112,13 @@ export function CustomerHistoryScreen() {
       );
       setNotice(null);
     } catch (error) {
-      setNotice(
-        error instanceof Error
-          ? error.message
-          : "Riwayat pesanan gagal dimuat.",
-      );
+      setNotice({
+        type: "error",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Riwayat pesanan gagal dimuat.",
+      });
     } finally {
       setIsLoadingOrders(false);
     }
@@ -138,6 +149,12 @@ export function CustomerHistoryScreen() {
     setReviewComment("");
   };
 
+  const handleOpenReview = (order: HistoryOrder) => {
+    setReviewOrder(order);
+    setRating(order.reviewRating ?? 0);
+    setReviewComment(order.reviewComment ?? "");
+  };
+
   const handleSubmitReview = async () => {
     if (rating <= 0) {
       return;
@@ -166,12 +183,29 @@ export function CustomerHistoryScreen() {
         throw new Error(data.message || "Ulasan gagal disimpan.");
       }
 
-      setNotice("Ulasan berhasil disimpan.");
+      setOrders((currentOrders) =>
+        currentOrders.map((order) =>
+          order.id === reviewOrder?.id
+            ? {
+                ...order,
+                reviewRating: rating,
+                reviewComment: reviewComment.trim() || null,
+                note: `Sudah diulas ${rating}/5.`,
+              }
+            : order,
+        ),
+      );
+      setNotice({
+        type: "success",
+        message: "Ulasan berhasil disimpan.",
+      });
       handleCloseReview();
     } catch (error) {
-      setNotice(
-        error instanceof Error ? error.message : "Ulasan gagal disimpan.",
-      );
+      setNotice({
+        type: "error",
+        message:
+          error instanceof Error ? error.message : "Ulasan gagal disimpan.",
+      });
     } finally {
       setIsSubmittingReview(false);
     }
@@ -216,8 +250,14 @@ export function CustomerHistoryScreen() {
 
       <main className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 pt-6 pb-28 [scrollbar-width:none] sm:px-6 md:mx-auto md:w-full md:max-w-6xl md:px-8 [&::-webkit-scrollbar]:hidden">
         {notice ? (
-          <div className="rounded-[24px] border border-red-100 bg-red-50 p-4 text-sm font-bold text-red-700">
-            {notice}
+          <div
+            className={`rounded-[24px] border p-4 text-sm font-bold ${
+              notice.type === "success"
+                ? "border-emerald-100 bg-emerald-50 text-emerald-700"
+                : "border-red-100 bg-red-50 text-red-700"
+            }`}
+          >
+            {notice.message}
           </div>
         ) : null}
 
@@ -307,11 +347,11 @@ export function CustomerHistoryScreen() {
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                   <button
                     type="button"
-                    onClick={() => setReviewOrder(order)}
+                    onClick={() => handleOpenReview(order)}
                     className="flex min-h-11 items-center justify-center gap-1 rounded-xl border border-emerald-200 bg-white px-2 text-[11px] font-extrabold whitespace-nowrap text-emerald-600 transition-colors hover:bg-emerald-50"
                   >
                     <MessageSquare size={13} />
-                    Ulas
+                    {order.reviewRating ? "Edit Ulasan" : "Ulas"}
                   </button>
                   <button
                     type="button"

@@ -16,6 +16,14 @@ import {
 
 import { MobileDeviceFrame } from "@/components/mobile-device-frame";
 import { formatRp } from "@/lib/customer-data";
+import {
+  getCustomerLocationFromAddresses,
+  type ApiCustomerAddress,
+} from "@/lib/customer-location";
+import {
+  getPickupRouteUrl,
+  type Coordinates,
+} from "@/lib/geo-distance";
 import type { ApiOrder } from "@/lib/order-mapper";
 
 function formatDate(value: string | null) {
@@ -35,6 +43,8 @@ function PaymentSuccessContent() {
   const searchParams = useSearchParams();
   const orderCode = searchParams.get("order");
   const [order, setOrder] = useState<ApiOrder | null>(null);
+  const [customerCoordinates, setCustomerCoordinates] =
+    useState<Coordinates | null>(null);
   const [isLoading, setIsLoading] = useState(Boolean(orderCode));
 
   useEffect(() => {
@@ -49,16 +59,28 @@ function PaymentSuccessContent() {
       setIsLoading(true);
 
       try {
-        const response = await fetch(`/api/orders/${orderCode}`, {
-          cache: "no-store",
-        });
+        const [response, addressesResponse] = await Promise.all([
+          fetch(`/api/orders/${orderCode}`, {
+            cache: "no-store",
+          }),
+          fetch("/api/addresses", { cache: "no-store" }),
+        ]);
         const data = (await response.json()) as {
           ok: boolean;
           order?: ApiOrder;
         };
+        const addressesData = (await addressesResponse.json()) as {
+          ok: boolean;
+          addresses?: ApiCustomerAddress[];
+        };
 
         if (!ignore) {
+          const customerLocation = getCustomerLocationFromAddresses(
+            addressesData.addresses ?? [],
+          );
+
           setOrder(data.order ?? null);
+          setCustomerCoordinates(customerLocation.coordinates);
         }
       } catch {
         if (!ignore) {
@@ -117,7 +139,16 @@ function PaymentSuccessContent() {
     );
   }
 
-  const mapQuery = encodeURIComponent(
+  const restaurantCoordinates =
+    order.restaurant.latitude !== null && order.restaurant.longitude !== null
+      ? {
+          latitude: order.restaurant.latitude,
+          longitude: order.restaurant.longitude,
+        }
+      : null;
+  const pickupRoute = getPickupRouteUrl(
+    customerCoordinates,
+    restaurantCoordinates,
     `${order.restaurant.name} ${order.restaurant.city}`,
   );
 
@@ -196,13 +227,13 @@ function PaymentSuccessContent() {
                 </p>
               </div>
               <a
-                href={`https://www.google.com/maps/search/?api=1&query=${mapQuery}`}
+                href={pickupRoute.url}
                 target="_blank"
                 rel="noreferrer"
                 className="flex items-center justify-center gap-2 rounded-2xl bg-white px-4 py-3 text-xs font-extrabold text-blue-600 transition-colors hover:bg-blue-50"
               >
                 <Navigation size={15} />
-                Arahkan Lokasi
+                {pickupRoute.label}
               </a>
             </div>
 
@@ -231,6 +262,16 @@ function PaymentSuccessContent() {
               <div className="flex justify-between text-sm font-medium text-gray-500">
                 <span>Subtotal</span>
                 <span>{formatRp(itemSubtotal)}</span>
+              </div>
+              {order.discount > 0 ? (
+                <div className="flex justify-between text-sm font-extrabold text-blue-600">
+                  <span>Voucher</span>
+                  <span>- {formatRp(order.discount)}</span>
+                </div>
+              ) : null}
+              <div className="flex justify-between text-sm font-medium text-gray-500">
+                <span>Biaya Layanan</span>
+                <span>{formatRp(order.serviceFee)}</span>
               </div>
               <div className="flex justify-between rounded-2xl bg-emerald-50 px-4 py-3 text-sm font-extrabold text-emerald-700">
                 <span>Total Dibayar</span>

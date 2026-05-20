@@ -5,6 +5,8 @@ import {
   CheckCircle2,
   ChevronLeft,
   Clock3,
+  ChevronRight,
+  ExternalLink,
   Heart,
   Leaf,
   MapPin,
@@ -24,6 +26,15 @@ import { useCustomerApp } from "@/components/customer-app-provider";
 import { MobileDeviceFrame } from "@/components/mobile-device-frame";
 import type { Food } from "@/lib/customer-data";
 import { formatRp } from "@/lib/customer-data";
+import {
+  getCustomerLocationFromAddresses,
+  type ApiCustomerAddress,
+} from "@/lib/customer-location";
+import {
+  applyFoodDistance,
+  getPickupRouteUrl,
+  type Coordinates,
+} from "@/lib/geo-distance";
 
 interface CustomerFoodDetailScreenProps {
   food: Food;
@@ -40,17 +51,85 @@ export function CustomerFoodDetailScreen({
 }: CustomerFoodDetailScreenProps) {
   const router = useRouter();
   const { addToCart } = useCustomerApp();
+  const [displayFood, setDisplayFood] = useState(food);
+  const [customerCoordinates, setCustomerCoordinates] =
+    useState<Coordinates | null>(null);
   const [isAdded, setIsAdded] = useState(false);
   const [isFavorite, setIsFavorite] = useState(false);
+  const [isTogglingFavorite, setIsTogglingFavorite] = useState(false);
   const [qty, setQty] = useState(1);
 
-  const subtotal = food.price * qty;
-  const originalSubtotal = food.originalPrice * qty;
+  const subtotal = displayFood.price * qty;
+  const originalSubtotal = displayFood.originalPrice * qty;
   const savedAmount = originalSubtotal - subtotal;
+  const pickupRoute =
+    displayFood.restaurantLatitude !== null &&
+    displayFood.restaurantLatitude !== undefined &&
+    displayFood.restaurantLongitude !== null &&
+    displayFood.restaurantLongitude !== undefined
+      ? getPickupRouteUrl(
+          customerCoordinates,
+          {
+            latitude: displayFood.restaurantLatitude,
+            longitude: displayFood.restaurantLongitude,
+          },
+          `${displayFood.restaurant} ${displayFood.restaurantCity ?? ""}`,
+        )
+      : null;
+  const pickupDistanceText =
+    displayFood.distanceKm !== null && displayFood.distanceKm !== undefined
+      ? displayFood.restaurantCity
+        ? `${displayFood.restaurantCity} - estimasi ${displayFood.distance} dari lokasimu.`
+        : `Estimasi ${displayFood.distance} dari lokasimu.`
+      : displayFood.restaurantCity
+        ? `${displayFood.restaurantCity} - atur titik maps untuk estimasi jarak.`
+        : "Atur titik maps untuk estimasi jarak.";
   const savedPercent = useMemo(
     () => Math.round((savedAmount / originalSubtotal) * 100),
     [originalSubtotal, savedAmount],
   );
+
+  useEffect(() => {
+    let ignore = false;
+
+    async function loadDistance() {
+      try {
+        const [response, favoriteResponse] = await Promise.all([
+          fetch("/api/addresses", { cache: "no-store" }),
+          fetch(`/api/favorites?menuItemId=${food.id}`, { cache: "no-store" }),
+        ]);
+        const data = (await response.json()) as {
+          ok: boolean;
+          addresses?: ApiCustomerAddress[];
+        };
+        const favoriteData = (await favoriteResponse.json()) as {
+          ok: boolean;
+          isFavorite?: boolean;
+        };
+
+        if (!ignore && data.ok) {
+          const location = getCustomerLocationFromAddresses(data.addresses ?? []);
+          setCustomerCoordinates(location.coordinates);
+          setDisplayFood(applyFoodDistance(food, location.coordinates));
+        }
+
+        if (!ignore && favoriteData.ok) {
+          setIsFavorite(Boolean(favoriteData.isFavorite));
+        }
+      } catch {
+        if (!ignore) {
+          setCustomerCoordinates(null);
+          setDisplayFood(applyFoodDistance(food, null));
+        }
+      }
+    }
+
+    void loadDistance();
+
+    return () => {
+      ignore = true;
+    };
+  }, [food]);
 
   useEffect(() => {
     if (!isAdded) {
@@ -67,9 +146,50 @@ export function CustomerFoodDetailScreen({
   }, [isAdded]);
 
   const handleAddToCart = () => {
-    Array.from({ length: qty }).forEach(() => addToCart(food));
+    Array.from({ length: qty }).forEach(() => addToCart(displayFood));
     setIsAdded(true);
   };
+
+  const handleToggleFavorite = async () => {
+    if (isTogglingFavorite) {
+      return;
+    }
+
+    const nextFavoriteState = !isFavorite;
+    setIsTogglingFavorite(true);
+    setIsFavorite(nextFavoriteState);
+
+    try {
+      const response = await fetch(
+        nextFavoriteState
+          ? "/api/favorites"
+          : `/api/favorites?menuItemId=${displayFood.id}`,
+        {
+          method: nextFavoriteState ? "POST" : "DELETE",
+          headers: nextFavoriteState
+            ? { "Content-Type": "application/json" }
+            : undefined,
+          body: nextFavoriteState
+            ? JSON.stringify({ menuItemId: displayFood.id })
+            : undefined,
+        },
+      );
+      const data = (await response.json()) as { ok: boolean; message?: string };
+
+      if (!response.ok || !data.ok) {
+        throw new Error(data.message || "Favorit gagal diperbarui.");
+      }
+    } catch {
+      setIsFavorite(!nextFavoriteState);
+    } finally {
+      setIsTogglingFavorite(false);
+    }
+  };
+
+  const storeRoute =
+    displayFood.restaurantSlug || displayFood.restaurantId
+      ? `/stores/${displayFood.restaurantSlug ?? displayFood.restaurantId}`
+      : null;
 
   return (
     <MobileDeviceFrame backgroundClassName="bg-gray-50">
@@ -86,7 +206,8 @@ export function CustomerFoodDetailScreen({
             </button>
             <button
               type="button"
-              onClick={() => setIsFavorite((current) => !current)}
+              onClick={handleToggleFavorite}
+              disabled={isTogglingFavorite}
               className="absolute top-10 right-6 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-white/85 text-gray-700 shadow-[0_8px_24px_rgba(15,23,42,0.10)] backdrop-blur-md transition-colors hover:bg-white"
               aria-label="Simpan makanan"
             >
@@ -99,8 +220,8 @@ export function CustomerFoodDetailScreen({
             </button>
 
             <Image
-              src={food.image}
-              alt={food.name}
+              src={displayFood.image}
+              alt={displayFood.name}
               fill
               priority
               sizes="100vw"
@@ -114,15 +235,15 @@ export function CustomerFoodDetailScreen({
                   Hemat {savedPercent}%
                 </span>
                 <span className="rounded-full bg-white/20 px-3 py-1 text-[10px] font-extrabold backdrop-blur">
-                  {food.category}
+                  {displayFood.category}
                 </span>
               </div>
               <h1 className="max-w-4xl text-3xl leading-tight font-extrabold tracking-tight md:text-5xl">
-                {food.name}
+                {displayFood.name}
               </h1>
               <p className="mt-2 flex items-center gap-1.5 text-sm font-semibold text-white/90">
                 <Store size={15} />
-                {food.restaurant}
+                {displayFood.restaurant}
               </p>
             </div>
           </section>
@@ -134,22 +255,22 @@ export function CustomerFoodDetailScreen({
               <div className="rounded-[20px] border border-amber-100 bg-amber-50 p-3 text-center">
                 <div className="mb-1 flex items-center justify-center gap-1 text-amber-600">
                   <Star size={15} className="fill-amber-500 text-amber-500" />
-                  <span className="text-sm font-extrabold">{food.rating}</span>
+                  <span className="text-sm font-extrabold">{displayFood.rating}</span>
                 </div>
                 <p className="text-[10px] font-bold text-gray-500">
-                  {food.reviews} ulasan
+                  {displayFood.reviews} ulasan
                 </p>
               </div>
               <div className="rounded-[20px] border border-emerald-100 bg-emerald-50 p-3 text-center">
                 <div className="mb-1 flex items-center justify-center gap-1 text-emerald-600">
                   <MapPin size={15} />
-                  <span className="text-sm font-extrabold">{food.distance}</span>
+                  <span className="text-sm font-extrabold">{displayFood.distance}</span>
                 </div>
                 <p className="text-[10px] font-bold text-gray-500">Jarak</p>
               </div>
               <div className="rounded-[20px] border border-blue-100 bg-blue-50 p-3 text-center">
                 <div className="mb-1 text-sm font-extrabold text-blue-600">
-                  {food.stock} Porsi
+                  {displayFood.stock} Porsi
                 </div>
                 <p className="text-[10px] font-bold text-gray-500">Stok</p>
               </div>
@@ -162,16 +283,16 @@ export function CustomerFoodDetailScreen({
                     Surplus Price
                   </p>
                   <p className="mt-1 text-3xl font-extrabold text-emerald-600">
-                    {formatRp(food.price)}
+                    {formatRp(displayFood.price)}
                   </p>
                   <p className="mt-1 text-sm font-medium text-gray-400 line-through">
-                    {formatRp(food.originalPrice)}
+                    {formatRp(displayFood.originalPrice)}
                   </p>
                 </div>
                 <div className="rounded-2xl bg-white px-3 py-2 text-right shadow-sm">
                   <p className="text-[10px] font-bold text-gray-400">Hemat</p>
                   <p className="text-sm font-extrabold text-gray-950">
-                    {formatRp(food.originalPrice - food.price)}
+                    {formatRp(displayFood.originalPrice - displayFood.price)}
                   </p>
                 </div>
               </div>
@@ -194,7 +315,7 @@ export function CustomerFoodDetailScreen({
                   <button
                     type="button"
                     onClick={() =>
-                      setQty((current) => Math.min(food.stock, current + 1))
+                      setQty((current) => Math.min(displayFood.stock, current + 1))
                     }
                     className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-500 text-white shadow-[0_4px_16px_rgba(16,185,129,0.22)]"
                     aria-label="Tambah jumlah"
@@ -210,9 +331,37 @@ export function CustomerFoodDetailScreen({
                 Deskripsi Makanan
               </h2>
               <p className="text-sm leading-7 font-medium text-gray-600">
-                {food.description}
+                {displayFood.description}
               </p>
             </section>
+
+            {storeRoute ? (
+              <section className="mb-6 rounded-[28px] border border-gray-100 bg-white p-5 shadow-sm">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
+                      <Store size={22} />
+                    </div>
+                    <div className="min-w-0">
+                      <h2 className="truncate text-sm font-extrabold text-gray-950">
+                        {displayFood.restaurant}
+                      </h2>
+                      <p className="mt-0.5 text-xs font-semibold text-gray-500">
+                        {displayFood.reviews} ulasan • {displayFood.rating}/5
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => router.push(storeRoute)}
+                    className="inline-flex shrink-0 items-center gap-1.5 rounded-2xl bg-gray-900 px-4 py-3 text-xs font-extrabold text-white transition-colors hover:bg-emerald-500"
+                  >
+                    Toko
+                    <ChevronRight size={14} />
+                  </button>
+                </div>
+              </section>
+            ) : null}
 
             <section className="mb-6 rounded-[28px] border border-gray-100 bg-white p-5 shadow-sm">
               <div className="mb-4 flex items-center gap-2">
@@ -226,7 +375,7 @@ export function CustomerFoodDetailScreen({
                   <Clock3 size={16} className="mt-0.5 shrink-0 text-amber-600" />
                   <div>
                     <p className="text-xs font-extrabold text-amber-900">
-                      {food.time}
+                      {displayFood.time}
                     </p>
                     <p className="mt-0.5 text-[11px] font-medium text-amber-700">
                       Datang sesuai jam pickup agar kualitas makanan optimal.
@@ -238,13 +387,26 @@ export function CustomerFoodDetailScreen({
                     size={16}
                     className="mt-0.5 shrink-0 text-blue-600"
                   />
-                  <div>
+                  <div className="min-w-0 flex-1">
                     <p className="text-xs font-extrabold text-blue-900">
-                      Alamat restoran mengikuti data toko.
+                      {displayFood.restaurantAddress ||
+                        "Alamat restoran mengikuti data toko."}
                     </p>
                     <p className="mt-0.5 text-[11px] font-medium text-blue-700">
-                      Estimasi {food.distance} dari lokasimu.
+                      {pickupDistanceText}
                     </p>
+                    {pickupRoute ? (
+                      <a
+                        href={pickupRoute.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-3 inline-flex items-center gap-1.5 rounded-xl bg-white px-3 py-2 text-[11px] font-extrabold text-blue-700 shadow-sm transition-colors hover:bg-blue-100"
+                      >
+                        <MapPin size={13} />
+                        {pickupRoute.label}
+                        <ExternalLink size={12} />
+                      </a>
+                    ) : null}
                   </div>
                 </div>
               </div>
@@ -304,14 +466,14 @@ export function CustomerFoodDetailScreen({
                   </h2>
                 </div>
                 <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-extrabold text-amber-600">
-                  {food.rating}/5
+                  {displayFood.rating}/5
                 </span>
               </div>
               <div className="rounded-2xl bg-gray-50 p-4">
                 <div className="mb-1 flex items-center gap-1 text-amber-500">
                   <Star size={14} className="fill-amber-500" />
                   <span className="text-xs font-extrabold">
-                    {food.rating}/5 dari {food.reviews} ulasan
+                    {displayFood.rating}/5 dari {displayFood.reviews} ulasan
                   </span>
                 </div>
                 <p className="text-xs leading-5 font-medium text-gray-500">

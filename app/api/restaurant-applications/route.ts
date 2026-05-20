@@ -90,7 +90,10 @@ export async function PATCH(request: Request) {
 
   const data = parsed.data;
 
-  const result = await prisma.$transaction(async (tx: PrismaTransactionClient) => {
+  let result: { application: object; restaurant: object | null } | null = null;
+
+  try {
+    result = await prisma.$transaction(async (tx: PrismaTransactionClient) => {
     const existingApplication = await tx.restaurantApplication.findUnique({
       where: { id: data.applicationId },
       select: { id: true },
@@ -100,8 +103,27 @@ export async function PATCH(request: Request) {
       return null;
     }
 
-    const application = await tx.restaurantApplication.update({
+    const existingApplicationData = await tx.restaurantApplication.findUnique({
       where: { id: existingApplication.id },
+      include: { user: true },
+    });
+
+    if (!existingApplicationData) {
+      return null;
+    }
+
+    if (
+      data.status === ApplicationStatus.APPROVED &&
+      (existingApplicationData.latitude === null ||
+        existingApplicationData.longitude === null)
+    ) {
+      throw new Error(
+        "Pengajuan belum punya titik lokasi toko. Mitra wajib melengkapi lokasi sebelum disetujui.",
+      );
+    }
+
+    const application = await tx.restaurantApplication.update({
+      where: { id: existingApplicationData.id },
       data: {
         status: data.status,
         adminNote: data.adminNote,
@@ -122,6 +144,8 @@ export async function PATCH(request: Request) {
           description: application.description,
           address: application.address,
           city: application.city,
+          latitude: application.latitude,
+          longitude: application.longitude,
           phone: application.phone,
           status: RestaurantStatus.APPROVED,
         },
@@ -133,6 +157,8 @@ export async function PATCH(request: Request) {
           description: application.description,
           address: application.address,
           city: application.city,
+          latitude: application.latitude,
+          longitude: application.longitude,
           phone: application.phone,
           status: RestaurantStatus.APPROVED,
           pickupStart: "18:00",
@@ -178,7 +204,17 @@ export async function PATCH(request: Request) {
     });
 
     return { application, restaurant };
-  });
+    });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        ok: false,
+        message:
+          error instanceof Error ? error.message : "Review pengajuan gagal.",
+      },
+      { status: 400 },
+    );
+  }
 
   if (!result) {
     return NextResponse.json(

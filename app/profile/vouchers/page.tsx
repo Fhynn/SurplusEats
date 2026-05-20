@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   AlertCircle,
   CheckCircle2,
@@ -47,7 +48,10 @@ const statusLabel: Record<VoucherStatus, string> = {
   expired: "Expired",
 };
 
+const SELECTED_VOUCHER_KEY = "resqfood-selected-voucher";
+
 export default function CustomerVouchersPage() {
+  const router = useRouter();
   const [vouchers, setVouchers] = useState<Voucher[]>([]);
   const [isLoadingVouchers, setIsLoadingVouchers] = useState(true);
   const [promoCode, setPromoCode] = useState("");
@@ -56,6 +60,7 @@ export default function CustomerVouchersPage() {
     message: string;
   } | null>(null);
   const [selectedVoucher, setSelectedVoucher] = useState<Voucher | null>(null);
+  const [isClaiming, setIsClaiming] = useState(false);
 
   const loadVouchers = useCallback(async () => {
     setIsLoadingVouchers(true);
@@ -94,7 +99,7 @@ export default function CustomerVouchersPage() {
     [vouchers],
   );
 
-  const handleClaimVoucher = () => {
+  const handleClaimVoucher = async () => {
     const normalizedCode = promoCode.trim().toUpperCase();
 
     if (!normalizedCode) {
@@ -105,32 +110,55 @@ export default function CustomerVouchersPage() {
       return;
     }
 
-    const voucher = vouchers.find((item) => item.code === normalizedCode);
+    setIsClaiming(true);
 
-    if (!voucher) {
+    try {
+      const response = await fetch("/api/vouchers", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ code: normalizedCode }),
+      });
+      const data = (await response.json()) as {
+        ok: boolean;
+        message?: string;
+      };
+
+      if (!response.ok || !data.ok) {
+        throw new Error(data.message || "Voucher gagal diklaim.");
+      }
+
+      setPromoCode("");
+      setFeedback({
+        type: "success",
+        message: data.message || "Voucher berhasil diklaim.",
+      });
+      await loadVouchers();
+    } catch (error) {
       setFeedback({
         type: "error",
-        message: "Kode promo tidak ditemukan atau sudah tidak berlaku.",
+        message:
+          error instanceof Error ? error.message : "Voucher gagal diklaim.",
       });
-      return;
+    } finally {
+      setIsClaiming(false);
     }
-
-    setPromoCode("");
-    setFeedback({
-      type: "success",
-      message: `${voucher.title} tersedia untuk dipakai.`,
-    });
   };
 
   const handleUseVoucher = (voucherId: string) => {
     const voucher = vouchers.find((item) => item.id === voucherId);
 
+    if (voucher) {
+      window.localStorage.setItem(SELECTED_VOUCHER_KEY, voucher.code);
+      router.push(`/cart?voucher=${encodeURIComponent(voucher.code)}`);
+      return;
+    }
+
     setSelectedVoucher(null);
     setFeedback({
       type: "success",
-      message: voucher
-        ? `Kode ${voucher.code} siap dipakai saat checkout.`
-        : "Voucher siap dipakai saat checkout.",
+      message: "Voucher siap dipakai saat checkout.",
     });
   };
 
@@ -182,10 +210,11 @@ export default function CustomerVouchersPage() {
             />
             <button
               type="button"
-              onClick={handleClaimVoucher}
-              className="rounded-xl bg-gray-900 px-5 text-sm font-bold text-white transition-colors hover:bg-emerald-500"
+              onClick={() => void handleClaimVoucher()}
+              disabled={isClaiming}
+              className="rounded-xl bg-gray-900 px-5 text-sm font-bold text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-gray-300"
             >
-              Klaim
+              {isClaiming ? "Klaim..." : "Klaim"}
             </button>
           </div>
 

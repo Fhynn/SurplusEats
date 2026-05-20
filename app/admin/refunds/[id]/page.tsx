@@ -78,6 +78,7 @@ export default function AdminRefundDetailPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [noticeType, setNoticeType] = useState<"error" | "success">("error");
 
   const loadRefund = useCallback(async () => {
     setIsLoading(true);
@@ -100,6 +101,7 @@ export default function AdminRefundDetailPage() {
       setAdminNote(data.refund.adminNote || "");
       setNotice(null);
     } catch (error) {
+      setNoticeType("error");
       setNotice(error instanceof Error ? error.message : "Refund gagal dimuat.");
       setRefund(null);
     } finally {
@@ -136,7 +138,14 @@ export default function AdminRefundDetailPage() {
       }
 
       await loadRefund();
+      setNoticeType("success");
+      setNotice(
+        status === "PAID"
+          ? "Refund ditandai dibayarkan. Order, payment, dan wallet sudah disesuaikan."
+          : "Status refund berhasil diperbarui.",
+      );
     } catch (error) {
+      setNoticeType("error");
       setNotice(
         error instanceof Error ? error.message : "Refund gagal diperbarui.",
       );
@@ -190,7 +199,13 @@ export default function AdminRefundDetailPage() {
       </header>
 
       {notice ? (
-        <div className="rounded-2xl border border-red-100 bg-red-50 p-4 text-sm font-bold text-red-700">
+        <div
+          className={`rounded-2xl border p-4 text-sm font-bold ${
+            noticeType === "success"
+              ? "border-emerald-100 bg-emerald-50 text-emerald-700"
+              : "border-red-100 bg-red-50 text-red-700"
+          }`}
+        >
           {notice}
         </div>
       ) : null}
@@ -292,7 +307,8 @@ export default function AdminRefundDetailPage() {
               Keputusan Refund
             </h2>
             <p className="mt-2 text-sm leading-6 font-medium text-gray-500">
-              Status ini langsung disimpan ke tabel refund.
+              Status ini langsung memengaruhi refund. Saat ditandai dibayarkan,
+              order, payment, dan wallet mitra ikut diperbarui.
             </p>
             <label className="mt-5 block text-sm font-extrabold text-gray-700">
               Catatan admin
@@ -307,7 +323,7 @@ export default function AdminRefundDetailPage() {
               <button
                 type="button"
                 onClick={() => updateRefund("REVIEWING")}
-                disabled={isSubmitting}
+                disabled={isSubmitting || refund.status === "PAID"}
                 className="rounded-2xl bg-amber-500 px-4 py-3 text-sm font-extrabold text-white disabled:bg-gray-300"
               >
                 Tandai Review
@@ -315,15 +331,27 @@ export default function AdminRefundDetailPage() {
               <button
                 type="button"
                 onClick={() => updateRefund("APPROVED")}
-                disabled={isSubmitting}
+                disabled={isSubmitting || refund.status === "PAID"}
                 className="rounded-2xl bg-emerald-500 px-4 py-3 text-sm font-extrabold text-white disabled:bg-gray-300"
               >
                 Setujui Refund
               </button>
               <button
                 type="button"
+                onClick={() => updateRefund("PAID")}
+                disabled={
+                  isSubmitting ||
+                  refund.status === "PAID" ||
+                  refund.status !== "APPROVED"
+                }
+                className="rounded-2xl bg-gray-950 px-4 py-3 text-sm font-extrabold text-white disabled:bg-gray-300"
+              >
+                Tandai Dibayarkan
+              </button>
+              <button
+                type="button"
                 onClick={() => updateRefund("REJECTED")}
-                disabled={isSubmitting}
+                disabled={isSubmitting || refund.status === "PAID"}
                 className="rounded-2xl bg-red-500 px-4 py-3 text-sm font-extrabold text-white disabled:bg-gray-300"
               >
                 Tolak Refund

@@ -59,6 +59,24 @@ const reviewTimeline = [
   "Keputusan refund dikirim",
 ];
 
+const maxEvidenceSize = 6 * 1024 * 1024;
+const allowedEvidenceTypes = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+]);
+
+type UploadResponse = {
+  ok: boolean;
+  message?: string;
+  asset?: {
+    id: string;
+    url: string;
+    pathname: string;
+  };
+};
+
 export default function CustomerRefundRequestPage() {
   const params = useParams<{ id: string }>();
   const orderId = params.id;
@@ -69,10 +87,16 @@ export default function CustomerRefundRequestPage() {
   const [selectedMethod, setSelectedMethod] =
     useState<(typeof refundMethods)[number]["id"]>("gopay");
   const [description, setDescription] = useState("");
+  const [selectedEvidenceFile, setSelectedEvidenceFile] = useState<File | null>(
+    null,
+  );
   const [evidenceFileName, setEvidenceFileName] = useState("");
+  const [evidenceAssetId, setEvidenceAssetId] = useState("");
   const [evidencePreview, setEvidencePreview] = useState("");
+  const [isUploadingEvidence, setIsUploadingEvidence] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const evidenceInputRef = useRef<HTMLInputElement>(null);
+  const uploadRequestRef = useRef(0);
   const trimmedDescription = description.trim();
   const hasValidDescription = trimmedDescription.length >= 12;
   const selectedRefundMethod = refundMethods.find(
@@ -85,11 +109,15 @@ export default function CustomerRefundRequestPage() {
       { label: "Alasan dipilih", done: Boolean(selectedReason) },
       { label: "Detail masalah jelas", done: hasValidDescription },
       { label: "Metode refund siap", done: Boolean(selectedRefundMethod) },
-      { label: "Bukti pendukung", done: Boolean(evidenceFileName) },
+      {
+        label: isUploadingEvidence ? "Bukti sedang diupload" : "Bukti pendukung",
+        done: Boolean(evidenceAssetId),
+      },
     ],
     [
-      evidenceFileName,
+      evidenceAssetId,
       hasValidDescription,
+      isUploadingEvidence,
       selectedReason,
       selectedRefundMethod,
     ],
@@ -101,7 +129,11 @@ export default function CustomerRefundRequestPage() {
   const completionPercent = Math.round(
     (completedCount / completionItems.length) * 100,
   );
-  const canSubmit = requiredCompletion.every((item) => item.done);
+  const evidenceReady = !selectedEvidenceFile || Boolean(evidenceAssetId);
+  const canSubmit =
+    requiredCompletion.every((item) => item.done) &&
+    evidenceReady &&
+    !isUploadingEvidence;
 
   useEffect(() => {
     let ignore = false;
@@ -148,6 +180,10 @@ export default function CustomerRefundRequestPage() {
 
   const handleSubmitRefund = async () => {
     if (!canSubmit || !order) {
+      if (selectedEvidenceFile && !evidenceAssetId) {
+        setNotice("Tunggu upload bukti selesai atau hapus bukti dulu.");
+      }
+
       return;
     }
 
@@ -160,6 +196,7 @@ export default function CustomerRefundRequestPage() {
           reason: selectedReason,
           description: trimmedDescription,
           method: selectedMethod === "gopay" ? "GOPAY" : "BANK_TRANSFER",
+          evidenceAssetIds: evidenceAssetId ? [evidenceAssetId] : [],
         }),
       });
       const data = (await response.json()) as { ok: boolean; message?: string };
@@ -184,7 +221,29 @@ export default function CustomerRefundRequestPage() {
     };
   }, [evidencePreview]);
 
-  const handleEvidenceChange = (event: ChangeEvent<HTMLInputElement>) => {
+  const uploadEvidence = async (file: File, uploadToken: number) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("folder", "refund-evidence");
+    formData.append("entityType", "refund_evidence");
+    formData.append("visibility", "PUBLIC");
+
+    const response = await fetch("/api/uploads", {
+      method: "POST",
+      body: formData,
+    });
+    const data = (await response.json()) as UploadResponse;
+
+    if (!response.ok || !data.ok || !data.asset?.id) {
+      throw new Error(data.message || "Upload bukti refund gagal.");
+    }
+
+    if (uploadRequestRef.current === uploadToken) {
+      setEvidenceAssetId(data.asset.id);
+    }
+  };
+
+  const handleEvidenceChange = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
 
     if (!file) {
@@ -195,17 +254,58 @@ export default function CustomerRefundRequestPage() {
       URL.revokeObjectURL(evidencePreview);
     }
 
+    uploadRequestRef.current += 1;
+    const uploadToken = uploadRequestRef.current;
+
+    setNotice(null);
+    setSelectedEvidenceFile(null);
+    setEvidenceAssetId("");
+    setEvidenceFileName("");
+    setEvidencePreview("");
+
+    if (!allowedEvidenceTypes.has(file.type)) {
+      setNotice("Bukti refund harus berupa JPG, PNG, WEBP, atau GIF.");
+      return;
+    }
+
+    if (file.size > maxEvidenceSize) {
+      setNotice("Ukuran bukti refund maksimal 6MB.");
+      return;
+    }
+
+    setSelectedEvidenceFile(file);
     setEvidenceFileName(file.name);
     setEvidencePreview(URL.createObjectURL(file));
+    setIsUploadingEvidence(true);
+
+    try {
+      await uploadEvidence(file, uploadToken);
+    } catch (error) {
+      if (uploadRequestRef.current === uploadToken) {
+        setNotice(
+          error instanceof Error ? error.message : "Upload bukti refund gagal.",
+        );
+        setEvidenceAssetId("");
+      }
+    } finally {
+      if (uploadRequestRef.current === uploadToken) {
+        setIsUploadingEvidence(false);
+      }
+    }
   };
 
   const clearEvidence = () => {
+    uploadRequestRef.current += 1;
+
     if (evidencePreview) {
       URL.revokeObjectURL(evidencePreview);
     }
 
+    setSelectedEvidenceFile(null);
     setEvidenceFileName("");
+    setEvidenceAssetId("");
     setEvidencePreview("");
+    setIsUploadingEvidence(false);
 
     if (evidenceInputRef.current) {
       evidenceInputRef.current.value = "";
@@ -458,6 +558,21 @@ export default function CustomerRefundRequestPage() {
                     <p className="truncate text-sm font-extrabold text-gray-900">
                       {evidenceFileName}
                     </p>
+                    <p
+                      className={`mt-1 text-xs font-bold ${
+                        isUploadingEvidence
+                          ? "text-amber-600"
+                          : evidenceAssetId
+                            ? "text-emerald-600"
+                            : "text-red-600"
+                      }`}
+                    >
+                      {isUploadingEvidence
+                        ? "Mengupload bukti..."
+                        : evidenceAssetId
+                          ? "Bukti tersimpan untuk review admin"
+                          : "Bukti belum tersimpan"}
+                    </p>
                     <button
                       type="button"
                       onClick={() => evidenceInputRef.current?.click()}
@@ -639,7 +754,11 @@ export default function CustomerRefundRequestPage() {
             disabled={!canSubmit}
             className="w-full rounded-2xl bg-gray-900 py-4 text-sm font-extrabold text-white shadow-[0_12px_26px_rgba(15,23,42,0.14)] transition-all hover:bg-emerald-500 active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-gray-300 disabled:shadow-none"
           >
-            {canSubmit ? "Kirim Pengajuan Refund" : "Lengkapi Data Wajib"}
+            {isUploadingEvidence
+              ? "Mengupload Bukti..."
+              : canSubmit
+                ? "Kirim Pengajuan Refund"
+                : "Lengkapi Data Wajib"}
           </button>
           </div>
         </div>

@@ -11,12 +11,51 @@ interface AddressRouteProps {
   params: Promise<{ id: string }>;
 }
 
-const updateAddressSchema = z.object({
-  label: z.string().min(2).optional(),
-  detail: z.string().min(8).optional(),
-  note: z.string().optional(),
-  isPrimary: z.boolean().optional(),
-});
+const coordinateSchema = z.preprocess(
+  (value) => (value === "" || value === null ? undefined : value),
+  z.coerce.number().finite().optional(),
+);
+
+const updateAddressSchema = z
+  .object({
+    label: z.string().min(2).optional(),
+    detail: z.string().min(8).optional(),
+    note: z.string().optional(),
+    latitude: coordinateSchema,
+    longitude: coordinateSchema,
+    isPrimary: z.boolean().optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (
+      (data.latitude === undefined && data.longitude !== undefined) ||
+      (data.latitude !== undefined && data.longitude === undefined)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["latitude"],
+        message: "Latitude dan longitude harus diisi bersama.",
+      });
+    }
+
+    if (data.latitude !== undefined && (data.latitude < -90 || data.latitude > 90)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["latitude"],
+        message: "Latitude harus berada di antara -90 dan 90.",
+      });
+    }
+
+    if (
+      data.longitude !== undefined &&
+      (data.longitude < -180 || data.longitude > 180)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["longitude"],
+        message: "Longitude harus berada di antara -180 dan 180.",
+      });
+    }
+  });
 
 async function findAddress(id: string) {
   const session = await getCurrentSession();
@@ -59,6 +98,19 @@ export async function PATCH(request: Request, { params }: AddressRouteProps) {
     );
   }
 
+  const nextLatitude = parsed.data.latitude ?? address.latitude;
+  const nextLongitude = parsed.data.longitude ?? address.longitude;
+
+  if (nextLatitude === null || nextLongitude === null) {
+    return NextResponse.json(
+      {
+        ok: false,
+        message: "Titik maps wajib diisi untuk alamat customer.",
+      },
+      { status: 400 },
+    );
+  }
+
   const updatedAddress = await prisma.$transaction(async (tx: PrismaTransactionClient) => {
     if (parsed.data.isPrimary) {
       await tx.address.updateMany({
@@ -72,6 +124,8 @@ export async function PATCH(request: Request, { params }: AddressRouteProps) {
       data: {
         label: parsed.data.label?.trim(),
         addressLine: parsed.data.detail?.trim(),
+        latitude: parsed.data.latitude,
+        longitude: parsed.data.longitude,
         notes:
           parsed.data.note === undefined
             ? undefined

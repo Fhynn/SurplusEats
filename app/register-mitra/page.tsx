@@ -12,6 +12,7 @@ import {
   Lock,
   Mail,
   MapPin,
+  Navigation,
   Phone,
   Send,
   ShieldCheck,
@@ -88,6 +89,8 @@ type PartnerForm = {
   email: string;
   phone: string;
   address: string;
+  latitude: string;
+  longitude: string;
   pickupWindow: string;
   averageSurplus: string;
   bankAccount: string;
@@ -154,6 +157,41 @@ function validatePartnerForm(form: PartnerForm, uploadedDocs: UploadedDocs) {
   if (form.address.trim().length < 20) {
     errors.address =
       "Alamat pickup terlalu pendek. Tulis alamat lengkap, nomor bangunan, area, dan patokan utama.";
+  }
+
+  const latitude = form.latitude.trim();
+  const longitude = form.longitude.trim();
+
+  if (!latitude && !longitude) {
+    errors.latitude =
+      "Titik lokasi toko wajib diisi. Klik Ambil Lokasi atau isi latitude dan longitude manual.";
+  } else if ((latitude && !longitude) || (!latitude && longitude)) {
+    errors.latitude = "Latitude dan longitude lokasi toko harus diisi bersama.";
+  }
+
+  if (latitude) {
+    const latitudeNumber = Number(latitude);
+
+    if (
+      !Number.isFinite(latitudeNumber) ||
+      latitudeNumber < -90 ||
+      latitudeNumber > 90
+    ) {
+      errors.latitude = "Latitude lokasi toko harus berada di antara -90 dan 90.";
+    }
+  }
+
+  if (longitude) {
+    const longitudeNumber = Number(longitude);
+
+    if (
+      !Number.isFinite(longitudeNumber) ||
+      longitudeNumber < -180 ||
+      longitudeNumber > 180
+    ) {
+      errors.longitude =
+        "Longitude lokasi toko harus berada di antara -180 dan 180.";
+    }
   }
 
   if (form.pickupWindow.trim().length < 5) {
@@ -262,6 +300,8 @@ export default function RegisterMitraPage() {
     email: "",
     phone: "",
     address: "",
+    latitude: "",
+    longitude: "",
     pickupWindow: "17:00 - 21:00",
     averageSurplus: "",
     bankAccount: "",
@@ -272,6 +312,7 @@ export default function RegisterMitraPage() {
   const [formErrors, setFormErrors] = useState<FormErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isWelcomeLoading, setIsWelcomeLoading] = useState(false);
+  const [isLocatingStore, setIsLocatingStore] = useState(false);
   const [uploadedDocs, setUploadedDocs] = useState<UploadedDocs>({
     identity: null,
     permit: null,
@@ -354,6 +395,47 @@ export default function RegisterMitraPage() {
       });
     };
 
+  const handleUseCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      setNotice("Browser belum mendukung akses lokasi.");
+      return;
+    }
+
+    setIsLocatingStore(true);
+    setNotice("");
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setForm((current) => ({
+          ...current,
+          latitude: position.coords.latitude.toFixed(6),
+          longitude: position.coords.longitude.toFixed(6),
+        }));
+        setFormErrors((current) => {
+          if (!current.latitude && !current.longitude) {
+            return current;
+          }
+
+          const next = { ...current };
+          delete next.latitude;
+          delete next.longitude;
+
+          return next;
+        });
+        setIsLocatingStore(false);
+      },
+      () => {
+        setNotice("Lokasi toko gagal diambil. Izinkan akses lokasi atau isi manual.");
+        setIsLocatingStore(false);
+      },
+      {
+        enableHighAccuracy: true,
+        maximumAge: 60_000,
+        timeout: 12_000,
+      },
+    );
+  };
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setNotice("");
@@ -383,6 +465,8 @@ export default function RegisterMitraPage() {
       formData.set("businessType", category);
       formData.set("address", form.address);
       formData.set("city", "Jakarta");
+      formData.set("latitude", form.latitude);
+      formData.set("longitude", form.longitude);
       formData.set(
         "description",
         `Jam pickup ${form.pickupWindow}. Estimasi surplus ${form.averageSurplus}. Rekening ${form.bankAccount || "belum diisi"}.`,
@@ -652,6 +736,63 @@ export default function RegisterMitraPage() {
                   />
                 </div>
                 <FieldError message={formErrors.address} />
+              </div>
+
+              <div className="md:col-span-2">
+                <section className="rounded-[24px] border border-emerald-100 bg-emerald-50/60 p-4">
+                  <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <p className="text-sm font-extrabold text-gray-900">
+                        Titik Lokasi Toko
+                      </p>
+                      <p className="mt-1 text-xs leading-5 font-semibold text-gray-500">
+                        Wajib diisi agar customer bisa melihat rute pickup.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleUseCurrentLocation}
+                      disabled={isLocatingStore}
+                      className="inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-4 py-3 text-xs font-extrabold text-white transition-colors hover:bg-emerald-600 disabled:bg-gray-300"
+                    >
+                      <Navigation size={15} />
+                      {isLocatingStore ? "Mengambil..." : "Ambil Lokasi"}
+                    </button>
+                  </div>
+
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <label className="block">
+                      <span className="mb-2 block text-xs font-extrabold text-gray-700">
+                        Latitude
+                      </span>
+                      <input
+                        type="number"
+                        step="any"
+                        value={form.latitude}
+                        onChange={handleInputChange("latitude")}
+                        placeholder="-6.200000"
+                        className="h-11 w-full rounded-2xl border border-emerald-100 bg-white px-3 text-sm font-bold text-gray-900 outline-none placeholder:text-gray-300 focus:border-emerald-500"
+                        aria-invalid={Boolean(formErrors.latitude)}
+                      />
+                      <FieldError message={formErrors.latitude} />
+                    </label>
+                    <label className="block">
+                      <span className="mb-2 block text-xs font-extrabold text-gray-700">
+                        Longitude
+                      </span>
+                      <input
+                        type="number"
+                        step="any"
+                        value={form.longitude}
+                        onChange={handleInputChange("longitude")}
+                        placeholder="106.816666"
+                        className="h-11 w-full rounded-2xl border border-emerald-100 bg-white px-3 text-sm font-bold text-gray-900 outline-none placeholder:text-gray-300 focus:border-emerald-500"
+                        aria-invalid={Boolean(formErrors.longitude)}
+                      />
+                      <FieldError message={formErrors.longitude} />
+                    </label>
+                  </div>
+                </section>
               </div>
             </div>
           </section>

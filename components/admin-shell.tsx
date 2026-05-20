@@ -6,11 +6,14 @@ import {
   Bell,
   FileBadge2,
   LayoutDashboard,
+  LifeBuoy,
   LogOut,
   ReceiptText,
   Settings,
   ShieldCheck,
+  TicketPercent,
   Users,
+  WalletCards,
 } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { ReactNode } from "react";
@@ -54,12 +57,42 @@ const adminNavItems = [
       (pathname === "/admin/dashboard" && dashboardTab === "transactions"),
   },
   {
+    href: "/admin/vouchers",
+    label: "Voucher",
+    icon: TicketPercent,
+    badge: undefined,
+    match: (pathname: string, dashboardTab: string | null) => {
+      void dashboardTab;
+      return pathname === "/admin/vouchers";
+    },
+  },
+  {
+    href: "/admin/payouts",
+    label: "Pencairan",
+    icon: WalletCards,
+    badge: undefined,
+    match: (pathname: string, dashboardTab: string | null) => {
+      void dashboardTab;
+      return pathname === "/admin/payouts";
+    },
+  },
+  {
     href: "/admin/dashboard?tab=analytics",
     label: "Analitik",
     icon: BarChart3,
     badge: undefined,
     match: (pathname: string, dashboardTab: string | null) =>
       pathname === "/admin/dashboard" && dashboardTab === "analytics",
+  },
+  {
+    href: "/admin/support",
+    label: "Support",
+    icon: LifeBuoy,
+    badge: undefined,
+    match: (pathname: string, dashboardTab: string | null) => {
+      void dashboardTab;
+      return pathname === "/admin/support";
+    },
   },
   {
     href: "/admin/notifications",
@@ -93,8 +126,20 @@ const pageLabelByPath = [
     label: "Notification Center",
   },
   {
+    test: (pathname: string) => pathname === "/admin/support",
+    label: "Support Desk",
+  },
+  {
     test: (pathname: string) => pathname === "/admin/settings",
     label: "Admin Settings",
+  },
+  {
+    test: (pathname: string) => pathname === "/admin/vouchers",
+    label: "Voucher Control",
+  },
+  {
+    test: (pathname: string) => pathname === "/admin/payouts",
+    label: "Payout Review",
   },
   {
     test: (pathname: string) => pathname.startsWith("/admin/users/"),

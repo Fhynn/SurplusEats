@@ -8,6 +8,7 @@ import {
   Building2,
   CheckCircle2,
   Clock3,
+  ExternalLink,
   FileText,
   Mail,
   MapPin,
@@ -32,6 +33,8 @@ type RestaurantApplication = {
   businessType: string;
   address: string;
   city: string;
+  latitude: number | null;
+  longitude: number | null;
   description: string | null;
   status: "PENDING" | "APPROVED" | "REJECTED";
   adminNote: string | null;
@@ -48,6 +51,10 @@ function formatTime(value: string) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(value));
+}
+
+function getMapsUrl(latitude: number, longitude: number) {
+  return `https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`;
 }
 
 export default function AdminVerificationDetailPage() {
@@ -238,6 +245,18 @@ export default function AdminVerificationDetailPage() {
                 <p className="mt-4 rounded-2xl bg-gray-50 p-4 text-sm leading-6 font-medium text-gray-600">
                   {application.description}
                 </p>
+              ) : null}
+              {application.latitude !== null && application.longitude !== null ? (
+                <a
+                  href={getMapsUrl(application.latitude, application.longitude)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-4 inline-flex items-center gap-2 rounded-2xl bg-emerald-500 px-4 py-3 text-sm font-extrabold text-white transition-colors hover:bg-emerald-600"
+                >
+                  <MapPin size={16} />
+                  Buka titik lokasi toko
+                  <ExternalLink size={14} />
+                </a>
               ) : null}
             </div>
 

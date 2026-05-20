@@ -166,6 +166,8 @@ export async function GET() {
       email: application.email,
       phone: application.phone,
       address: application.address,
+      latitude: application.latitude,
+      longitude: application.longitude,
     })),
     recentTransactions: orders.slice(0, 5).map((order) => ({
       id: order.orderCode,

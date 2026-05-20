@@ -16,7 +16,7 @@ import {
   X,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useCustomerApp } from "@/components/customer-app-provider";
 import { formatRp } from "@/lib/customer-data";
@@ -25,8 +25,10 @@ type CartVoucher = {
   code: string;
   discount: number;
   minSpendAmount: number;
-  status: "available" | "used";
+  status: "available" | "used" | "expired";
 };
+
+const SELECTED_VOUCHER_KEY = "resqfood-selected-voucher";
 
 export function CustomerCartScreen() {
   const router = useRouter();
@@ -52,6 +54,9 @@ export function CustomerCartScreen() {
   const voucherDiscount = activeVoucher ? activeVoucher.discount : 0;
   const grandTotal = Math.max(0, cartTotal + serviceFee - voucherDiscount);
   const foodSavedKg = (cartCount * 0.8).toFixed(1);
+  const checkoutHref = appliedVoucher
+    ? `/checkout?voucher=${encodeURIComponent(appliedVoucher)}`
+    : "/checkout";
 
   useEffect(() => {
     let ignore = false;
@@ -77,10 +82,11 @@ export function CustomerCartScreen() {
     };
   }, []);
 
-  const applyVoucherByCode = (code: string) => {
+  const applyVoucherByCode = useCallback((code: string) => {
     const normalizedCode = code.trim().toUpperCase();
 
     if (!normalizedCode) {
+      window.localStorage.removeItem(SELECTED_VOUCHER_KEY);
       return;
     }
 
@@ -91,6 +97,7 @@ export function CustomerCartScreen() {
     if (!voucher) {
       setVoucherNotice("Voucher tidak tersedia untuk akun ini.");
       setAppliedVoucher("");
+      window.localStorage.removeItem(SELECTED_VOUCHER_KEY);
       return;
     }
 
@@ -99,13 +106,37 @@ export function CustomerCartScreen() {
         `Minimum transaksi voucher ini ${formatRp(voucher.minSpendAmount)}.`,
       );
       setAppliedVoucher("");
+      window.localStorage.removeItem(SELECTED_VOUCHER_KEY);
       return;
     }
 
     setAppliedVoucher(voucher.code);
     setVoucherCode(normalizedCode);
     setVoucherNotice("");
-  };
+    window.localStorage.setItem(SELECTED_VOUCHER_KEY, voucher.code);
+  }, [availableVouchers, cartTotal]);
+
+  useEffect(() => {
+    if (availableVouchers.length === 0) {
+      return;
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    const selectedVoucherCode =
+      params.get("voucher") || window.localStorage.getItem(SELECTED_VOUCHER_KEY);
+
+    if (!selectedVoucherCode) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      applyVoucherByCode(selectedVoucherCode);
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [applyVoucherByCode, availableVouchers.length]);
 
   const handleApplyVoucher = () => {
     applyVoucherByCode(voucherCode);
@@ -214,11 +245,14 @@ export function CustomerCartScreen() {
         </section>
 
         <section className="mb-5 space-y-4">
-          {cart.map((item) => (
-            <article
-              key={item.id}
-              className="rounded-[26px] border border-gray-100 bg-white p-4 shadow-sm"
-            >
+          {cart.map((item) => {
+            const isMaxQty = item.qty >= Math.min(item.stock, 20);
+
+            return (
+              <article
+                key={item.id}
+                className="rounded-[26px] border border-gray-100 bg-white p-4 shadow-sm"
+              >
               <div className="flex gap-4">
                 <div className="relative h-[88px] w-[88px] shrink-0 overflow-hidden rounded-[20px]">
                   <Image
@@ -279,7 +313,8 @@ export function CustomerCartScreen() {
                       <button
                         type="button"
                         onClick={() => updateCartQty(item.id, 1)}
-                        className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500 text-white shadow-[0_4px_16px_rgba(16,185,129,0.22)]"
+                        disabled={isMaxQty}
+                        className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500 text-white shadow-[0_4px_16px_rgba(16,185,129,0.22)] transition disabled:bg-gray-200 disabled:text-gray-400 disabled:shadow-none"
                         aria-label={`Tambah ${item.name}`}
                       >
                         <Plus size={13} />
@@ -289,7 +324,8 @@ export function CustomerCartScreen() {
                 </div>
               </div>
             </article>
-          ))}
+            );
+          })}
         </section>
 
         <section className="mb-5 rounded-[26px] border border-gray-100 bg-white p-5 shadow-sm">
@@ -403,7 +439,7 @@ export function CustomerCartScreen() {
           </div>
           <button
             type="button"
-            onClick={() => router.push("/checkout")}
+            onClick={() => router.push(checkoutHref)}
             className="mt-5 hidden w-full items-center justify-center gap-2 rounded-2xl bg-emerald-500 py-4 text-sm font-extrabold text-white shadow-[0_8px_20px_rgba(16,185,129,0.25)] transition-all active:scale-[0.98] lg:flex"
           >
             Lanjut Pembayaran
@@ -426,7 +462,7 @@ export function CustomerCartScreen() {
         </div>
         <button
           type="button"
-          onClick={() => router.push("/checkout")}
+          onClick={() => router.push(checkoutHref)}
           className="flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-500 py-4 text-sm font-extrabold text-white shadow-[0_8px_20px_rgba(16,185,129,0.25)] transition-all active:scale-[0.98]"
         >
           Lanjut Pembayaran

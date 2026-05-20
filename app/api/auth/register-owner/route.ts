@@ -15,26 +15,73 @@ import { prisma, type PrismaTransactionClient } from "@/lib/prisma";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const ownerRegisterSchema = z.object({
-  ownerName: z.string().trim().min(3, "Nama pemilik minimal 3 karakter."),
-  email: z.string().trim().email("Format email owner belum valid."),
-  phone: z
-    .string()
-    .trim()
-    .min(8, "Nomor WhatsApp minimal 8 digit."),
-  password: z.string().min(6, "Password owner minimal 6 karakter."),
-  storeName: z.string().trim().min(3, "Nama toko minimal 3 karakter."),
-  businessType: z.string().trim().min(2, "Pilih kategori usaha."),
-  address: z
-    .string()
-    .trim()
-    .min(
-      20,
-      "Alamat pickup terlalu pendek. Tulis alamat lengkap, nomor bangunan, area, dan patokan.",
-    ),
-  city: z.string().trim().min(2, "Kota wajib diisi.").default("Jakarta"),
-  description: z.string().trim().optional(),
-});
+const coordinateSchema = z.preprocess(
+  (value) => (value === "" || value === null ? undefined : value),
+  z.coerce.number().finite().optional(),
+);
+
+const ownerRegisterSchema = z
+  .object({
+    ownerName: z.string().trim().min(3, "Nama pemilik minimal 3 karakter."),
+    email: z.string().trim().email("Format email owner belum valid."),
+    phone: z
+      .string()
+      .trim()
+      .min(8, "Nomor WhatsApp minimal 8 digit."),
+    password: z.string().min(6, "Password owner minimal 6 karakter."),
+    storeName: z.string().trim().min(3, "Nama toko minimal 3 karakter."),
+    businessType: z.string().trim().min(2, "Pilih kategori usaha."),
+    address: z
+      .string()
+      .trim()
+      .min(
+        20,
+        "Alamat pickup terlalu pendek. Tulis alamat lengkap, nomor bangunan, area, dan patokan.",
+      ),
+    city: z.string().trim().min(2, "Kota wajib diisi.").default("Jakarta"),
+    latitude: coordinateSchema,
+    longitude: coordinateSchema,
+    description: z.string().trim().optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.latitude === undefined && data.longitude === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["latitude"],
+        message: "Titik lokasi toko wajib diisi.",
+      });
+    }
+
+    if (
+      (data.latitude === undefined && data.longitude !== undefined) ||
+      (data.latitude !== undefined && data.longitude === undefined)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["latitude"],
+        message: "Latitude dan longitude lokasi toko harus diisi bersama.",
+      });
+    }
+
+    if (data.latitude !== undefined && (data.latitude < -90 || data.latitude > 90)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["latitude"],
+        message: "Latitude lokasi toko harus berada di antara -90 dan 90.",
+      });
+    }
+
+    if (
+      data.longitude !== undefined &&
+      (data.longitude < -180 || data.longitude > 180)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["longitude"],
+        message: "Longitude lokasi toko harus berada di antara -180 dan 180.",
+      });
+    }
+  });
 
 const documentRequirements = [
   {
@@ -122,6 +169,8 @@ async function readRegisterPayload(request: Request) {
       businessType: getString("businessType"),
       address: getString("address"),
       city: getString("city") || "Jakarta",
+      latitude: getString("latitude") || undefined,
+      longitude: getString("longitude") || undefined,
       description: getString("description") || undefined,
     },
     documents,
@@ -242,6 +291,8 @@ export async function POST(request: Request) {
         businessType: data.businessType,
         address: data.address,
         city: data.city,
+        latitude: data.latitude,
+        longitude: data.longitude,
         description: data.description,
         status: ApplicationStatus.PENDING,
       },

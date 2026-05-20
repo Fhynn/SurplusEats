@@ -2,8 +2,16 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { getCurrentSession } from "@/lib/auth-session";
-import { prisma } from "@/lib/prisma";
-import { NotificationType, OrderStatus, PaymentStatus, UserRole } from "@prisma/client";
+import { prisma, type PrismaTransactionClient } from "@/lib/prisma";
+import {
+  MenuItemStatus,
+  NotificationType,
+  OrderStatus,
+  PaymentStatus,
+  UserRole,
+  WalletTransactionStatus,
+  WalletTransactionType,
+} from "@prisma/client";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,6 +29,41 @@ const updateOrderStatusSchema = z.object({
     OrderStatus.CANCELLED,
   ]),
 });
+
+async function restoreOrderStock(
+  tx: PrismaTransactionClient,
+  items: Array<{ menuItemId: string | null; quantity: number }>,
+) {
+  for (const item of items) {
+    if (!item.menuItemId) {
+      continue;
+    }
+
+    const menuItem = await tx.menuItem.findUnique({
+      where: { id: item.menuItemId },
+      select: {
+        soldCount: true,
+        status: true,
+      },
+    });
+
+    if (!menuItem) {
+      continue;
+    }
+
+    await tx.menuItem.update({
+      where: { id: item.menuItemId },
+      data: {
+        stock: { increment: item.quantity },
+        soldCount: Math.max(0, menuItem.soldCount - item.quantity),
+        status:
+          menuItem.status === MenuItemStatus.SOLD_OUT
+            ? MenuItemStatus.ACTIVE
+            : undefined,
+      },
+    });
+  }
+}
 
 export async function GET(_request: Request, { params }: OrderDetailRouteProps) {
   const { id } = await params;
@@ -95,6 +138,7 @@ export async function PATCH(request: Request, { params }: OrderDetailRouteProps)
     },
     include: {
       customer: true,
+      items: true,
       restaurant: true,
     },
   });
@@ -107,33 +151,76 @@ export async function PATCH(request: Request, { params }: OrderDetailRouteProps)
   }
 
   const nextStatus = parsed.data.status;
-  const updatedOrder = await prisma.order.update({
-    where: { id: order.id },
-    data: {
-      status: nextStatus,
-      paymentStatus:
-        nextStatus === OrderStatus.CANCELLED
-          ? PaymentStatus.REFUNDED
-          : order.paymentStatus,
-      completedAt: nextStatus === OrderStatus.COMPLETED ? new Date() : undefined,
-      cancelledAt: nextStatus === OrderStatus.CANCELLED ? new Date() : undefined,
-    },
-    include: {
-      customer: true,
-      items: {
-        include: {
-          menuItem: true,
+  const updatedOrder = await prisma.$transaction(
+    async (tx: PrismaTransactionClient) => {
+      if (
+        nextStatus === OrderStatus.CANCELLED &&
+        order.status !== OrderStatus.CANCELLED
+      ) {
+        await restoreOrderStock(tx, order.items);
+      }
+
+      const nextOrder = await tx.order.update({
+        where: { id: order.id },
+        data: {
+          status: nextStatus,
+          paymentStatus:
+            nextStatus === OrderStatus.CANCELLED
+              ? PaymentStatus.REFUNDED
+              : order.paymentStatus,
+          completedAt:
+            nextStatus === OrderStatus.COMPLETED ? new Date() : undefined,
+          cancelledAt:
+            nextStatus === OrderStatus.CANCELLED ? new Date() : undefined,
         },
-      },
-      refundRequest: true,
-      restaurant: {
         include: {
-          owner: true,
+          customer: true,
+          items: {
+            include: {
+              menuItem: true,
+            },
+          },
+          refundRequest: true,
+          restaurant: {
+            include: {
+              owner: true,
+            },
+          },
+          review: true,
         },
-      },
-      review: true,
+      });
+
+      if (nextStatus === OrderStatus.COMPLETED) {
+        await tx.walletTransaction.updateMany({
+          where: {
+            restaurantId: order.restaurantId,
+            type: WalletTransactionType.ORDER_INCOME,
+            reference: order.orderCode,
+          },
+          data: {
+            status: WalletTransactionStatus.COMPLETED,
+            description: `Order ${order.orderCode} selesai`,
+          },
+        });
+      }
+
+      if (nextStatus === OrderStatus.CANCELLED) {
+        await tx.walletTransaction.updateMany({
+          where: {
+            restaurantId: order.restaurantId,
+            type: WalletTransactionType.ORDER_INCOME,
+            reference: order.orderCode,
+          },
+          data: {
+            status: WalletTransactionStatus.FAILED,
+            description: `Order ${order.orderCode} dibatalkan`,
+          },
+        });
+      }
+
+      return nextOrder;
     },
-  });
+  );
 
   await prisma.notification.create({
     data: {

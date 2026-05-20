@@ -1,9 +1,17 @@
+import {
+  getPickupRouteUrl,
+  type Coordinates,
+} from "@/lib/geo-distance";
+
 export type UiOrderStatus = "ready" | "preparing" | "completed" | "cancelled";
 
 export type ApiOrder = {
   id: string;
   orderCode: string;
   status: string;
+  subtotal: number;
+  discount: number;
+  serviceFee: number;
   total: number;
   pickupTime: string | null;
   pickupCode: string | null;
@@ -12,7 +20,13 @@ export type ApiOrder = {
     name: string;
     address: string;
     city: string;
+    latitude: number | null;
+    longitude: number | null;
   };
+  review: {
+    rating: number;
+    comment: string | null;
+  } | null;
   items: Array<{
     menuNameSnapshot: string;
     restaurantSnapshot: string;
@@ -38,6 +52,10 @@ export type CustomerOrderCard = {
   time: string;
   image: string;
   foodId?: string;
+  pickupRouteUrl: string;
+  pickupRouteLabel: string;
+  reviewRating?: number;
+  reviewComment?: string | null;
 };
 
 export function mapOrderStatus(status: string): UiOrderStatus {
@@ -67,12 +85,31 @@ export function formatOrderTime(value: string | null) {
   }).format(new Date(value));
 }
 
-export function apiOrderToCard(order: ApiOrder): CustomerOrderCard {
+function getRestaurantCoordinates(order: ApiOrder) {
+  if (order.restaurant.latitude === null || order.restaurant.longitude === null) {
+    return null;
+  }
+
+  return {
+    latitude: order.restaurant.latitude,
+    longitude: order.restaurant.longitude,
+  };
+}
+
+export function apiOrderToCard(
+  order: ApiOrder,
+  customerCoordinates: Coordinates | null = null,
+): CustomerOrderCard {
   const status = mapOrderStatus(order.status);
   const firstItem = order.items[0];
   const itemSummary = order.items
     .map((item) => `${item.menuNameSnapshot} (x${item.quantity})`)
     .join(", ");
+  const pickupRoute = getPickupRouteUrl(
+    customerCoordinates,
+    getRestaurantCoordinates(order),
+    `${order.restaurant.name} ${order.restaurant.city}`,
+  );
 
   return {
     id: order.orderCode,
@@ -84,5 +121,9 @@ export function apiOrderToCard(order: ApiOrder): CustomerOrderCard {
     time: formatOrderTime(order.pickupTime || order.createdAt),
     image: firstItem?.menuItem?.imageUrl || "/placeholder-food.svg",
     foodId: firstItem?.menuItem?.id,
+    pickupRouteUrl: pickupRoute.url,
+    pickupRouteLabel: pickupRoute.label,
+    reviewRating: order.review?.rating,
+    reviewComment: order.review?.comment,
   };
 }

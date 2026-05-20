@@ -46,6 +46,8 @@ type VerificationStore = {
   email: string;
   phone: string;
   address: string;
+  latitude: number | null;
+  longitude: number | null;
 };
 
 type AdminUser = {
@@ -123,6 +125,10 @@ const emptyDashboardData: AdminDashboardData = {
   weeklySales: [],
   foodDistribution: [],
 };
+
+function getMapsUrl(latitude: number, longitude: number) {
+  return `https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`;
+}
 
 const navItems = [
   {
@@ -1246,6 +1252,21 @@ function AdminDashboardPage() {
                     <dd className="mt-1 text-sm leading-6 font-bold text-gray-900">
                       {selectedStore.address}
                     </dd>
+                    {selectedStore.latitude !== null &&
+                    selectedStore.longitude !== null ? (
+                      <a
+                        href={getMapsUrl(
+                          selectedStore.latitude,
+                          selectedStore.longitude,
+                        )}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-3 inline-flex items-center gap-2 rounded-2xl bg-emerald-500 px-4 py-2 text-xs font-extrabold text-white transition-colors hover:bg-emerald-600"
+                      >
+                        <ArrowUpRight size={14} />
+                        Buka Maps
+                      </a>
+                    ) : null}
                   </div>
                 </dl>
               </section>

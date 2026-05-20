@@ -12,11 +12,15 @@ export type ApiMenuItem = {
   pickupStart: string | null;
   pickupEnd: string | null;
   restaurant: {
+    id: string;
+    slug: string;
     name: string;
     rating: number;
     reviewCount: number;
     address: string;
     city: string;
+    latitude: number | null;
+    longitude: number | null;
   };
 };
 
@@ -51,7 +55,17 @@ export function menuItemToFood(menuItem: ApiMenuItem): Food {
     id: menuItem.id,
     name: menuItem.name,
     restaurant: menuItem.restaurant.name,
-    distance: "1.2 km",
+    restaurantId: menuItem.restaurant.id,
+    restaurantSlug: menuItem.restaurant.slug,
+    restaurantAddress: menuItem.restaurant.address,
+    restaurantCity: menuItem.restaurant.city,
+    restaurantLatitude: menuItem.restaurant.latitude,
+    restaurantLongitude: menuItem.restaurant.longitude,
+    distance:
+      menuItem.restaurant.latitude !== null && menuItem.restaurant.longitude !== null
+        ? "Atur lokasi"
+        : "Belum diset",
+    distanceKm: null,
     rating: menuItem.restaurant.rating || 4.8,
     reviews: menuItem.restaurant.reviewCount || 0,
     stock: menuItem.stock,

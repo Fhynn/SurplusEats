@@ -7,12 +7,59 @@ import { prisma, type PrismaTransactionClient } from "@/lib/prisma";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const addressSchema = z.object({
-  label: z.string().min(2),
-  detail: z.string().min(8),
-  note: z.string().optional(),
-  isPrimary: z.boolean().optional(),
-});
+const coordinateSchema = z.preprocess(
+  (value) => (value === "" || value === null ? undefined : value),
+  z.coerce.number().finite().optional(),
+);
+
+const addressSchema = z
+  .object({
+    label: z.string().min(2),
+    detail: z.string().min(8),
+    note: z.string().optional(),
+    latitude: coordinateSchema,
+    longitude: coordinateSchema,
+    isPrimary: z.boolean().optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.latitude === undefined && data.longitude === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["latitude"],
+        message: "Titik maps wajib diisi untuk alamat customer.",
+      });
+    }
+
+    if (
+      (data.latitude === undefined && data.longitude !== undefined) ||
+      (data.latitude !== undefined && data.longitude === undefined)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["latitude"],
+        message: "Latitude dan longitude harus diisi bersama.",
+      });
+    }
+
+    if (data.latitude !== undefined && (data.latitude < -90 || data.latitude > 90)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["latitude"],
+        message: "Latitude harus berada di antara -90 dan 90.",
+      });
+    }
+
+    if (
+      data.longitude !== undefined &&
+      (data.longitude < -180 || data.longitude > 180)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["longitude"],
+        message: "Longitude harus berada di antara -180 dan 180.",
+      });
+    }
+  });
 
 export async function GET() {
   const session = await getCurrentSession();
@@ -66,6 +113,8 @@ export async function POST(request: Request) {
         phone: "-",
         addressLine: parsed.data.detail.trim(),
         city: "-",
+        latitude: parsed.data.latitude,
+        longitude: parsed.data.longitude,
         notes: parsed.data.note?.trim() || null,
         isPrimary: shouldBePrimary,
       },

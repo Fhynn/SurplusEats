@@ -12,7 +12,14 @@ export interface Food {
   id: string;
   name: string;
   restaurant: string;
+  restaurantId?: string;
+  restaurantSlug?: string;
+  restaurantAddress?: string;
+  restaurantCity?: string;
+  restaurantLatitude?: number | null;
+  restaurantLongitude?: number | null;
   distance: string;
+  distanceKm?: number | null;
   rating: number;
   reviews: number;
   stock: number;

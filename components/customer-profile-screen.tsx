@@ -4,8 +4,8 @@ import {
   Bell,
   CheckCircle2,
   ChevronRight,
-  Flame,
   Gift,
+  Heart,
   HelpCircle,
   History,
   Leaf,
@@ -78,6 +78,13 @@ const menuGroups: {
         className: "bg-rose-50 text-rose-600",
       },
       {
+        title: "Favorit Saya",
+        description: "Menu tersimpan untuk dibeli ulang lebih cepat.",
+        route: "/profile/favorites",
+        icon: Heart,
+        className: "bg-red-50 text-red-500",
+      },
+      {
         title: "Voucher Saya",
         description: "Klaim, salin, dan gunakan voucher aktif.",
         route: "/profile/vouchers",
@@ -120,6 +127,7 @@ export function CustomerProfileScreen() {
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
   const [orderCount, setOrderCount] = useState(0);
   const [voucherCount, setVoucherCount] = useState(0);
+  const [favoriteCount, setFavoriteCount] = useState(0);
 
   useEffect(() => {
     let ignore = false;
@@ -128,11 +136,13 @@ export function CustomerProfileScreen() {
       setIsLoadingProfile(true);
 
       try {
-        const [meResponse, ordersResponse, vouchersResponse] = await Promise.all([
-          fetch("/api/auth/me", { cache: "no-store" }),
-          fetch("/api/orders", { cache: "no-store" }),
-          fetch("/api/vouchers", { cache: "no-store" }),
-        ]);
+        const [meResponse, ordersResponse, vouchersResponse, favoritesResponse] =
+          await Promise.all([
+            fetch("/api/auth/me", { cache: "no-store" }),
+            fetch("/api/orders", { cache: "no-store" }),
+            fetch("/api/vouchers", { cache: "no-store" }),
+            fetch("/api/favorites", { cache: "no-store" }),
+          ]);
         const meData = (await meResponse.json()) as {
           ok: boolean;
           user?: { name: string; email: string };
@@ -144,6 +154,10 @@ export function CustomerProfileScreen() {
         const vouchersData = (await vouchersResponse.json()) as {
           ok: boolean;
           vouchers?: unknown[];
+        };
+        const favoritesData = (await favoritesResponse.json()) as {
+          ok: boolean;
+          favorites?: unknown[];
         };
 
         if (!meResponse.ok || !meData.ok || !meData.user) {
@@ -157,6 +171,7 @@ export function CustomerProfileScreen() {
           setUser(meData.user);
           setOrderCount(ordersData.orders?.length ?? 0);
           setVoucherCount(vouchersData.vouchers?.length ?? 0);
+          setFavoriteCount(favoritesData.favorites?.length ?? 0);
         }
       } catch {
         if (!ignore) {
@@ -187,19 +202,19 @@ export function CustomerProfileScreen() {
         className: "border-emerald-100 bg-emerald-50 text-emerald-700",
       },
       {
-        label: "Total Order",
-        value: `${orderCount} Kali`,
-        icon: Flame,
-        className: "border-amber-100 bg-amber-50 text-amber-700",
-      },
-      {
         label: "Voucher",
         value: `${voucherCount} Aktif`,
         icon: Gift,
+        className: "border-amber-100 bg-amber-50 text-amber-700",
+      },
+      {
+        label: "Favorit",
+        value: `${favoriteCount} Menu`,
+        icon: Heart,
         className: "border-blue-100 bg-blue-50 text-blue-700",
       },
     ],
-    [orderCount, voucherCount],
+    [favoriteCount, orderCount, voucherCount],
   );
 
   const handleLogout = async () => {

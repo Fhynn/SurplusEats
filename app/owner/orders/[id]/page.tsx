@@ -39,10 +39,21 @@ type ApiOrderStatus =
   | "REFUNDED";
 
 type ChatMessage = {
-  id: number;
+  id: string;
   sender: "owner" | "customer" | "system";
   text: string;
   time: string;
+};
+
+type ApiOrderMessage = {
+  id: string;
+  body: string;
+  senderRole: "CUSTOMER" | "OWNER" | "ADMIN";
+  createdAt: string;
+  sender: {
+    name: string;
+    role: "CUSTOMER" | "OWNER" | "ADMIN";
+  };
 };
 
 type ApiOwnerOrderDetail = {
@@ -104,6 +115,27 @@ function formatOrderTime(value: string) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(value));
+}
+
+function formatChatTime(value: string) {
+  return new Intl.DateTimeFormat("id-ID", {
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
+function mapApiOrderMessage(message: ApiOrderMessage): ChatMessage {
+  return {
+    id: message.id,
+    sender:
+      message.senderRole === "OWNER"
+        ? "owner"
+        : message.senderRole === "CUSTOMER"
+          ? "customer"
+          : "system",
+    text: message.body,
+    time: formatChatTime(message.createdAt),
+  };
 }
 
 function mapApiStatusToOwner(status: ApiOrderStatus): OwnerOrderStatus {
@@ -228,6 +260,8 @@ export default function OwnerOrderDetailPage() {
   const [activeModal, setActiveModal] = useState<ActiveModal>(null);
   const [chatDraft, setChatDraft] = useState("");
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [isLoadingMessages, setIsLoadingMessages] = useState(false);
+  const [isSendingChat, setIsSendingChat] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const [rejectNote, setRejectNote] = useState("");
 
@@ -266,28 +300,40 @@ export default function OwnerOrderDetailPage() {
     void loadOrder();
   }, [loadOrder]);
 
+  const loadMessages = useCallback(async (orderCode: string) => {
+    setIsLoadingMessages(true);
+
+    try {
+      const response = await fetch(`/api/orders/${orderCode}/messages`, {
+        cache: "no-store",
+      });
+      const data = (await response.json()) as {
+        ok: boolean;
+        message?: string;
+        messages?: ApiOrderMessage[];
+      };
+
+      if (!response.ok || !data.ok) {
+        throw new Error(data.message || "Pesan order gagal dimuat.");
+      }
+
+      setChatMessages((data.messages ?? []).map(mapApiOrderMessage));
+    } catch (error) {
+      setOrderNotice(
+        error instanceof Error ? error.message : "Pesan order gagal dimuat.",
+      );
+    } finally {
+      setIsLoadingMessages(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (!order) {
       return;
     }
 
-    setChatMessages([
-      {
-        id: 1,
-        sender: "system",
-        text: `Order ${order.id} dibuat dan customer menunggu update dari toko.`,
-        time: order.time,
-      },
-      {
-        id: 2,
-        sender: "customer",
-        text:
-          order.note ??
-          "Halo, apakah pesanan saya sudah bisa diambil sesuai jadwal?",
-        time: "Baru saja",
-      },
-    ]);
-  }, [order]);
+    void loadMessages(order.id);
+  }, [loadMessages, order]);
 
   if (isLoadingOrder) {
     return (
@@ -372,29 +418,55 @@ export default function OwnerOrderDetailPage() {
     }
   };
 
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     const trimmedMessage = chatDraft.trim();
 
-    if (!trimmedMessage) {
+    if (!trimmedMessage || isSendingChat) {
       return;
     }
 
-    setChatMessages((currentMessages) => [
-      ...currentMessages,
-      {
-        id: currentMessages.length + 1,
-        sender: "owner",
-        text: trimmedMessage,
-        time: "Sekarang",
-      },
-      {
-        id: currentMessages.length + 2,
-        sender: "system",
-        text: "Pesan owner tercatat di tampilan percakapan saat ini.",
-        time: "Sekarang",
-      },
-    ]);
-    setChatDraft("");
+    setIsSendingChat(true);
+    setOrderNotice(null);
+
+    try {
+      const response = await fetch(`/api/orders/${order.id}/messages`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ body: trimmedMessage }),
+      });
+      const data = (await response.json()) as {
+        ok: boolean;
+        message?: string | ApiOrderMessage;
+      };
+      const savedMessage = data.message;
+
+      if (
+        !response.ok ||
+        !data.ok ||
+        !savedMessage ||
+        typeof savedMessage === "string"
+      ) {
+        throw new Error(
+          typeof savedMessage === "string"
+            ? savedMessage
+            : "Pesan gagal dikirim.",
+        );
+      }
+
+      setChatMessages((currentMessages) => [
+        ...currentMessages,
+        mapApiOrderMessage(savedMessage),
+      ]);
+      setChatDraft("");
+    } catch (error) {
+      setOrderNotice(
+        error instanceof Error ? error.message : "Pesan gagal dikirim.",
+      );
+    } finally {
+      setIsSendingChat(false);
+    }
   };
 
   const handleRejectOrder = async () => {
@@ -722,38 +794,58 @@ export default function OwnerOrderDetailPage() {
             </div>
 
             <div className="flex-1 space-y-4 overflow-y-auto bg-gray-50 p-6">
-              {chatMessages.map((message) => {
-                const isOwner = message.sender === "owner";
-                const isSystem = message.sender === "system";
+              {isLoadingMessages ? (
+                <div className="rounded-2xl bg-white p-5 text-center text-sm font-bold text-gray-500">
+                  Memuat pesan order...
+                </div>
+              ) : chatMessages.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-gray-200 bg-white p-5 text-center">
+                  <MessageSquareText
+                    size={28}
+                    className="mx-auto mb-3 text-gray-300"
+                  />
+                  <p className="text-sm font-extrabold text-gray-900">
+                    Belum ada pesan
+                  </p>
+                  <p className="mt-1 text-xs font-medium text-gray-500">
+                    Pesan yang dikirim di sini akan tersimpan di database dan
+                    mengirim notifikasi ke customer.
+                  </p>
+                </div>
+              ) : (
+                chatMessages.map((message) => {
+                  const isOwner = message.sender === "owner";
+                  const isSystem = message.sender === "system";
 
-                return (
-                  <div
-                    key={message.id}
-                    className={`flex ${isOwner ? "justify-end" : "justify-start"}`}
-                  >
+                  return (
                     <div
-                      className={`max-w-[78%] rounded-[24px] p-4 ${
-                        isOwner
-                          ? "rounded-br-md bg-emerald-500 text-white"
-                          : isSystem
-                            ? "rounded-bl-md border border-gray-200 bg-white text-gray-600"
-                            : "rounded-bl-md bg-gray-900 text-white"
-                      }`}
+                      key={message.id}
+                      className={`flex ${isOwner ? "justify-end" : "justify-start"}`}
                     >
-                      <p className="text-sm leading-6 font-semibold">
-                        {message.text}
-                      </p>
-                      <p
-                        className={`mt-2 text-[10px] font-bold ${
-                          isOwner ? "text-emerald-50" : "text-gray-400"
+                      <div
+                        className={`max-w-[78%] rounded-[24px] p-4 ${
+                          isOwner
+                            ? "rounded-br-md bg-emerald-500 text-white"
+                            : isSystem
+                              ? "rounded-bl-md border border-gray-200 bg-white text-gray-600"
+                              : "rounded-bl-md bg-gray-900 text-white"
                         }`}
                       >
-                        {message.time}
-                      </p>
+                        <p className="text-sm leading-6 font-semibold">
+                          {message.text}
+                        </p>
+                        <p
+                          className={`mt-2 text-[10px] font-bold ${
+                            isOwner ? "text-emerald-50" : "text-gray-400"
+                          }`}
+                        >
+                          {message.time}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })
+              )}
             </div>
 
             <div className="border-t border-gray-100 bg-white p-5">
@@ -767,8 +859,8 @@ export default function OwnerOrderDetailPage() {
                 />
                 <button
                   type="button"
-                  onClick={handleSendMessage}
-                  disabled={!chatDraft.trim()}
+                  onClick={() => void handleSendMessage()}
+                  disabled={!chatDraft.trim() || isSendingChat}
                   className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500 text-white transition-colors hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-gray-300"
                   aria-label="Kirim pesan"
                 >
