@@ -9,15 +9,17 @@ import {
   Clock3,
   MapPin,
   MessageCircle,
+  MessageSquareText,
   Navigation,
   Package,
   QrCode,
   ReceiptText,
+  Send,
   Store,
   X,
 } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { MobileDeviceFrame } from "@/components/mobile-device-frame";
 import {
@@ -32,6 +34,24 @@ import type { ApiOrder } from "@/lib/order-mapper";
 
 type OrderStatus = "preparing" | "ready" | "cancelled";
 type TimelineKey = "confirmed" | "preparing" | "ready";
+
+type ChatMessage = {
+  id: string;
+  sender: "owner" | "customer" | "system";
+  text: string;
+  time: string;
+};
+
+type ApiOrderMessage = {
+  id: string;
+  body: string;
+  senderRole: "CUSTOMER" | "OWNER" | "ADMIN";
+  createdAt: string;
+  sender: {
+    name: string;
+    role: "CUSTOMER" | "OWNER" | "ADMIN";
+  };
+};
 
 type TrackingOrder = {
   id: string;
@@ -74,6 +94,27 @@ function formatClock(value: string | null) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(value));
+}
+
+function formatChatTime(value: string) {
+  return new Intl.DateTimeFormat("id-ID", {
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
+function mapApiOrderMessage(message: ApiOrderMessage): ChatMessage {
+  return {
+    id: message.id,
+    sender:
+      message.senderRole === "CUSTOMER"
+        ? "customer"
+        : message.senderRole === "OWNER"
+          ? "owner"
+          : "system",
+    text: message.body,
+    time: formatChatTime(message.createdAt),
+  };
 }
 
 function getRestaurantCoordinates(order: ApiOrder) {
@@ -173,6 +214,12 @@ export default function CustomerOrderTrackingPage() {
   const [isCancelSubmitted, setIsCancelSubmitted] = useState(false);
   const [isSubmittingCancel, setIsSubmittingCancel] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatDraft, setChatDraft] = useState("");
+  const [isLoadingMessages, setIsLoadingMessages] = useState(false);
+  const [isSendingChat, setIsSendingChat] = useState(false);
+  const [chatNotice, setChatNotice] = useState<string | null>(null);
 
   useEffect(() => {
     let ignore = false;
@@ -225,6 +272,34 @@ export default function CustomerOrderTrackingPage() {
     };
   }, [orderId]);
 
+  const loadMessages = useCallback(async (currentOrderId: string) => {
+    setIsLoadingMessages(true);
+    setChatNotice(null);
+
+    try {
+      const response = await fetch(`/api/orders/${currentOrderId}/messages`, {
+        cache: "no-store",
+      });
+      const data = (await response.json()) as {
+        ok: boolean;
+        message?: string;
+        messages?: ApiOrderMessage[];
+      };
+
+      if (!response.ok || !data.ok) {
+        throw new Error(data.message || "Pesan restoran gagal dimuat.");
+      }
+
+      setChatMessages((data.messages ?? []).map(mapApiOrderMessage));
+    } catch (error) {
+      setChatNotice(
+        error instanceof Error ? error.message : "Pesan restoran gagal dimuat.",
+      );
+    } finally {
+      setIsLoadingMessages(false);
+    }
+  }, []);
+
   if (isLoadingOrder || !order) {
     return (
       <MobileDeviceFrame backgroundClassName="bg-white">
@@ -269,6 +344,66 @@ export default function CustomerOrderTrackingPage() {
     setCancelNote("");
     setIsCancelSubmitted(false);
     setCancelError(null);
+  };
+  const openChatModal = () => {
+    setIsChatOpen(true);
+    setChatNotice(null);
+    void loadMessages(order.id);
+  };
+  const closeChatModal = () => {
+    setIsChatOpen(false);
+    setChatDraft("");
+    setChatNotice(null);
+  };
+  const handleSendMessage = async () => {
+    const trimmedMessage = chatDraft.trim();
+
+    if (!trimmedMessage || isSendingChat) {
+      return;
+    }
+
+    setIsSendingChat(true);
+    setChatNotice(null);
+
+    try {
+      const response = await fetch(`/api/orders/${order.id}/messages`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ body: trimmedMessage }),
+      });
+      const data = (await response.json()) as {
+        ok: boolean;
+        message?: string | ApiOrderMessage;
+      };
+      const savedMessage = data.message;
+
+      if (
+        !response.ok ||
+        !data.ok ||
+        !savedMessage ||
+        typeof savedMessage === "string"
+      ) {
+        throw new Error(
+          typeof savedMessage === "string"
+            ? savedMessage
+            : "Pesan gagal dikirim.",
+        );
+      }
+
+      setChatMessages((currentMessages) => [
+        ...currentMessages,
+        mapApiOrderMessage(savedMessage),
+      ]);
+      setChatDraft("");
+    } catch (error) {
+      setChatNotice(
+        error instanceof Error ? error.message : "Pesan gagal dikirim.",
+      );
+    } finally {
+      setIsSendingChat(false);
+    }
   };
   const handleCancelOrder = async () => {
     if (!selectedReason || isSubmittingCancel) {
@@ -581,13 +716,14 @@ export default function CustomerOrderTrackingPage() {
                 <Navigation size={20} />
                 <span className="text-xs font-bold">{order.pickupRouteLabel}</span>
               </a>
-              <Link
-                href={`/support?order=${order.id}`}
+              <button
+                type="button"
+                onClick={openChatModal}
                 className="flex flex-col items-center justify-center gap-2 rounded-2xl bg-gray-50 p-4 text-gray-600 transition-colors hover:bg-gray-100"
               >
                 <MessageCircle size={20} />
                 <span className="text-xs font-bold">Chat Restoran</span>
-              </Link>
+              </button>
             </div>
 
             <Link
@@ -624,6 +760,125 @@ export default function CustomerOrderTrackingPage() {
             ) : null}
           </section>
         </div>
+
+        {isChatOpen ? (
+          <div className="absolute inset-0 z-50 flex items-end bg-gray-950/35 backdrop-blur-sm md:items-center md:justify-center md:p-6">
+            <div className="flex max-h-[92vh] w-full flex-col overflow-hidden rounded-t-[40px] bg-white shadow-[0_-24px_70px_rgba(15,23,42,0.22)] md:max-w-2xl md:rounded-[32px] md:shadow-[0_24px_80px_rgba(15,23,42,0.24)]">
+              <div className="border-b border-gray-100 px-6 pt-5 pb-4">
+                <div className="mx-auto mb-5 h-1.5 w-12 rounded-full bg-gray-200 md:hidden" />
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="text-xs font-extrabold tracking-[0.18em] text-emerald-600 uppercase">
+                      Chat Restoran
+                    </p>
+                    <h2 className="mt-1 truncate text-xl font-extrabold text-gray-950">
+                      {order.restaurant}
+                    </h2>
+                    <p className="mt-1 text-sm font-semibold text-gray-500">
+                      Order {order.id} • {order.pickupWindow}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={closeChatModal}
+                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-500 transition-colors hover:bg-gray-200"
+                    aria-label="Tutup chat restoran"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+              </div>
+
+              <div className="min-h-[320px] flex-1 space-y-4 overflow-y-auto bg-gray-50 p-5 [scrollbar-width:none] md:p-6 [&::-webkit-scrollbar]:hidden">
+                {chatNotice ? (
+                  <div className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-xs font-bold text-red-700">
+                    {chatNotice}
+                  </div>
+                ) : null}
+
+                {isLoadingMessages ? (
+                  <div className="rounded-2xl bg-white p-5 text-center text-sm font-bold text-gray-500">
+                    Memuat pesan restoran...
+                  </div>
+                ) : chatMessages.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-gray-200 bg-white p-6 text-center">
+                    <MessageSquareText
+                      size={30}
+                      className="mx-auto mb-3 text-gray-300"
+                    />
+                    <p className="text-sm font-extrabold text-gray-950">
+                      Belum ada percakapan
+                    </p>
+                    <p className="mt-1 text-xs leading-5 font-medium text-gray-500">
+                      Tanyakan status pickup, catatan pengambilan, atau info toko
+                      langsung ke restoran.
+                    </p>
+                  </div>
+                ) : (
+                  chatMessages.map((message) => {
+                    const isCustomer = message.sender === "customer";
+                    const isSystem = message.sender === "system";
+
+                    return (
+                      <div
+                        key={message.id}
+                        className={`flex ${isCustomer ? "justify-end" : "justify-start"}`}
+                      >
+                        <div
+                          className={`max-w-[82%] rounded-[24px] p-4 ${
+                            isCustomer
+                              ? "rounded-br-md bg-emerald-500 text-white"
+                              : isSystem
+                                ? "rounded-bl-md border border-gray-200 bg-white text-gray-600"
+                                : "rounded-bl-md bg-gray-900 text-white"
+                          }`}
+                        >
+                          <p className="text-sm leading-6 font-semibold">
+                            {message.text}
+                          </p>
+                          <p
+                            className={`mt-2 text-[10px] font-bold ${
+                              isCustomer ? "text-emerald-50" : "text-gray-400"
+                            }`}
+                          >
+                            {message.time}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              <div className="border-t border-gray-100 bg-white p-5">
+                <div className="flex items-center gap-3 rounded-2xl border border-gray-200 bg-gray-50 p-2 focus-within:border-emerald-500 focus-within:bg-white">
+                  <input
+                    type="text"
+                    value={chatDraft}
+                    onChange={(event) => setChatDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        void handleSendMessage();
+                      }
+                    }}
+                    placeholder="Tulis pesan untuk restoran..."
+                    className="min-w-0 flex-1 bg-transparent px-3 py-2 text-sm font-semibold text-gray-900 outline-none placeholder:text-gray-400"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void handleSendMessage()}
+                    disabled={!chatDraft.trim() || isSendingChat}
+                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500 text-white transition-colors hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-gray-300"
+                    aria-label="Kirim pesan ke restoran"
+                  >
+                    <Send size={18} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
 
         {isCancelOpen ? (
           <div className="absolute inset-0 z-50 flex items-end bg-gray-950/35 backdrop-blur-sm md:items-center md:justify-center md:p-6">

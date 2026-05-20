@@ -48,8 +48,6 @@ const statusLabel: Record<VoucherStatus, string> = {
   expired: "Expired",
 };
 
-const SELECTED_VOUCHER_KEY = "resqfood-selected-voucher";
-
 export default function CustomerVouchersPage() {
   const router = useRouter();
   const [vouchers, setVouchers] = useState<Voucher[]>([]);
@@ -150,7 +148,6 @@ export default function CustomerVouchersPage() {
     const voucher = vouchers.find((item) => item.id === voucherId);
 
     if (voucher) {
-      window.localStorage.setItem(SELECTED_VOUCHER_KEY, voucher.code);
       router.push(`/cart?voucher=${encodeURIComponent(voucher.code)}`);
       return;
     }

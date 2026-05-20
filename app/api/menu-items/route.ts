@@ -64,7 +64,11 @@ export async function GET(request: Request) {
         ? session?.role === UserRole.OWNER
           ? { ownerId: session.userId }
           : undefined
-        : { status: RestaurantStatus.APPROVED },
+        : {
+            status: RestaurantStatus.APPROVED,
+            latitude: { not: null },
+            longitude: { not: null },
+          },
       category:
         category && category !== "Semua"
           ? { equals: category, mode: "insensitive" }

@@ -47,7 +47,11 @@ export async function GET(request: Request) {
       userId: session.userId,
       menuItem: {
         status: MenuItemStatus.ACTIVE,
-        restaurant: { status: RestaurantStatus.APPROVED },
+        restaurant: {
+          status: RestaurantStatus.APPROVED,
+          latitude: { not: null },
+          longitude: { not: null },
+        },
       },
     },
     include: {
@@ -90,7 +94,11 @@ export async function POST(request: Request) {
     where: {
       id: parsed.data.menuItemId,
       status: MenuItemStatus.ACTIVE,
-      restaurant: { status: RestaurantStatus.APPROVED },
+      restaurant: {
+        status: RestaurantStatus.APPROVED,
+        latitude: { not: null },
+        longitude: { not: null },
+      },
     },
     select: { id: true },
   });

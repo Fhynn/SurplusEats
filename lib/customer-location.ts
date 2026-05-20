@@ -15,7 +15,7 @@ export type CustomerLocation = {
 };
 
 export const defaultCustomerLocation: CustomerLocation = {
-  label: "Pilih lokasi",
+  label: "Aktifkan lokasi",
   coordinates: null,
   hasSavedAddress: false,
 };

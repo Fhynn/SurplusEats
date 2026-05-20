@@ -20,6 +20,27 @@ const reviewSchema = z.object({
 });
 const validApplicationStatuses = new Set<string>(Object.values(ApplicationStatus));
 
+async function createUniqueRestaurantSlug(
+  tx: PrismaTransactionClient,
+  businessName: string,
+) {
+  const baseSlug = slugify(businessName) || "restaurant";
+  let slug = baseSlug;
+  let suffix = 2;
+
+  while (
+    await tx.restaurant.findUnique({
+      where: { slug },
+      select: { id: true },
+    })
+  ) {
+    slug = `${baseSlug}-${suffix}`;
+    suffix += 1;
+  }
+
+  return slug;
+}
+
 export async function GET(request: Request) {
   const session = await getCurrentSession();
 
@@ -94,116 +115,122 @@ export async function PATCH(request: Request) {
 
   try {
     result = await prisma.$transaction(async (tx: PrismaTransactionClient) => {
-    const existingApplication = await tx.restaurantApplication.findUnique({
-      where: { id: data.applicationId },
-      select: { id: true },
-    });
-
-    if (!existingApplication) {
-      return null;
-    }
-
-    const existingApplicationData = await tx.restaurantApplication.findUnique({
-      where: { id: existingApplication.id },
-      include: { user: true },
-    });
-
-    if (!existingApplicationData) {
-      return null;
-    }
-
-    if (
-      data.status === ApplicationStatus.APPROVED &&
-      (existingApplicationData.latitude === null ||
-        existingApplicationData.longitude === null)
-    ) {
-      throw new Error(
-        "Pengajuan belum punya titik lokasi toko. Mitra wajib melengkapi lokasi sebelum disetujui.",
-      );
-    }
-
-    const application = await tx.restaurantApplication.update({
-      where: { id: existingApplicationData.id },
-      data: {
-        status: data.status,
-        adminNote: data.adminNote,
-        reviewedAt: new Date(),
-      },
-      include: { user: true },
-    });
-
-    let restaurant = null;
-
-    if (data.status === ApplicationStatus.APPROVED && application.userId) {
-      restaurant = await tx.restaurant.upsert({
-        where: { slug: slugify(application.businessName) },
-        update: {
-          ownerId: application.userId,
-          applicationId: application.id,
-          name: application.businessName,
-          description: application.description,
-          address: application.address,
-          city: application.city,
-          latitude: application.latitude,
-          longitude: application.longitude,
-          phone: application.phone,
-          status: RestaurantStatus.APPROVED,
-        },
-        create: {
-          ownerId: application.userId,
-          applicationId: application.id,
-          name: application.businessName,
-          slug: slugify(application.businessName),
-          description: application.description,
-          address: application.address,
-          city: application.city,
-          latitude: application.latitude,
-          longitude: application.longitude,
-          phone: application.phone,
-          status: RestaurantStatus.APPROVED,
-          pickupStart: "18:00",
-          pickupEnd: "21:00",
-        },
+      const existingApplication = await tx.restaurantApplication.findUnique({
+        where: { id: data.applicationId },
+        select: { id: true },
       });
-    }
 
-    if (application.userId) {
-      await tx.notification.create({
+      if (!existingApplication) {
+        return null;
+      }
+
+      const existingApplicationData = await tx.restaurantApplication.findUnique({
+        where: { id: existingApplication.id },
+        include: { restaurant: true, user: true },
+      });
+
+      if (!existingApplicationData) {
+        return null;
+      }
+
+      if (
+        data.status === ApplicationStatus.APPROVED &&
+        (existingApplicationData.latitude === null ||
+          existingApplicationData.longitude === null)
+      ) {
+        throw new Error(
+          "Pengajuan belum punya titik lokasi toko. Mitra wajib melengkapi lokasi sebelum disetujui.",
+        );
+      }
+
+      const application = await tx.restaurantApplication.update({
+        where: { id: existingApplicationData.id },
         data: {
-          userId: application.userId,
-          type: "SYSTEM",
-          title:
+          status: data.status,
+          adminNote: data.adminNote,
+          reviewedAt: new Date(),
+        },
+        include: { user: true },
+      });
+
+      let restaurant = null;
+
+      if (data.status === ApplicationStatus.APPROVED && application.userId) {
+        const restaurantData = {
+          ownerId: application.userId,
+          applicationId: application.id,
+          name: application.businessName,
+          description: application.description,
+          address: application.address,
+          city: application.city,
+          latitude: application.latitude,
+          longitude: application.longitude,
+          phone: application.phone,
+          status: RestaurantStatus.APPROVED,
+        };
+
+        if (existingApplicationData.restaurant) {
+          restaurant = await tx.restaurant.update({
+            where: { id: existingApplicationData.restaurant.id },
+            data: restaurantData,
+          });
+        } else {
+          restaurant = await tx.restaurant.create({
+            data: {
+              ...restaurantData,
+              slug: await createUniqueRestaurantSlug(tx, application.businessName),
+              pickupStart: "18:00",
+              pickupEnd: "21:00",
+            },
+          });
+        }
+      } else if (
+        data.status === ApplicationStatus.REJECTED &&
+        existingApplicationData.restaurant
+      ) {
+        restaurant = await tx.restaurant.update({
+          where: { id: existingApplicationData.restaurant.id },
+          data: { status: RestaurantStatus.REJECTED },
+        });
+      }
+
+      if (application.userId) {
+        await tx.notification.create({
+          data: {
+            userId: application.userId,
+            type: "SYSTEM",
+            title:
+              data.status === ApplicationStatus.APPROVED
+                ? "Pendaftaran mitra disetujui"
+                : "Pendaftaran mitra ditolak",
+            body:
+              data.status === ApplicationStatus.APPROVED
+                ? "Dashboard owner sudah bisa digunakan untuk mulai berjualan."
+                : data.adminNote || "Admin belum bisa menyetujui data usaha.",
+            href:
+              data.status === ApplicationStatus.APPROVED
+                ? "/owner/dashboard"
+                : "/owner/verify",
+          },
+        });
+      }
+
+      await tx.adminActionLog.create({
+        data: {
+          adminId: session.userId,
+          action:
             data.status === ApplicationStatus.APPROVED
-              ? "Pendaftaran mitra disetujui"
-              : "Pendaftaran mitra ditolak",
-          body:
-            data.status === ApplicationStatus.APPROVED
-              ? "Dashboard owner sudah bisa digunakan untuk mulai berjualan."
-              : data.adminNote || "Admin belum bisa menyetujui data usaha.",
-          href:
-            data.status === ApplicationStatus.APPROVED
-              ? "/owner/dashboard"
-              : "/owner/verify",
+              ? "APPROVE_RESTAURANT_APPLICATION"
+              : "REJECT_RESTAURANT_APPLICATION",
+          targetType: "restaurant_application",
+          targetId: application.id,
+          metadata: {
+            adminNote: data.adminNote,
+          },
         },
       });
-    }
 
-    await tx.adminActionLog.create({
-      data: {
-        adminId: session.userId,
-        action:
-          data.status === ApplicationStatus.APPROVED
-            ? "APPROVE_RESTAURANT_APPLICATION"
-            : "REJECT_RESTAURANT_APPLICATION",
-        targetType: "restaurant_application",
-        targetId: application.id,
-        metadata: {
-          adminNote: data.adminNote,
-        },
-      },
-    });
-
-    return { application, restaurant };
+      return { application, restaurant };
     });
   } catch (error) {
     return NextResponse.json(

@@ -31,6 +31,31 @@ const checkoutSchema = z.object({
   voucherCode: z.string().trim().min(1).max(40).optional(),
 });
 
+type CheckoutItem = z.infer<typeof checkoutSchema>["items"][number];
+
+function normalizeCheckoutItems(items: CheckoutItem[]) {
+  const itemsByMenuId = new Map<string, CheckoutItem>();
+
+  for (const item of items) {
+    const existingItem = itemsByMenuId.get(item.menuItemId);
+
+    itemsByMenuId.set(item.menuItemId, {
+      menuItemId: item.menuItemId,
+      quantity: (existingItem?.quantity ?? 0) + item.quantity,
+    });
+  }
+
+  return Array.from(itemsByMenuId.values());
+}
+
+function formatRupiah(value: number) {
+  return new Intl.NumberFormat("id-ID", {
+    style: "currency",
+    currency: "IDR",
+    maximumFractionDigits: 0,
+  }).format(value);
+}
+
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const session = await getCurrentSession();
@@ -100,6 +125,15 @@ export async function POST(request: Request) {
   }
 
   const data = parsed.data;
+  const checkoutItems = normalizeCheckoutItems(data.items);
+
+  if (checkoutItems.some((item) => item.quantity > 20)) {
+    return NextResponse.json(
+      { ok: false, message: "Jumlah per menu maksimal 20 item." },
+      { status: 400 },
+    );
+  }
+
   const customer = await prisma.user.findUnique({
     where: { id: session.userId },
   });
@@ -111,29 +145,9 @@ export async function POST(request: Request) {
     );
   }
 
-  const customerPickupAddress = await prisma.address.findFirst({
-    where: {
-      userId: customer.id,
-      latitude: { not: null },
-      longitude: { not: null },
-    },
-    orderBy: [{ isPrimary: "desc" }, { createdAt: "desc" }],
-  });
-
-  if (!customerPickupAddress) {
-    return NextResponse.json(
-      {
-        ok: false,
-        message:
-          "Checkout wajib memakai alamat customer dengan titik maps. Tambahkan alamat dan klik Ambil Lokasi dulu.",
-      },
-      { status: 400 },
-    );
-  }
-
   try {
-    const order = await prisma.$transaction(async (tx: PrismaTransactionClient) => {
-      const requestedIds = data.items.map((item) => item.menuItemId);
+    const orders = await prisma.$transaction(async (tx: PrismaTransactionClient) => {
+      const requestedIds = checkoutItems.map((item) => item.menuItemId);
       const voucherCode = data.voucherCode?.trim().toUpperCase();
       const menuItems = await tx.menuItem.findMany({
         where: {
@@ -148,39 +162,40 @@ export async function POST(request: Request) {
           },
         },
       });
+      const menuItemById = new Map(menuItems.map((item) => [item.id, item]));
 
       if (menuItems.length !== requestedIds.length) {
         throw new Error("Sebagian menu tidak tersedia.");
       }
 
-      if (
-        menuItems[0].restaurant.latitude === null ||
-        menuItems[0].restaurant.longitude === null
-      ) {
+      const restaurantsWithoutLocation = Array.from(
+        new Set(
+          menuItems
+            .filter(
+              (item) =>
+                item.restaurant.latitude === null ||
+                item.restaurant.longitude === null,
+            )
+            .map((item) => item.restaurant.name),
+        ),
+      );
+
+      if (restaurantsWithoutLocation.length > 0) {
         throw new Error(
-          "Restoran belum punya titik lokasi. Mitra wajib melengkapi lokasi toko sebelum menerima order.",
+          `${restaurantsWithoutLocation.join(", ")} belum punya titik lokasi. Mitra wajib melengkapi lokasi toko sebelum menerima order.`,
         );
       }
 
-      const restaurantId = menuItems[0].restaurantId;
-      const hasMixedRestaurant = menuItems.some(
-        (item) => item.restaurantId !== restaurantId,
-      );
-
-      if (hasMixedRestaurant) {
-        throw new Error("Checkout sementara hanya mendukung satu restoran.");
-      }
-
-      for (const cartItem of data.items) {
-        const menuItem = menuItems.find((item) => item.id === cartItem.menuItemId);
+      for (const cartItem of checkoutItems) {
+        const menuItem = menuItemById.get(cartItem.menuItemId);
 
         if (!menuItem || menuItem.stock < cartItem.quantity) {
           throw new Error(`${menuItem?.name || "Menu"} stok tidak cukup.`);
         }
       }
 
-      const subtotal = data.items.reduce((total, cartItem) => {
-        const menuItem = menuItems.find((item) => item.id === cartItem.menuItemId);
+      const subtotal = checkoutItems.reduce((total, cartItem) => {
+        const menuItem = menuItemById.get(cartItem.menuItemId);
         return total + (menuItem?.discountedPrice || 0) * cartItem.quantity;
       }, 0);
       const serviceFee = 2000;
@@ -204,11 +219,7 @@ export async function POST(request: Request) {
 
         if (subtotal < voucher.minSpend) {
           throw new Error(
-            `Minimum transaksi voucher adalah ${new Intl.NumberFormat("id-ID", {
-              style: "currency",
-              currency: "IDR",
-              maximumFractionDigits: 0,
-            }).format(voucher.minSpend)}.`,
+            `Minimum transaksi voucher adalah ${formatRupiah(voucher.minSpend)}.`,
           );
         }
 
@@ -256,103 +267,179 @@ export async function POST(request: Request) {
         appliedVoucherClaimId = voucherClaim.id;
       }
 
-      const total = Math.max(0, subtotal - voucherDiscount) + serviceFee;
-      const merchantIncome = Math.max(0, total - serviceFee);
-      const orderCode = createOrderCode();
+      const checkoutItemsByRestaurant = new Map<string, CheckoutItem[]>();
 
-      const createdOrder = await tx.order.create({
-        data: {
-          orderCode,
-          customerId: customer.id,
-          restaurantId,
-          status: OrderStatus.CONFIRMED,
-          paymentStatus: PaymentStatus.PAID,
-          subtotal,
-          discount: voucherDiscount,
-          serviceFee,
-          total,
-          pickupCode: Math.floor(100000 + Math.random() * 900000).toString(),
-          pickupTime: new Date(Date.now() + 1000 * 60 * 60),
-          note: data.note,
-          paidAt: new Date(),
-          items: {
-            create: data.items.map((cartItem) => {
-              const menuItem = menuItems.find(
-                (item) => item.id === cartItem.menuItemId,
-              );
+      for (const cartItem of checkoutItems) {
+        const menuItem = menuItemById.get(cartItem.menuItemId);
 
-              if (!menuItem) {
-                throw new Error("Menu tidak ditemukan.");
-              }
+        if (!menuItem) {
+          throw new Error("Menu tidak ditemukan.");
+        }
 
-              return {
-                menuItemId: menuItem.id,
-                menuNameSnapshot: menuItem.name,
-                restaurantSnapshot: menuItem.restaurant.name,
-                priceSnapshot: menuItem.discountedPrice,
-                originalPriceSnapshot: menuItem.originalPrice,
-                quantity: cartItem.quantity,
-              };
-            }),
+        checkoutItemsByRestaurant.set(menuItem.restaurantId, [
+          ...(checkoutItemsByRestaurant.get(menuItem.restaurantId) ?? []),
+          cartItem,
+        ]);
+      }
+
+      const groupedCheckoutItems = Array.from(checkoutItemsByRestaurant.entries())
+        .map(([restaurantId, items]) => {
+          const groupSubtotal = items.reduce((total, cartItem) => {
+            const menuItem = menuItemById.get(cartItem.menuItemId);
+
+            return total + (menuItem?.discountedPrice || 0) * cartItem.quantity;
+          }, 0);
+
+          return {
+            restaurantId,
+            items,
+            subtotal: groupSubtotal,
+          };
+        })
+        .sort((firstGroup, secondGroup) => secondGroup.subtotal - firstGroup.subtotal);
+
+      let remainingVoucherDiscount = voucherDiscount;
+      let serviceFeeApplied = false;
+      let voucherRedemptionOrderId: string | null = null;
+      const createdOrders = [];
+
+      for (const group of groupedCheckoutItems) {
+        const groupDiscount = Math.min(remainingVoucherDiscount, group.subtotal);
+        remainingVoucherDiscount -= groupDiscount;
+        const groupServiceFee = serviceFeeApplied ? 0 : serviceFee;
+        serviceFeeApplied = true;
+        const groupTotal = Math.max(0, group.subtotal - groupDiscount) + groupServiceFee;
+        const merchantIncome = Math.max(0, groupTotal - groupServiceFee);
+        const orderCode = createOrderCode();
+
+        const createdOrder = await tx.order.create({
+          data: {
+            orderCode,
+            customerId: customer.id,
+            restaurantId: group.restaurantId,
+            status: OrderStatus.CONFIRMED,
+            paymentStatus: PaymentStatus.PAID,
+            subtotal: group.subtotal,
+            discount: groupDiscount,
+            serviceFee: groupServiceFee,
+            total: groupTotal,
+            pickupCode: Math.floor(100000 + Math.random() * 900000).toString(),
+            pickupTime: new Date(Date.now() + 1000 * 60 * 60),
+            note: data.note,
+            paidAt: new Date(),
+            items: {
+              create: group.items.map((cartItem) => {
+                const menuItem = menuItemById.get(cartItem.menuItemId);
+
+                if (!menuItem) {
+                  throw new Error("Menu tidak ditemukan.");
+                }
+
+                return {
+                  menuItemId: menuItem.id,
+                  menuNameSnapshot: menuItem.name,
+                  restaurantSnapshot: menuItem.restaurant.name,
+                  priceSnapshot: menuItem.discountedPrice,
+                  originalPriceSnapshot: menuItem.originalPrice,
+                  quantity: cartItem.quantity,
+                };
+              }),
+            },
           },
-        },
-        include: {
-          items: true,
-          restaurant: true,
-        },
-      });
+          include: {
+            items: true,
+            restaurant: true,
+          },
+        });
 
-      if (appliedVoucherClaimId) {
+        if (appliedVoucherClaimId && groupDiscount > 0 && !voucherRedemptionOrderId) {
+          voucherRedemptionOrderId = createdOrder.id;
+        }
+
+        await tx.walletTransaction.create({
+          data: {
+            restaurantId: group.restaurantId,
+            type: WalletTransactionType.ORDER_INCOME,
+            status: WalletTransactionStatus.PENDING,
+            amount: merchantIncome,
+            reference: orderCode,
+            description: `Order ${orderCode} dari ${customer.name}`,
+          },
+        });
+
+        for (const cartItem of group.items) {
+          const menuItem = menuItemById.get(cartItem.menuItemId);
+
+          const stockUpdate = await tx.menuItem.updateMany({
+            where: {
+              id: cartItem.menuItemId,
+              status: MenuItemStatus.ACTIVE,
+              stock: { gte: cartItem.quantity },
+            },
+            data: {
+              stock: { decrement: cartItem.quantity },
+              soldCount: { increment: cartItem.quantity },
+            },
+          });
+
+          if (stockUpdate.count !== 1) {
+            throw new Error(`${menuItem?.name || "Menu"} stok tidak cukup.`);
+          }
+
+          const updatedMenuItem = await tx.menuItem.findUnique({
+            where: { id: cartItem.menuItemId },
+            select: { stock: true },
+          });
+
+          if (updatedMenuItem?.stock === 0) {
+            await tx.menuItem.update({
+              where: { id: cartItem.menuItemId },
+              data: { status: MenuItemStatus.SOLD_OUT },
+            });
+          }
+        }
+
+        const ownerId = menuItems.find(
+          (item) => item.restaurantId === group.restaurantId,
+        )?.restaurant.ownerId;
+
+        await tx.notification.createMany({
+          data: [
+            {
+              userId: customer.id,
+              type: NotificationType.ORDER,
+              title:
+                groupedCheckoutItems.length > 1
+                  ? "Pesanan marketplace berhasil dibuat"
+                  : "Pesanan berhasil dibuat",
+              body: `${orderCode} sedang diproses oleh ${createdOrder.restaurant.name}.`,
+              href: `/orders/${orderCode}`,
+            },
+            ...(ownerId
+              ? [
+                  {
+                    userId: ownerId,
+                    type: NotificationType.ORDER,
+                    title: "Order baru masuk",
+                    body: `${customer.name} membuat order ${orderCode}.`,
+                    href: "/owner/dashboard?tab=orders",
+                  },
+                ]
+              : []),
+          ],
+        });
+
+        createdOrders.push(createdOrder);
+      }
+
+      if (appliedVoucherClaimId && voucherRedemptionOrderId) {
         await tx.voucherRedemption.update({
           where: { id: appliedVoucherClaimId },
           data: {
-            orderId: createdOrder.id,
+            orderId: voucherRedemptionOrderId,
             redeemedAt: new Date(),
           },
         });
-      }
-
-      await tx.walletTransaction.create({
-        data: {
-          restaurantId,
-          type: WalletTransactionType.ORDER_INCOME,
-          status: WalletTransactionStatus.PENDING,
-          amount: merchantIncome,
-          reference: orderCode,
-          description: `Order ${orderCode} dari ${customer.name}`,
-        },
-      });
-
-      for (const cartItem of data.items) {
-        const menuItem = menuItems.find((item) => item.id === cartItem.menuItemId);
-
-        const stockUpdate = await tx.menuItem.updateMany({
-          where: {
-            id: cartItem.menuItemId,
-            status: MenuItemStatus.ACTIVE,
-            stock: { gte: cartItem.quantity },
-          },
-          data: {
-            stock: { decrement: cartItem.quantity },
-            soldCount: { increment: cartItem.quantity },
-          },
-        });
-
-        if (stockUpdate.count !== 1) {
-          throw new Error(`${menuItem?.name || "Menu"} stok tidak cukup.`);
-        }
-
-        const updatedMenuItem = await tx.menuItem.findUnique({
-          where: { id: cartItem.menuItemId },
-          select: { stock: true },
-        });
-
-        if (updatedMenuItem?.stock === 0) {
-          await tx.menuItem.update({
-            where: { id: cartItem.menuItemId },
-            data: { status: MenuItemStatus.SOLD_OUT },
-          });
-        }
       }
 
       await tx.cartItem.deleteMany({
@@ -362,30 +449,13 @@ export async function POST(request: Request) {
         },
       });
 
-      const ownerId = menuItems[0].restaurant.ownerId;
-      await tx.notification.createMany({
-        data: [
-          {
-            userId: customer.id,
-            type: NotificationType.ORDER,
-            title: "Pesanan berhasil dibuat",
-            body: `${orderCode} sedang diproses oleh ${createdOrder.restaurant.name}.`,
-            href: `/orders/${orderCode}`,
-          },
-          {
-            userId: ownerId,
-            type: NotificationType.ORDER,
-            title: "Order baru masuk",
-            body: `${customer.name} membuat order ${orderCode}.`,
-            href: "/owner/dashboard?tab=orders",
-          },
-        ],
-      });
-
-      return createdOrder;
+      return createdOrders;
     });
 
-    return NextResponse.json({ ok: true, order }, { status: 201 });
+    return NextResponse.json(
+      { ok: true, order: orders[0], orders },
+      { status: 201 },
+    );
   } catch (error) {
     return NextResponse.json(
       {

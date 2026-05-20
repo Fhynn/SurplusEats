@@ -8,11 +8,15 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   const restaurants = await prisma.restaurant.findMany({
-    where: { status: RestaurantStatus.APPROVED },
+    where: {
+      status: RestaurantStatus.APPROVED,
+      latitude: { not: null },
+      longitude: { not: null },
+    },
     orderBy: [{ rating: "desc" }, { createdAt: "desc" }],
     include: {
       menuItems: {
-        where: { status: "ACTIVE" },
+        where: { status: "ACTIVE", stock: { gt: 0 } },
         orderBy: { createdAt: "desc" },
         take: 6,
       },

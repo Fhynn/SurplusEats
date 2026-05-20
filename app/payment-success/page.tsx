@@ -41,14 +41,24 @@ function formatDate(value: string | null) {
 
 function PaymentSuccessContent() {
   const searchParams = useSearchParams();
-  const orderCode = searchParams.get("order");
-  const [order, setOrder] = useState<ApiOrder | null>(null);
+  const ordersParam = searchParams.get("orders");
+  const legacyOrderCode = searchParams.get("order");
+  const orderCodes = useMemo(
+    () =>
+      (ordersParam || legacyOrderCode || "")
+        .split(",")
+        .map((code) => code.trim())
+        .filter(Boolean),
+    [legacyOrderCode, ordersParam],
+  );
+  const [orders, setOrders] = useState<ApiOrder[]>([]);
   const [customerCoordinates, setCustomerCoordinates] =
     useState<Coordinates | null>(null);
-  const [isLoading, setIsLoading] = useState(Boolean(orderCode));
+  const [isLoading, setIsLoading] = useState(orderCodes.length > 0);
 
   useEffect(() => {
-    if (!orderCode) {
+    if (orderCodes.length === 0) {
+      setOrders([]);
       setIsLoading(false);
       return;
     }
@@ -59,16 +69,30 @@ function PaymentSuccessContent() {
       setIsLoading(true);
 
       try {
-        const [response, addressesResponse] = await Promise.all([
-          fetch(`/api/orders/${orderCode}`, {
-            cache: "no-store",
-          }),
+        const [orderResponses, addressesResponse] = await Promise.all([
+          Promise.all(
+            orderCodes.map((orderCode) =>
+              fetch(`/api/orders/${orderCode}`, {
+                cache: "no-store",
+              }),
+            ),
+          ),
           fetch("/api/addresses", { cache: "no-store" }),
         ]);
-        const data = (await response.json()) as {
-          ok: boolean;
-          order?: ApiOrder;
-        };
+        const orderPayloads = await Promise.all(
+          orderResponses.map(async (response) => {
+            if (!response.ok) {
+              return null;
+            }
+
+            const data = (await response.json()) as {
+              ok: boolean;
+              order?: ApiOrder;
+            };
+
+            return data.ok ? (data.order ?? null) : null;
+          }),
+        );
         const addressesData = (await addressesResponse.json()) as {
           ok: boolean;
           addresses?: ApiCustomerAddress[];
@@ -79,12 +103,12 @@ function PaymentSuccessContent() {
             addressesData.addresses ?? [],
           );
 
-          setOrder(data.order ?? null);
+          setOrders(orderPayloads.filter((order): order is ApiOrder => Boolean(order)));
           setCustomerCoordinates(customerLocation.coordinates);
         }
       } catch {
         if (!ignore) {
-          setOrder(null);
+          setOrders([]);
         }
       } finally {
         if (!ignore) {
@@ -98,16 +122,34 @@ function PaymentSuccessContent() {
     return () => {
       ignore = true;
     };
-  }, [orderCode]);
+  }, [orderCodes]);
 
   const itemSubtotal = useMemo(
     () =>
-      order?.items.reduce(
-        (total, item) => total + item.priceSnapshot * item.quantity,
+      orders.reduce(
+        (orderTotal, currentOrder) =>
+          orderTotal +
+          currentOrder.items.reduce(
+            (itemTotal, item) => itemTotal + item.priceSnapshot * item.quantity,
+            0,
+          ),
         0,
-      ) ?? 0,
-    [order],
+      ),
+    [orders],
   );
+  const totalDiscount = useMemo(
+    () => orders.reduce((total, order) => total + order.discount, 0),
+    [orders],
+  );
+  const totalServiceFee = useMemo(
+    () => orders.reduce((total, order) => total + order.serviceFee, 0),
+    [orders],
+  );
+  const totalPaid = useMemo(
+    () => orders.reduce((total, order) => total + order.total, 0),
+    [orders],
+  );
+  const order = orders[0] ?? null;
 
   if (isLoading || !order) {
     return (
@@ -168,7 +210,9 @@ function PaymentSuccessContent() {
             Berhasil
           </h1>
           <p className="mx-auto mt-3 max-w-xs text-sm leading-6 font-medium text-emerald-50">
-            Order sudah tersimpan dan bisa dipantau dari halaman pesanan.
+            {orders.length > 1
+              ? `${orders.length} order sudah tersimpan dan bisa dipantau dari halaman pesanan.`
+              : "Order sudah tersimpan dan bisa dipantau dari halaman pesanan."}
           </p>
         </section>
 
@@ -185,7 +229,9 @@ function PaymentSuccessContent() {
                     Struk Pesanan
                   </h2>
                   <p className="font-mono text-[11px] font-bold text-gray-400">
-                    {order.orderCode}
+                    {orders.length > 1
+                      ? `${order.orderCode} +${orders.length - 1} order`
+                      : order.orderCode}
                   </p>
                 </div>
               </div>
@@ -237,23 +283,50 @@ function PaymentSuccessContent() {
               </a>
             </div>
 
-            <div className="my-5 space-y-3">
-              {order.items.map((item) => (
+            <div className="my-5 space-y-4">
+              {orders.map((receiptOrder) => (
                 <div
-                  key={item.menuNameSnapshot}
-                  className="flex items-start justify-between gap-4"
+                  key={receiptOrder.orderCode}
+                  className={orders.length > 1 ? "rounded-2xl bg-gray-50 p-4" : ""}
                 >
-                  <div>
-                    <p className="text-sm font-bold text-gray-900">
-                      {item.menuNameSnapshot}
-                    </p>
-                    <p className="mt-0.5 text-xs font-medium text-gray-400">
-                      Qty {item.quantity}
-                    </p>
+                  {orders.length > 1 ? (
+                    <div className="mb-3 flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-extrabold text-gray-900">
+                          {receiptOrder.restaurant.name}
+                        </p>
+                        <p className="mt-0.5 font-mono text-[10px] font-bold text-gray-400">
+                          {receiptOrder.orderCode}
+                        </p>
+                      </div>
+                      <Link
+                        href={`/orders/${receiptOrder.orderCode}`}
+                        className="rounded-full bg-white px-3 py-1.5 text-[10px] font-extrabold text-emerald-600"
+                      >
+                        Lacak
+                      </Link>
+                    </div>
+                  ) : null}
+                  <div className="space-y-3">
+                    {receiptOrder.items.map((item, itemIndex) => (
+                      <div
+                        key={`${receiptOrder.orderCode}-${item.menuNameSnapshot}-${itemIndex}`}
+                        className="flex items-start justify-between gap-4"
+                      >
+                        <div>
+                          <p className="text-sm font-bold text-gray-900">
+                            {item.menuNameSnapshot}
+                          </p>
+                          <p className="mt-0.5 text-xs font-medium text-gray-400">
+                            Qty {item.quantity}
+                          </p>
+                        </div>
+                        <p className="shrink-0 text-sm font-extrabold text-gray-900">
+                          {formatRp(item.priceSnapshot * item.quantity)}
+                        </p>
+                      </div>
+                    ))}
                   </div>
-                  <p className="shrink-0 text-sm font-extrabold text-gray-900">
-                    {formatRp(item.priceSnapshot * item.quantity)}
-                  </p>
                 </div>
               ))}
             </div>
@@ -263,19 +336,19 @@ function PaymentSuccessContent() {
                 <span>Subtotal</span>
                 <span>{formatRp(itemSubtotal)}</span>
               </div>
-              {order.discount > 0 ? (
+              {totalDiscount > 0 ? (
                 <div className="flex justify-between text-sm font-extrabold text-blue-600">
                   <span>Voucher</span>
-                  <span>- {formatRp(order.discount)}</span>
+                  <span>- {formatRp(totalDiscount)}</span>
                 </div>
               ) : null}
               <div className="flex justify-between text-sm font-medium text-gray-500">
                 <span>Biaya Layanan</span>
-                <span>{formatRp(order.serviceFee)}</span>
+                <span>{formatRp(totalServiceFee)}</span>
               </div>
               <div className="flex justify-between rounded-2xl bg-emerald-50 px-4 py-3 text-sm font-extrabold text-emerald-700">
                 <span>Total Dibayar</span>
-                <span>{formatRp(order.total)}</span>
+                <span>{formatRp(totalPaid)}</span>
               </div>
             </div>
           </div>
@@ -284,10 +357,10 @@ function PaymentSuccessContent() {
             <div className="mb-5 flex items-center justify-between gap-4">
               <div>
                 <h2 className="text-sm font-extrabold text-gray-950">
-                  Status Pesanan
+                  {orders.length > 1 ? "Status Order Utama" : "Status Pesanan"}
                 </h2>
                 <p className="mt-1 text-xs font-medium text-gray-500">
-                  Status terbaru mengikuti pesanan.
+                  Status terbaru mengikuti pesanan di halaman order.
                 </p>
               </div>
               <PackageCheck size={22} className="text-emerald-500" />
@@ -299,10 +372,10 @@ function PaymentSuccessContent() {
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Link
-              href={`/orders/${order.orderCode}`}
+              href={orders.length > 1 ? "/orders" : `/orders/${order.orderCode}`}
               className="rounded-2xl bg-gray-900 px-4 py-3 text-center text-sm font-extrabold text-white"
             >
-              Lacak Order
+              {orders.length > 1 ? "Lihat Semua Order" : "Lacak Order"}
             </Link>
             <Link
               href="/home"

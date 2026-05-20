@@ -19,6 +19,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { useCustomerApp } from "@/components/customer-app-provider";
+import { CustomerLocationControl } from "@/components/customer-location-control";
 import { MobileDeviceFrame } from "@/components/mobile-device-frame";
 import { formatRp } from "@/lib/customer-data";
 import {
@@ -74,7 +75,6 @@ const paymentOptions: {
 ];
 
 const serviceFee = 2000;
-const SELECTED_VOUCHER_KEY = "resqfood-selected-voucher";
 
 type CheckoutVoucher = {
   code: string;
@@ -120,9 +120,7 @@ export function CustomerCheckoutScreen() {
       item.restaurantLongitude !== null &&
       item.restaurantLongitude !== undefined,
   );
-  const locationIssue = !hasCustomerCoordinates
-    ? "Tambahkan alamat customer dengan titik maps sebelum checkout."
-    : !hasRestaurantCoordinates
+  const locationIssue = !hasRestaurantCoordinates
       ? "Restoran di keranjang belum punya titik lokasi. Minta mitra melengkapi lokasi toko dulu."
       : "";
   const canPay =
@@ -167,6 +165,10 @@ export function CustomerCheckoutScreen() {
     };
   }, []);
 
+  const handleLocationChange = (nextLocation: CustomerLocation) => {
+    setCustomerLocation(nextLocation);
+  };
+
   useEffect(() => {
     if (cart.length === 0) {
       setActiveVoucher(null);
@@ -176,13 +178,7 @@ export function CustomerCheckoutScreen() {
     }
 
     const params = new URLSearchParams(window.location.search);
-    const selectedVoucherCode = (
-      params.get("voucher") ||
-      window.localStorage.getItem(SELECTED_VOUCHER_KEY) ||
-      ""
-    )
-      .trim()
-      .toUpperCase();
+    const selectedVoucherCode = (params.get("voucher") || "").trim().toUpperCase();
 
     if (!selectedVoucherCode) {
       setVoucherCode("");
@@ -216,8 +212,6 @@ export function CustomerCheckoutScreen() {
         );
 
         if (!voucher || voucher.status !== "available") {
-          window.localStorage.removeItem(SELECTED_VOUCHER_KEY);
-
           if (!ignore) {
             setActiveVoucher(null);
             setVoucherNotice("Voucher tidak tersedia atau sudah pernah dipakai.");
@@ -227,8 +221,6 @@ export function CustomerCheckoutScreen() {
         }
 
         if (cartTotal < voucher.minSpendAmount) {
-          window.localStorage.removeItem(SELECTED_VOUCHER_KEY);
-
           if (!ignore) {
             setActiveVoucher(null);
             setVoucherNotice(
@@ -238,8 +230,6 @@ export function CustomerCheckoutScreen() {
 
           return;
         }
-
-        window.localStorage.setItem(SELECTED_VOUCHER_KEY, voucher.code);
 
         if (!ignore) {
           setActiveVoucher(voucher);
@@ -300,15 +290,23 @@ export function CustomerCheckoutScreen() {
         order?: {
           orderCode: string;
         };
+        orders?: Array<{
+          orderCode: string;
+        }>;
       };
 
-      if (!response.ok || !data.ok || !data.order) {
+      const orderCodes =
+        data.orders?.map((order) => order.orderCode).filter(Boolean) ??
+        (data.order ? [data.order.orderCode] : []);
+
+      if (!response.ok || !data.ok || orderCodes.length === 0) {
         throw new Error(data.message || "Checkout gagal.");
       }
 
-      clearCart();
-      window.localStorage.removeItem(SELECTED_VOUCHER_KEY);
-      router.push(`/payment-success?order=${data.order.orderCode}`);
+      await clearCart();
+      router.push(
+        `/payment-success?orders=${encodeURIComponent(orderCodes.join(","))}`,
+      );
     } catch (error) {
       setCheckoutNotice(
         error instanceof Error ? error.message : "Checkout gagal.",
@@ -395,16 +393,13 @@ export function CustomerCheckoutScreen() {
                   <div className="flex items-center gap-2">
                     <MapPin size={19} className="text-emerald-500" />
                     <h2 className="text-sm font-extrabold text-gray-950">
-                      Lokasi Wajib
+                      Lokasi Pickup
                     </h2>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => router.push("/profile/addresses")}
-                    className="rounded-xl bg-emerald-50 px-3 py-2 text-[11px] font-extrabold text-emerald-700 transition-colors hover:bg-emerald-100"
-                  >
-                    Atur Alamat
-                  </button>
+                  <CustomerLocationControl
+                    location={customerLocation}
+                    onLocationChange={handleLocationChange}
+                  />
                 </div>
                 <div
                   className={`rounded-[22px] border p-4 ${
@@ -418,7 +413,7 @@ export function CustomerCheckoutScreen() {
                       ? "Memeriksa titik lokasi..."
                       : hasCustomerCoordinates
                         ? customerLocation.label
-                        : "Alamat bertitik maps belum ada"}
+                        : "Lokasi customer belum aktif"}
                   </p>
                   <p
                     className={`mt-1 text-xs leading-5 font-medium ${
@@ -426,7 +421,9 @@ export function CustomerCheckoutScreen() {
                     }`}
                   >
                     {locationIssue ||
-                      "Rute pickup akan dibuat dari alamat ini ke lokasi toko."}
+                      (hasCustomerCoordinates
+                        ? "Rute pickup akan dibuat dari lokasi aktif ke toko."
+                        : "Checkout tetap bisa lanjut. Aktifkan lokasi jika ingin estimasi jarak dan rute pickup lebih akurat.")}
                   </p>
                 </div>
               </section>

@@ -6,7 +6,6 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from "react";
 
@@ -19,12 +18,11 @@ interface CustomerAppContextValue {
   cartTotal: number;
   originalTotal: number;
   totalSaved: number;
-  addToCart: (food: Food) => void;
-  updateCartQty: (id: string, delta: number) => void;
-  clearCart: () => void;
+  addToCart: (food: Food, quantity?: number) => Promise<boolean>;
+  updateCartQty: (id: string, delta: number) => Promise<boolean>;
+  clearCart: () => Promise<boolean>;
 }
 
-const STORAGE_KEY = "resqfood-cart";
 const MAX_CART_ITEM_QTY = 20;
 
 const CustomerAppContext = createContext<CustomerAppContextValue | null>(null);
@@ -40,6 +38,11 @@ type CartResponse = {
   cartItems?: ApiCartItem[];
 };
 
+type CartMutationResponse = CartResponse & {
+  cartItem?: ApiCartItem;
+  message?: string;
+};
+
 function apiCartItemToCartItem(item: ApiCartItem): CartItem {
   return {
     ...menuItemToFood(item.menuItem),
@@ -47,29 +50,8 @@ function apiCartItemToCartItem(item: ApiCartItem): CartItem {
   };
 }
 
-function normalizeStoredCart(value: unknown): CartItem[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return value.filter((item): item is CartItem => {
-    if (!item || typeof item !== "object") {
-      return false;
-    }
-
-    const candidate = item as Partial<CartItem>;
-    return (
-      typeof candidate.id === "string" &&
-      typeof candidate.name === "string" &&
-      typeof candidate.qty === "number" &&
-      Number.isFinite(candidate.qty) &&
-      candidate.qty > 0
-    );
-  });
-}
-
 async function saveCartItem(menuItemId: string, quantity = 1) {
-  await fetch("/api/cart", {
+  const response = await fetch("/api/cart", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -79,10 +61,17 @@ async function saveCartItem(menuItemId: string, quantity = 1) {
       quantity: Math.max(1, Math.min(20, quantity)),
     }),
   });
+  const data = (await response.json()) as CartMutationResponse;
+
+  if (!response.ok || !data.ok || !data.cartItem) {
+    throw new Error(data.message || "Item gagal ditambahkan ke keranjang.");
+  }
+
+  return data.cartItem;
 }
 
 async function updateStoredCartItem(menuItemId: string, quantity: number) {
-  await fetch("/api/cart", {
+  const response = await fetch("/api/cart", {
     method: "PATCH",
     headers: {
       "Content-Type": "application/json",
@@ -92,18 +81,35 @@ async function updateStoredCartItem(menuItemId: string, quantity: number) {
       quantity: Math.max(1, Math.min(MAX_CART_ITEM_QTY, quantity)),
     }),
   });
+  const data = (await response.json()) as CartMutationResponse;
+
+  if (!response.ok || !data.ok || !data.cartItem) {
+    throw new Error(data.message || "Keranjang gagal diperbarui.");
+  }
+
+  return data.cartItem;
 }
 
 async function removeStoredCartItem(menuItemId: string) {
-  await fetch(`/api/cart?menuItemId=${encodeURIComponent(menuItemId)}`, {
+  const response = await fetch(`/api/cart?menuItemId=${encodeURIComponent(menuItemId)}`, {
     method: "DELETE",
   });
+  const data = (await response.json()) as CartMutationResponse;
+
+  if (!response.ok || !data.ok) {
+    throw new Error(data.message || "Item gagal dihapus dari keranjang.");
+  }
 }
 
 async function clearStoredCart() {
-  await fetch("/api/cart", {
+  const response = await fetch("/api/cart", {
     method: "DELETE",
   });
+  const data = (await response.json()) as CartMutationResponse;
+
+  if (!response.ok || !data.ok) {
+    throw new Error(data.message || "Keranjang gagal dikosongkan.");
+  }
 }
 
 export function CustomerAppProvider({
@@ -112,83 +118,33 @@ export function CustomerAppProvider({
   children: React.ReactNode;
 }>) {
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [hasHydrated, setHasHydrated] = useState(false);
-  const cartRef = useRef<CartItem[]>([]);
 
-  const setCartSnapshot = useCallback(
-    (nextCartOrUpdater: CartItem[] | ((currentCart: CartItem[]) => CartItem[])) => {
-      const nextCart =
-        typeof nextCartOrUpdater === "function"
-          ? nextCartOrUpdater(cartRef.current)
-          : nextCartOrUpdater;
-
-      cartRef.current = nextCart;
-      setCart(nextCart);
-
-      return nextCart;
-    },
-    [],
-  );
+  const setCartSnapshot = useCallback((nextCart: CartItem[]) => {
+    setCart(nextCart);
+  }, []);
 
   useEffect(() => {
     let ignore = false;
 
     async function hydrateCart() {
-      let localCart: CartItem[] = [];
-
-      try {
-        const rawCart = window.localStorage.getItem(STORAGE_KEY);
-
-        if (rawCart) {
-          localCart = normalizeStoredCart(JSON.parse(rawCart));
-          setCartSnapshot(localCart);
-        }
-      } catch {
-        window.localStorage.removeItem(STORAGE_KEY);
-      }
-
       try {
         const response = await fetch("/api/cart", { cache: "no-store" });
 
-        if (!response.ok) {
-          return;
-        }
-
         const data = (await response.json()) as CartResponse;
 
-        if (ignore || !data.ok) {
+        if (ignore) {
           return;
         }
 
-        const serverCart = (data.cartItems ?? []).map(apiCartItemToCartItem);
-
-        if (serverCart.length > 0) {
-          setCartSnapshot(serverCart);
+        if (!response.ok || !data.ok) {
+          setCartSnapshot([]);
           return;
         }
 
-        if (localCart.length > 0) {
-          await Promise.allSettled(
-            localCart.map((item) => saveCartItem(item.id, item.qty)),
-          );
-
-          const refreshResponse = await fetch("/api/cart", { cache: "no-store" });
-
-          if (!refreshResponse.ok) {
-            return;
-          }
-
-          const refreshedData = (await refreshResponse.json()) as CartResponse;
-
-          if (!ignore && refreshedData.ok) {
-            setCartSnapshot(
-              (refreshedData.cartItems ?? []).map(apiCartItemToCartItem),
-            );
-          }
-        }
-      } finally {
+        setCartSnapshot((data.cartItems ?? []).map(apiCartItemToCartItem));
+      } catch {
         if (!ignore) {
-          setHasHydrated(true);
+          setCartSnapshot([]);
         }
       }
     }
@@ -200,79 +156,70 @@ export function CustomerAppProvider({
     };
   }, [setCartSnapshot]);
 
-  useEffect(() => {
-    if (!hasHydrated) {
-      return;
-    }
-
-    try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(cart));
-    } catch {
-      window.localStorage.removeItem(STORAGE_KEY);
-    }
-  }, [cart, hasHydrated]);
-
   const value = useMemo<CustomerAppContextValue>(() => {
-    const addToCart = (food: Food) => {
-      setCartSnapshot((currentCart) => {
-        const existing = currentCart.find((item) => item.id === food.id);
-        const maxQty = Math.min(food.stock, MAX_CART_ITEM_QTY);
+    const upsertCartItem = (cartItem: CartItem) => {
+      setCart((currentCart) => {
+        const existingItem = currentCart.find((item) => item.id === cartItem.id);
 
-        if (maxQty < 1) {
-          return currentCart;
+        if (!existingItem) {
+          return [cartItem, ...currentCart];
         }
 
-        if (existing) {
-          return currentCart.map((item) =>
-            item.id === food.id
-              ? { ...item, qty: Math.min(maxQty, item.qty + 1) }
-              : item,
-          );
-        }
-
-        return [...currentCart, { ...food, qty: 1 }];
+        return currentCart.map((item) =>
+          item.id === cartItem.id ? cartItem : item,
+        );
       });
-
-      void saveCartItem(food.id).catch(() => undefined);
     };
 
-    const updateCartQty = (id: string, delta: number) => {
-      const existing = cartRef.current.find((item) => item.id === id);
+    const addToCart = async (food: Food, quantity = 1) => {
+      const maxQty = Math.min(food.stock, MAX_CART_ITEM_QTY);
+
+      if (maxQty < 1) {
+        return false;
+      }
+
+      try {
+        const cartItem = await saveCartItem(food.id, Math.min(quantity, maxQty));
+
+        upsertCartItem(apiCartItemToCartItem(cartItem));
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
+    const updateCartQty = async (id: string, delta: number) => {
+      const existing = cart.find((item) => item.id === id);
       const maxQty = Math.min(existing?.stock ?? MAX_CART_ITEM_QTY, MAX_CART_ITEM_QTY);
       const nextQty = Math.min(maxQty, (existing?.qty ?? 0) + delta);
 
-      setCartSnapshot((currentCart) =>
-        currentCart
-          .map((item) => {
-            if (item.id !== id) {
-              return item;
-            }
-
-            const maxQty = Math.min(item.stock, MAX_CART_ITEM_QTY);
-            const nextQty = Math.min(maxQty, item.qty + delta);
-
-            return nextQty > 0
-              ? { ...item, qty: nextQty }
-              : null;
-          })
-          .filter((item): item is CartItem => item !== null),
-      );
-
       if (!existing) {
-        return;
+        return false;
       }
 
-      if (nextQty > 0) {
-        void updateStoredCartItem(id, nextQty).catch(() => undefined);
-        return;
-      }
+      try {
+        if (nextQty > 0) {
+          const cartItem = await updateStoredCartItem(id, nextQty);
+          upsertCartItem(apiCartItemToCartItem(cartItem));
+          return true;
+        }
 
-      void removeStoredCartItem(id).catch(() => undefined);
+        await removeStoredCartItem(id);
+        setCart((currentCart) => currentCart.filter((item) => item.id !== id));
+        return true;
+      } catch {
+        return false;
+      }
     };
 
-    const clearCart = () => {
-      setCartSnapshot([]);
-      void clearStoredCart().catch(() => undefined);
+    const clearCart = async () => {
+      try {
+        await clearStoredCart();
+        setCart([]);
+        return true;
+      } catch {
+        return false;
+      }
     };
 
     const cartCount = cart.reduce((sum, item) => sum + item.qty, 0);
@@ -293,7 +240,7 @@ export function CustomerAppProvider({
       updateCartQty,
       clearCart,
     };
-  }, [cart, setCartSnapshot]);
+  }, [cart]);
 
   return (
     <CustomerAppContext.Provider value={value}>

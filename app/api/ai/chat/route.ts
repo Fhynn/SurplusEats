@@ -509,6 +509,8 @@ async function loadMenuContext() {
       stock: { gt: 0 },
       restaurant: {
         status: RestaurantStatus.APPROVED,
+        latitude: { not: null },
+        longitude: { not: null },
       },
     },
     include: {

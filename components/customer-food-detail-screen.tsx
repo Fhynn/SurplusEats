@@ -145,9 +145,14 @@ export function CustomerFoodDetailScreen({
     };
   }, [isAdded]);
 
-  const handleAddToCart = () => {
-    Array.from({ length: qty }).forEach(() => addToCart(displayFood));
-    setIsAdded(true);
+  const handleAddToCart = async () => {
+    const isSaved = await addToCart(displayFood, qty);
+
+    if (isSaved) {
+      setIsAdded(true);
+    }
+
+    return isSaved;
   };
 
   const handleToggleFavorite = async () => {
@@ -503,7 +508,7 @@ export function CustomerFoodDetailScreen({
           <div className="grid grid-cols-[1fr_auto] gap-3">
             <button
               type="button"
-              onClick={handleAddToCart}
+              onClick={() => void handleAddToCart()}
               className={`flex min-h-14 items-center justify-center gap-2 rounded-2xl px-5 text-sm font-extrabold transition-all active:scale-[0.98] ${
                 isAdded
                   ? "bg-emerald-100 text-emerald-600 shadow-none"
@@ -516,8 +521,11 @@ export function CustomerFoodDetailScreen({
             <button
               type="button"
               onClick={() => {
-                handleAddToCart();
-                router.push("/cart");
+                void handleAddToCart().then((isSaved) => {
+                  if (isSaved) {
+                    router.push("/cart");
+                  }
+                });
               }}
               className="min-h-14 rounded-2xl bg-emerald-500 px-5 text-sm font-extrabold whitespace-nowrap text-white shadow-[0_12px_26px_rgba(16,185,129,0.2)] transition-all active:scale-[0.98]"
             >

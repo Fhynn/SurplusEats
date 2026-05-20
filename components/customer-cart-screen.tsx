@@ -28,8 +28,6 @@ type CartVoucher = {
   status: "available" | "used" | "expired";
 };
 
-const SELECTED_VOUCHER_KEY = "resqfood-selected-voucher";
-
 export function CustomerCartScreen() {
   const router = useRouter();
   const {
@@ -86,7 +84,8 @@ export function CustomerCartScreen() {
     const normalizedCode = code.trim().toUpperCase();
 
     if (!normalizedCode) {
-      window.localStorage.removeItem(SELECTED_VOUCHER_KEY);
+      setAppliedVoucher("");
+      setVoucherNotice("");
       return;
     }
 
@@ -97,7 +96,6 @@ export function CustomerCartScreen() {
     if (!voucher) {
       setVoucherNotice("Voucher tidak tersedia untuk akun ini.");
       setAppliedVoucher("");
-      window.localStorage.removeItem(SELECTED_VOUCHER_KEY);
       return;
     }
 
@@ -106,14 +104,12 @@ export function CustomerCartScreen() {
         `Minimum transaksi voucher ini ${formatRp(voucher.minSpendAmount)}.`,
       );
       setAppliedVoucher("");
-      window.localStorage.removeItem(SELECTED_VOUCHER_KEY);
       return;
     }
 
     setAppliedVoucher(voucher.code);
     setVoucherCode(normalizedCode);
     setVoucherNotice("");
-    window.localStorage.setItem(SELECTED_VOUCHER_KEY, voucher.code);
   }, [availableVouchers, cartTotal]);
 
   useEffect(() => {
@@ -122,8 +118,7 @@ export function CustomerCartScreen() {
     }
 
     const params = new URLSearchParams(window.location.search);
-    const selectedVoucherCode =
-      params.get("voucher") || window.localStorage.getItem(SELECTED_VOUCHER_KEY);
+    const selectedVoucherCode = params.get("voucher");
 
     if (!selectedVoucherCode) {
       return;
@@ -280,7 +275,7 @@ export function CustomerCartScreen() {
                     </div>
                     <button
                       type="button"
-                      onClick={() => updateCartQty(item.id, -item.qty)}
+                      onClick={() => void updateCartQty(item.id, -item.qty)}
                       className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-50 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-500"
                       aria-label={`Hapus ${item.name}`}
                     >
@@ -301,7 +296,7 @@ export function CustomerCartScreen() {
                     <div className="flex items-center gap-3 rounded-full border border-gray-100 bg-gray-50 px-2 py-1">
                       <button
                         type="button"
-                        onClick={() => updateCartQty(item.id, -1)}
+                        onClick={() => void updateCartQty(item.id, -1)}
                         className="flex h-7 w-7 items-center justify-center rounded-full bg-white text-gray-600 shadow-sm"
                         aria-label={`Kurangi ${item.name}`}
                       >
@@ -312,7 +307,7 @@ export function CustomerCartScreen() {
                       </span>
                       <button
                         type="button"
-                        onClick={() => updateCartQty(item.id, 1)}
+                        onClick={() => void updateCartQty(item.id, 1)}
                         disabled={isMaxQty}
                         className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500 text-white shadow-[0_4px_16px_rgba(16,185,129,0.22)] transition disabled:bg-gray-200 disabled:text-gray-400 disabled:shadow-none"
                         aria-label={`Tambah ${item.name}`}
@@ -491,7 +486,7 @@ export function CustomerCartScreen() {
               <button
                 type="button"
                 onClick={() => {
-                  clearCart();
+                  void clearCart();
                   setIsClearOpen(false);
                 }}
                 className="rounded-2xl bg-red-500 py-3.5 text-sm font-extrabold text-white transition-colors hover:bg-red-600"

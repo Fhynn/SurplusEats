@@ -77,7 +77,7 @@ function getCoordinateError(draft: AddressDraft) {
   const longitude = draft.longitude.trim();
 
   if (!latitude && !longitude) {
-    return "Titik maps wajib diisi. Klik Ambil Lokasi atau isi latitude dan longitude manual.";
+    return "Titik maps wajib diisi. Klik Ambil Lokasi untuk menyimpan lokasi aktif.";
   }
 
   if (!latitude || !longitude) {
@@ -121,7 +121,7 @@ export default function CustomerAddressesPage() {
 
   const coordinateError = getCoordinateError(draft);
   const isDraftInvalid =
-    !draft.label.trim() || !draft.detail.trim() || Boolean(coordinateError);
+    !draft.label.trim() || Boolean(coordinateError);
 
   const loadAddresses = useCallback(async () => {
     setIsLoadingAddresses(true);
@@ -214,7 +214,7 @@ export default function CustomerAddressesPage() {
 
     const normalizedDraft = {
       label: draft.label.trim(),
-      detail: draft.detail.trim(),
+      detail: draft.detail.trim() || "Lokasi aktif customer",
       note: draft.note.trim(),
       latitude: draft.latitude.trim() ? Number(draft.latitude) : undefined,
       longitude: draft.longitude.trim() ? Number(draft.longitude) : undefined,
@@ -325,10 +325,10 @@ export default function CustomerAddressesPage() {
             </Link>
             <div className="ml-2 min-w-0">
               <h1 className="text-lg font-extrabold text-gray-900">
-                Alamat Tersimpan
+                Lokasi Tersimpan
               </h1>
               <p className="mt-0.5 text-xs font-medium text-gray-500">
-                {addresses.length} alamat tersimpan
+                {addresses.length} lokasi tersimpan
               </p>
             </div>
           </div>
@@ -370,7 +370,7 @@ export default function CustomerAddressesPage() {
                 Belum ada alamat
               </h2>
               <p className="mt-2 text-sm leading-6 font-medium text-gray-500">
-                Tambahkan alamat pickup favorit agar checkout lebih cepat.
+                Aktifkan lokasi agar rekomendasi makanan terdekat lebih akurat.
               </p>
             </section>
           ) : null}
@@ -480,7 +480,7 @@ export default function CustomerAddressesPage() {
             className="mt-4 flex w-full items-center justify-center gap-2 rounded-[24px] border-2 border-dashed border-emerald-300 bg-emerald-50/50 py-4 text-sm font-bold text-emerald-600 transition-colors hover:bg-emerald-50"
           >
             <Plus size={18} />
-            Tambah Alamat Baru
+            Tambah Lokasi Baru
           </button>
         </div>
 
@@ -492,10 +492,10 @@ export default function CustomerAddressesPage() {
               <div className="mb-6 flex items-start justify-between gap-4">
                 <div>
                   <p className="text-xs font-extrabold tracking-[0.2em] text-emerald-600 uppercase">
-                    Address
+                    Location
                   </p>
                   <h2 className="mt-1 text-xl font-extrabold text-gray-950">
-                    {editingAddressId ? "Edit Alamat" : "Tambah Alamat"}
+                    {editingAddressId ? "Edit Lokasi" : "Tambah Lokasi"}
                   </h2>
                 </div>
                 <button
@@ -563,7 +563,7 @@ export default function CustomerAddressesPage() {
 
                 <label className="block">
                   <span className="mb-2 block text-sm font-extrabold text-gray-800">
-                    Alamat Lengkap
+                    Patokan Lokasi
                   </span>
                   <textarea
                     value={draft.detail}
@@ -573,14 +573,14 @@ export default function CustomerAddressesPage() {
                         detail: event.target.value,
                       }))
                     }
-                    placeholder="Tulis alamat lengkap dan patokan utama."
+                    placeholder="Opsional, contoh: dekat kampus, area kantor, sekitar kos."
                     className="min-h-28 w-full resize-none rounded-[24px] border border-gray-200 bg-gray-50 p-4 text-sm leading-6 font-medium text-gray-900 outline-none placeholder:text-gray-400 focus:border-emerald-500 focus:bg-white"
                   />
                 </label>
 
                 <label className="block">
                   <span className="mb-2 block text-sm font-extrabold text-gray-800">
-                    Catatan Kurir
+                    Catatan
                   </span>
                   <input
                     type="text"
@@ -591,7 +591,7 @@ export default function CustomerAddressesPage() {
                         note: event.target.value,
                       }))
                     }
-                    placeholder="Contoh: pagar hitam, lantai 2, titip resepsionis"
+                    placeholder="Opsional, contoh: biasa pickup dari area ini"
                     className="h-12 w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 text-sm font-bold text-gray-900 outline-none placeholder:text-gray-400 focus:border-emerald-500 focus:bg-white"
                   />
                 </label>
@@ -603,7 +603,7 @@ export default function CustomerAddressesPage() {
                         Titik Maps
                       </p>
                       <p className="mt-1 text-xs leading-5 font-semibold text-gray-500">
-                        Wajib diisi agar rute pickup dan checkout bisa dipakai.
+                        Dipakai untuk estimasi jarak dan rute pickup. Angka koordinat disimpan otomatis.
                       </p>
                     </div>
                     <button
@@ -617,44 +617,11 @@ export default function CustomerAddressesPage() {
                     </button>
                   </div>
 
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <label className="block">
-                      <span className="mb-2 block text-xs font-extrabold text-gray-700">
-                        Latitude
-                      </span>
-                      <input
-                        type="number"
-                        step="any"
-                        value={draft.latitude}
-                        onChange={(event) =>
-                          setDraft((currentDraft) => ({
-                            ...currentDraft,
-                            latitude: event.target.value,
-                          }))
-                        }
-                        placeholder="-6.200000"
-                        className="h-11 w-full rounded-2xl border border-emerald-100 bg-white px-3 text-sm font-bold text-gray-900 outline-none placeholder:text-gray-300 focus:border-emerald-500"
-                      />
-                    </label>
-                    <label className="block">
-                      <span className="mb-2 block text-xs font-extrabold text-gray-700">
-                        Longitude
-                      </span>
-                      <input
-                        type="number"
-                        step="any"
-                        value={draft.longitude}
-                        onChange={(event) =>
-                          setDraft((currentDraft) => ({
-                            ...currentDraft,
-                            longitude: event.target.value,
-                          }))
-                        }
-                        placeholder="106.816666"
-                        className="h-11 w-full rounded-2xl border border-emerald-100 bg-white px-3 text-sm font-bold text-gray-900 outline-none placeholder:text-gray-300 focus:border-emerald-500"
-                      />
-                    </label>
-                  </div>
+                  {draft.latitude && draft.longitude ? (
+                    <div className="rounded-2xl border border-emerald-100 bg-white px-4 py-3 text-xs font-bold text-emerald-700">
+                      Titik maps sudah tersimpan untuk lokasi ini.
+                    </div>
+                  ) : null}
                   {coordinateError ? (
                     <p className="mt-3 text-xs leading-5 font-bold text-red-600">
                       {coordinateError}

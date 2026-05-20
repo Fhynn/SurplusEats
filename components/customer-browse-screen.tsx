@@ -3,7 +3,6 @@
 import Image from "next/image";
 import {
   Bell,
-  ChevronDown,
   Filter,
   Flame,
   Leaf,
@@ -19,6 +18,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import { useCustomerApp } from "@/components/customer-app-provider";
+import { CustomerLocationControl } from "@/components/customer-location-control";
 import { CATEGORIES, formatRp, type Food } from "@/lib/customer-data";
 import {
   defaultCustomerLocation,
@@ -146,30 +146,25 @@ export function CustomerBrowseScreen() {
     return sortFoodsByDistance(nextFoods);
   }, [activeCategory, activeFilter, allFoods, query]);
 
-  const locationStatus = customerLocation.coordinates
-    ? "Lokasi Saat Ini"
-    : customerLocation.hasSavedAddress
-      ? "Titik maps belum aktif"
-      : "Lokasi Saat Ini";
+  const handleLocationChange = (nextLocation: CustomerLocation) => {
+    setCustomerLocation(nextLocation);
+    setAllFoods((currentFoods) =>
+      sortFoodsByDistance(
+        currentFoods.map((food) =>
+          applyFoodDistance(food, nextLocation.coordinates),
+        ),
+      ),
+    );
+  };
 
   return (
     <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-gray-50">
       <header className="sticky top-0 z-20 rounded-b-3xl bg-white px-6 pt-8 pb-4 shadow-[0_4px_20px_rgba(0,0,0,0.03)] md:rounded-none md:px-8 md:pt-6 lg:px-10">
         <div className="mx-auto mb-5 flex w-full max-w-7xl items-center justify-between">
-          <button
-            type="button"
-            onClick={() => router.push("/profile/addresses")}
-            className="flex max-w-[210px] flex-col text-left"
-          >
-            <span className="mb-0.5 flex items-center gap-1 text-xs font-semibold text-gray-400">
-              {locationStatus}
-              <ChevronDown size={14} className="text-emerald-500" />
-            </span>
-            <div className="flex min-w-0 items-center gap-1.5 text-sm font-bold text-gray-900">
-              <MapPin size={16} className="text-emerald-500" />
-              <span className="truncate">{customerLocation.label}</span>
-            </div>
-          </button>
+          <CustomerLocationControl
+            location={customerLocation}
+            onLocationChange={handleLocationChange}
+          />
 
           <div className="flex items-center gap-2">
             <button

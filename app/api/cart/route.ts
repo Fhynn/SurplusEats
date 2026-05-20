@@ -31,7 +31,11 @@ async function findActiveMenuItem(menuItemId: string) {
     where: {
       id: menuItemId,
       status: MenuItemStatus.ACTIVE,
-      restaurant: { status: RestaurantStatus.APPROVED },
+      restaurant: {
+        status: RestaurantStatus.APPROVED,
+        latitude: { not: null },
+        longitude: { not: null },
+      },
     },
     select: {
       id: true,
@@ -55,7 +59,11 @@ export async function GET() {
       userId: session.userId,
       menuItem: {
         status: MenuItemStatus.ACTIVE,
-        restaurant: { status: RestaurantStatus.APPROVED },
+        restaurant: {
+          status: RestaurantStatus.APPROVED,
+          latitude: { not: null },
+          longitude: { not: null },
+        },
       },
     },
     include: {
