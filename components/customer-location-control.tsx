@@ -36,46 +36,54 @@ export function CustomerLocationControl({
     setNotice(null);
 
     navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        try {
-          const response = await fetch("/api/addresses/active-location", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              latitude: position.coords.latitude,
-              longitude: position.coords.longitude,
-            }),
+      (position) => {
+        const coordinates = {
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+        };
+
+        onLocationChange({
+          label: "Lokasi aktif",
+          coordinates,
+          hasSavedAddress: true,
+        });
+        setIsLocating(false);
+        setNotice(null);
+
+        void fetch("/api/addresses/active-location", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(coordinates),
+        })
+          .then(async (response) => {
+            const data = (await response.json()) as {
+              ok: boolean;
+              message?: string;
+              address?: ApiCustomerAddress;
+            };
+
+            if (!response.ok || !data.ok || !data.address) {
+              throw new Error(data.message || "Lokasi gagal disimpan.");
+            }
+
+            onLocationChange(getCustomerLocationFromAddresses([data.address]));
+          })
+          .catch((error) => {
+            setNotice(
+              error instanceof Error ? error.message : "Lokasi gagal disimpan.",
+            );
           });
-          const data = (await response.json()) as {
-            ok: boolean;
-            message?: string;
-            address?: ApiCustomerAddress;
-          };
-
-          if (!response.ok || !data.ok || !data.address) {
-            throw new Error(data.message || "Lokasi gagal disimpan.");
-          }
-
-          onLocationChange(getCustomerLocationFromAddresses([data.address]));
-          setNotice(null);
-        } catch (error) {
-          setNotice(
-            error instanceof Error ? error.message : "Lokasi gagal disimpan.",
-          );
-        } finally {
-          setIsLocating(false);
-        }
       },
       () => {
         setNotice("Izinkan akses lokasi browser.");
         setIsLocating(false);
       },
       {
-        enableHighAccuracy: true,
-        maximumAge: 60_000,
-        timeout: 12_000,
+        enableHighAccuracy: false,
+        maximumAge: 300_000,
+        timeout: 8_000,
       },
     );
   };

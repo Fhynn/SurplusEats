@@ -507,11 +507,7 @@ async function loadMenuContext() {
     where: {
       status: MenuItemStatus.ACTIVE,
       stock: { gt: 0 },
-      restaurant: {
-        status: RestaurantStatus.APPROVED,
-        latitude: { not: null },
-        longitude: { not: null },
-      },
+      restaurant: { status: RestaurantStatus.APPROVED },
     },
     include: {
       restaurant: true,
