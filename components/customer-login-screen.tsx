@@ -85,7 +85,7 @@ export function CustomerLoginScreen() {
         />
       ) : null}
 
-      <section className="relative h-56 w-full shrink-0 bg-gray-100 sm:h-72 lg:h-screen lg:w-[45%]">
+      <section className="relative aspect-[16/9] w-full shrink-0 bg-gray-100 sm:aspect-[21/9] lg:aspect-auto lg:h-screen lg:w-[45%]">
         <Image
           src="https://images.unsplash.com/photo-1490645935967-10de6ba17061?q=80&w=2053&auto=format&fit=crop"
           alt="Healthy food"
