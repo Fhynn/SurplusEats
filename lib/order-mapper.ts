@@ -3,7 +3,12 @@ import {
   type Coordinates,
 } from "@/lib/geo-distance";
 
-export type UiOrderStatus = "ready" | "preparing" | "completed" | "cancelled";
+export type UiOrderStatus =
+  | "ready"
+  | "preparing"
+  | "completed"
+  | "cancelled"
+  | "noShow";
 
 export type ApiOrder = {
   id: string;
@@ -61,6 +66,7 @@ export type CustomerOrderCard = {
 export function mapOrderStatus(status: string): UiOrderStatus {
   if (status === "READY") return "ready";
   if (status === "COMPLETED" || status === "REFUNDED") return "completed";
+  if (status === "NO_SHOW") return "noShow";
   if (status === "CANCELLED" || status === "PAYMENT_FAILED") return "cancelled";
   return "preparing";
 }
@@ -69,6 +75,7 @@ export function orderStatusText(status: UiOrderStatus) {
   if (status === "ready") return "Siap Diambil";
   if (status === "completed") return "Selesai";
   if (status === "cancelled") return "Dibatalkan";
+  if (status === "noShow") return "Tidak Diambil";
   return "Sedang Disiapkan";
 }
 

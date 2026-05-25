@@ -1,8 +1,10 @@
 "use client";
 
-import { ChevronDown, Loader2, MapPin } from "lucide-react";
+import { Loader2, MapPin, Navigation } from "lucide-react";
 import { useState } from "react";
 
+import { useCustomerApp } from "@/components/customer-app-provider";
+import { getBestBrowserLocation } from "@/lib/browser-location";
 import {
   getCustomerLocationFromAddresses,
   type ApiCustomerAddress,
@@ -11,22 +13,26 @@ import {
 
 type CustomerLocationControlProps = {
   location: CustomerLocation;
+  isLoading?: boolean;
   onLocationChange: (location: CustomerLocation) => void;
 };
 
 export function CustomerLocationControl({
   location,
+  isLoading = false,
   onLocationChange,
 }: Readonly<CustomerLocationControlProps>) {
+  const { refreshCustomerLocation } = useCustomerApp();
   const [isLocating, setIsLocating] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const isBusy = isLocating || isLoading;
   const locationStatus = isLocating
-    ? "Mengambil Lokasi"
-    : location.coordinates
-      ? "Lokasi Aktif"
-      : "Aktifkan Lokasi";
+    ? "Mencari Lokasi"
+    : isLoading
+      ? "Memuat Lokasi"
+      : "Lokasi Otomatis";
 
-  const handleUseCurrentLocation = () => {
+  const handleUseCurrentLocation = async () => {
     if (!navigator.geolocation) {
       setNotice("Browser belum mendukung lokasi.");
       return;
@@ -35,84 +41,67 @@ export function CustomerLocationControl({
     setIsLocating(true);
     setNotice(null);
 
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const coordinates = {
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-        };
+    try {
+      const result = await getBestBrowserLocation();
+      const response = await fetch("/api/addresses/active-location", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(result.coordinates),
+      });
+      const data = (await response.json()) as {
+        ok: boolean;
+        message?: string;
+        address?: ApiCustomerAddress;
+      };
 
-        onLocationChange({
-          label: "Lokasi aktif",
-          coordinates,
-          hasSavedAddress: true,
-        });
-        setIsLocating(false);
-        setNotice(null);
+      if (!response.ok || !data.ok || !data.address) {
+        throw new Error(data.message || "Lokasi otomatis gagal disimpan.");
+      }
 
-        void fetch("/api/addresses/active-location", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(coordinates),
-        })
-          .then(async (response) => {
-            const data = (await response.json()) as {
-              ok: boolean;
-              message?: string;
-              address?: ApiCustomerAddress;
-            };
-
-            if (!response.ok || !data.ok || !data.address) {
-              throw new Error(data.message || "Lokasi gagal disimpan.");
-            }
-
-            onLocationChange(getCustomerLocationFromAddresses([data.address]));
-          })
-          .catch((error) => {
-            setNotice(
-              error instanceof Error ? error.message : "Lokasi gagal disimpan.",
-            );
-          });
-      },
-      () => {
-        setNotice("Izinkan akses lokasi browser.");
-        setIsLocating(false);
-      },
-      {
-        enableHighAccuracy: false,
-        maximumAge: 300_000,
-        timeout: 8_000,
-      },
-    );
+      onLocationChange(getCustomerLocationFromAddresses([data.address]));
+      await refreshCustomerLocation();
+    } catch (error) {
+      setNotice(
+        error instanceof Error
+          ? error.message
+          : "Lokasi otomatis gagal diambil. Pastikan lokasi perangkat aktif.",
+      );
+    } finally {
+      setIsLocating(false);
+    }
   };
 
   return (
     <div className="max-w-[230px]">
       <button
         type="button"
-        onClick={handleUseCurrentLocation}
-        disabled={isLocating}
+        onClick={() => void handleUseCurrentLocation()}
+        disabled={isBusy}
         className="flex max-w-full flex-col text-left disabled:cursor-wait"
       >
         <span className="mb-0.5 flex items-center gap-1 text-xs font-semibold text-gray-400">
           {locationStatus}
-          {isLocating ? (
+          {isBusy ? (
             <Loader2 size={13} className="animate-spin text-emerald-500" />
           ) : (
-            <ChevronDown size={14} className="text-emerald-500" />
+            <Navigation size={13} className="text-emerald-500" />
           )}
         </span>
         <span className="flex min-w-0 items-center gap-1.5 text-sm font-bold text-gray-900">
           <MapPin size={16} className="shrink-0 text-emerald-500" />
           <span className="truncate">
-            {location.coordinates ? location.label : "Ambil lokasi sekarang"}
+            {isLoading && !location.coordinates
+              ? "Membaca lokasi..."
+              : location.coordinates
+                ? location.label
+                : "Aktifkan otomatis"}
           </span>
         </span>
       </button>
       {notice ? (
-        <p className="mt-1 truncate text-[10px] font-bold text-red-500">
+        <p className="mt-1 text-[10px] leading-4 font-bold text-red-500">
           {notice}
         </p>
       ) : null}

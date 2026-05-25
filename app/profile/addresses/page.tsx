@@ -2,320 +2,101 @@
 
 import Link from "next/link";
 import {
-  Building2,
   CheckCircle2,
   ChevronLeft,
   ExternalLink,
-  Home,
-  Navigation,
   MapPin,
-  Plus,
-  Save,
-  Trash2,
-  X,
+  Navigation,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 
+import { useCustomerApp } from "@/components/customer-app-provider";
 import { MobileDeviceFrame } from "@/components/mobile-device-frame";
+import {
+  getBestBrowserLocation,
+  getLocationAccuracyNotice,
+} from "@/lib/browser-location";
+import {
+  getCustomerLocationFromAddresses,
+  type ApiCustomerAddress,
+} from "@/lib/customer-location";
 
-type AddressKind = "home" | "office";
-
-type SavedAddress = {
-  id: string;
-  label: string;
-  detail: string;
-  note: string;
-  latitude: number | null;
-  longitude: number | null;
-  kind: AddressKind;
-  isPrimary: boolean;
+type Notice = {
+  tone: "error" | "success";
+  text: string;
 };
-
-type AddressDraft = {
-  label: string;
-  detail: string;
-  note: string;
-  latitude: string;
-  longitude: string;
-  kind: AddressKind;
-};
-
-type ApiAddress = {
-  id: string;
-  label: string;
-  addressLine: string;
-  notes: string | null;
-  latitude: number | null;
-  longitude: number | null;
-  isPrimary: boolean;
-};
-
-const emptyDraft: AddressDraft = {
-  label: "",
-  detail: "",
-  note: "",
-  latitude: "",
-  longitude: "",
-  kind: "home",
-};
-
-function mapApiAddress(address: ApiAddress): SavedAddress {
-  return {
-    id: address.id,
-    label: address.label,
-    detail: address.addressLine,
-    note: address.notes ?? "",
-    latitude: address.latitude,
-    longitude: address.longitude,
-    kind: address.label.toLowerCase().includes("kantor") ? "office" : "home",
-    isPrimary: address.isPrimary,
-  };
-}
-
-function getCoordinateError(draft: AddressDraft) {
-  const latitude = draft.latitude.trim();
-  const longitude = draft.longitude.trim();
-
-  if (!latitude && !longitude) {
-    return "Titik maps wajib diisi. Klik Ambil Lokasi untuk menyimpan lokasi aktif.";
-  }
-
-  if (!latitude || !longitude) {
-    return "Latitude dan longitude harus diisi bersama.";
-  }
-
-  const latitudeNumber = Number(latitude);
-  const longitudeNumber = Number(longitude);
-
-  if (!Number.isFinite(latitudeNumber) || latitudeNumber < -90 || latitudeNumber > 90) {
-    return "Latitude harus berada di antara -90 dan 90.";
-  }
-
-  if (
-    !Number.isFinite(longitudeNumber) ||
-    longitudeNumber < -180 ||
-    longitudeNumber > 180
-  ) {
-    return "Longitude harus berada di antara -180 dan 180.";
-  }
-
-  return "";
-}
 
 function getMapsUrl(latitude: number, longitude: number) {
   return `https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`;
 }
 
 export default function CustomerAddressesPage() {
-  const [addresses, setAddresses] = useState<SavedAddress[]>([]);
-  const [draft, setDraft] = useState<AddressDraft>(emptyDraft);
-  const [editingAddressId, setEditingAddressId] = useState<string | null>(null);
-  const [deletingAddress, setDeletingAddress] = useState<SavedAddress | null>(
-    null,
-  );
-  const [isEditorOpen, setIsEditorOpen] = useState(false);
-  const [isLoadingAddresses, setIsLoadingAddresses] = useState(true);
-  const [isSavingAddress, setIsSavingAddress] = useState(false);
-  const [isLocatingAddress, setIsLocatingAddress] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
+  const {
+    customerLocation,
+    isCustomerLocationLoading,
+    refreshCustomerLocation,
+    setCustomerLocation,
+  } = useCustomerApp();
+  const [isLocating, setIsLocating] = useState(false);
+  const [notice, setNotice] = useState<Notice | null>(null);
+  const hasCoordinates = Boolean(customerLocation.coordinates);
+  const isBusy = isLocating || isCustomerLocationLoading;
 
-  const coordinateError = getCoordinateError(draft);
-  const isDraftInvalid =
-    !draft.label.trim() || Boolean(coordinateError);
-
-  const loadAddresses = useCallback(async () => {
-    setIsLoadingAddresses(true);
-
-    try {
-      const response = await fetch("/api/addresses", { cache: "no-store" });
-      const data = (await response.json()) as {
-        ok: boolean;
-        message?: string;
-        addresses?: ApiAddress[];
-      };
-
-      if (!response.ok || !data.ok) {
-        throw new Error(data.message || "Alamat gagal dimuat.");
-      }
-
-      setAddresses((data.addresses || []).map(mapApiAddress));
-      setNotice(null);
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Alamat gagal dimuat.");
-    } finally {
-      setIsLoadingAddresses(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void loadAddresses();
-  }, [loadAddresses]);
-
-  const handleOpenAdd = () => {
-    setDraft(emptyDraft);
-    setEditingAddressId(null);
-    setIsEditorOpen(true);
-  };
-
-  const handleOpenEdit = (address: SavedAddress) => {
-    setDraft({
-      label: address.label,
-      detail: address.detail,
-      note: address.note,
-      latitude: address.latitude?.toString() ?? "",
-      longitude: address.longitude?.toString() ?? "",
-      kind: address.kind,
-    });
-    setEditingAddressId(address.id);
-    setIsEditorOpen(true);
-  };
-
-  const handleCloseEditor = () => {
-    setIsEditorOpen(false);
-    setEditingAddressId(null);
-    setDraft(emptyDraft);
-    setIsLocatingAddress(false);
-  };
-
-  const handleUseCurrentLocation = () => {
+  const handleUseAutomaticLocation = async () => {
     if (!navigator.geolocation) {
-      setNotice("Browser belum mendukung akses lokasi.");
+      setNotice({
+        tone: "error",
+        text: "Browser belum mendukung akses lokasi.",
+      });
       return;
     }
 
-    setIsLocatingAddress(true);
+    setIsLocating(true);
     setNotice(null);
 
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        setDraft((currentDraft) => ({
-          ...currentDraft,
-          latitude: position.coords.latitude.toFixed(6),
-          longitude: position.coords.longitude.toFixed(6),
-        }));
-        setIsLocatingAddress(false);
-      },
-      () => {
-        setNotice("Lokasi gagal diambil. Izinkan akses lokasi atau isi manual.");
-        setIsLocatingAddress(false);
-      },
-      {
-        enableHighAccuracy: true,
-        maximumAge: 60_000,
-        timeout: 12_000,
-      },
-    );
-  };
-
-  const handleSaveAddress = async () => {
-    if (isDraftInvalid) {
-      return;
-    }
-
-    const normalizedDraft = {
-      label: draft.label.trim(),
-      detail: draft.detail.trim() || "Lokasi aktif customer",
-      note: draft.note.trim(),
-      latitude: draft.latitude.trim() ? Number(draft.latitude) : undefined,
-      longitude: draft.longitude.trim() ? Number(draft.longitude) : undefined,
-      kind: draft.kind,
-    };
-
-    setIsSavingAddress(true);
-
     try {
-      const response = await fetch(
-        editingAddressId ? `/api/addresses/${editingAddressId}` : "/api/addresses",
-        {
-          method: editingAddressId ? "PATCH" : "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(normalizedDraft),
-        },
-      );
-      const data = (await response.json()) as {
-        ok: boolean;
-        message?: string;
-      };
-
-      if (!response.ok || !data.ok) {
-        throw new Error(data.message || "Alamat gagal disimpan.");
-      }
-
-      await loadAddresses();
-      handleCloseEditor();
-    } catch (error) {
-      setNotice(
-        error instanceof Error ? error.message : "Alamat gagal disimpan.",
-      );
-    } finally {
-      setIsSavingAddress(false);
-    }
-  };
-
-  const handleSetPrimary = async (addressId: string) => {
-    const selectedAddress = addresses.find((address) => address.id === addressId);
-
-    if (
-      selectedAddress &&
-      (selectedAddress.latitude === null || selectedAddress.longitude === null)
-    ) {
-      setNotice(
-        "Alamat utama wajib punya titik maps. Edit alamat lalu klik Ambil Lokasi.",
-      );
-      return;
-    }
-
-    try {
-      const response = await fetch(`/api/addresses/${addressId}`, {
-        method: "PATCH",
+      const result = await getBestBrowserLocation();
+      const response = await fetch("/api/addresses/active-location", {
+        method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ isPrimary: true }),
+        body: JSON.stringify(result.coordinates),
       });
+      const data = (await response.json()) as {
+        ok: boolean;
+        message?: string;
+        address?: ApiCustomerAddress;
+      };
 
-      if (!response.ok) {
-        throw new Error("Alamat utama gagal diperbarui.");
+      if (!response.ok || !data.ok || !data.address) {
+        throw new Error(data.message || "Lokasi otomatis gagal disimpan.");
       }
 
-      await loadAddresses();
-    } catch (error) {
-      setNotice(
-        error instanceof Error
-          ? error.message
-          : "Alamat utama gagal diperbarui.",
-      );
-    }
-  };
-
-  const handleDeleteAddress = async () => {
-    if (!deletingAddress) {
-      return;
-    }
-
-    try {
-      const response = await fetch(`/api/addresses/${deletingAddress.id}`, {
-        method: "DELETE",
+      setCustomerLocation(getCustomerLocationFromAddresses([data.address]));
+      await refreshCustomerLocation();
+      setNotice({
+        tone: "success",
+        text: getLocationAccuracyNotice(result.accuracy),
       });
-
-      if (!response.ok) {
-        throw new Error("Alamat gagal dihapus.");
-      }
-
-      await loadAddresses();
-      setDeletingAddress(null);
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Alamat gagal dihapus.");
+      setNotice({
+        tone: "error",
+        text:
+          error instanceof Error
+            ? error.message
+            : "Lokasi otomatis gagal diambil. Pastikan GPS perangkat aktif.",
+      });
+    } finally {
+      setIsLocating(false);
     }
   };
 
   return (
     <MobileDeviceFrame backgroundClassName="bg-[#f8fafc]">
-      <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-[#f8fafc]">
-        <header className="sticky top-0 z-20 flex items-center justify-between bg-white px-5 pt-10 pb-4 shadow-sm sm:px-6 md:mx-auto md:w-full md:max-w-5xl md:px-8">
-          <div className="flex min-w-0 items-center">
+      <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-[#f8fafc]">
+        <header className="sticky top-0 z-20 bg-white px-5 pt-10 pb-4 shadow-sm sm:px-6 md:px-8">
+          <div className="mx-auto flex w-full max-w-3xl items-center">
             <Link
               href="/profile/settings"
               className="-ml-2 rounded-full p-2 transition-colors hover:bg-gray-100"
@@ -325,368 +106,95 @@ export default function CustomerAddressesPage() {
             </Link>
             <div className="ml-2 min-w-0">
               <h1 className="text-lg font-extrabold text-gray-900">
-                Lokasi Tersimpan
+                Lokasi Aktif
               </h1>
               <p className="mt-0.5 text-xs font-medium text-gray-500">
-                {addresses.length} lokasi tersimpan
+                Dipakai untuk jarak dan rute pickup
               </p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={handleOpenAdd}
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600 transition-colors hover:bg-emerald-100"
-            aria-label="Tambah alamat"
-          >
-            <Plus size={20} />
-          </button>
         </header>
 
-        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-6 pb-28 [scrollbar-width:none] sm:px-6 md:mx-auto md:w-full md:max-w-5xl md:grid-cols-2 md:px-8 [&::-webkit-scrollbar]:hidden">
-          {notice ? (
-            <section className="rounded-[24px] border border-red-100 bg-red-50 p-4 text-sm font-bold text-red-700">
-              {notice}
-            </section>
-          ) : null}
-
-          {isLoadingAddresses ? (
-            <section className="rounded-[28px] border border-gray-100 bg-white p-7 text-center shadow-sm">
-              <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-emerald-100 border-t-emerald-500" />
-              <h2 className="text-lg font-extrabold text-gray-950">
-                Memuat alamat
-              </h2>
-              <p className="mt-2 text-sm leading-6 font-medium text-gray-500">
-                Data diambil dari akun customer yang sedang login.
-              </p>
-            </section>
-          ) : null}
-
-          {!isLoadingAddresses && addresses.length === 0 ? (
-            <section className="rounded-[28px] border border-dashed border-emerald-200 bg-white p-7 text-center shadow-sm">
-              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-[24px] bg-emerald-50 text-emerald-600">
-                <MapPin size={30} />
-              </div>
-              <h2 className="text-lg font-extrabold text-gray-950">
-                Belum ada alamat
-              </h2>
-              <p className="mt-2 text-sm leading-6 font-medium text-gray-500">
-                Aktifkan lokasi agar rekomendasi makanan terdekat lebih akurat.
-              </p>
-            </section>
-          ) : null}
-
-          <div className="grid gap-4 md:grid-cols-2">
-          {!isLoadingAddresses && addresses.map((address) => {
-            const isHome = address.kind === "home";
-            const Icon = isHome ? Home : Building2;
-
-            return (
-              <article
-                key={address.id}
-                className={`relative rounded-[24px] bg-white p-5 ${
-                  address.isPrimary
-                    ? "border-2 border-emerald-500 shadow-[0_0_0_4px_rgba(16,185,129,0.1)]"
-                    : "border border-gray-200 shadow-sm"
+        <main className="min-h-0 flex-1 overflow-y-auto px-5 py-6 pb-28 [scrollbar-width:none] sm:px-6 md:px-8 [&::-webkit-scrollbar]:hidden">
+          <div className="mx-auto w-full max-w-3xl">
+            {notice ? (
+              <section
+                className={`mb-4 rounded-[24px] border p-4 text-sm font-bold ${
+                  notice.tone === "success"
+                    ? "border-emerald-100 bg-emerald-50 text-emerald-700"
+                    : "border-red-100 bg-red-50 text-red-700"
                 }`}
               >
-                {address.isPrimary ? (
-                  <div className="absolute top-4 right-4 rounded-md bg-emerald-50 px-2 py-1 text-[10px] font-extrabold tracking-wider text-emerald-600 uppercase">
-                    Utama
-                  </div>
-                ) : null}
+                {notice.text}
+              </section>
+            ) : null}
 
-                <div className="mb-3 flex items-start gap-3 pr-16">
-                  <div
-                    className={`rounded-full p-2 ${
-                      address.isPrimary
-                        ? "bg-emerald-100"
-                        : isHome
-                          ? "bg-emerald-50"
-                          : "bg-blue-50"
-                    }`}
-                  >
-                    <Icon
-                      size={16}
-                      className={
-                        address.isPrimary
-                          ? "text-emerald-600"
-                          : isHome
-                            ? "text-emerald-600"
-                            : "text-blue-600"
-                      }
-                    />
-                  </div>
-                  <div className="min-w-0">
-                    <h2 className="text-sm font-extrabold text-gray-900">
-                      {address.label}
-                    </h2>
-                    <p className="mt-1 text-xs leading-relaxed text-gray-500">
-                      {address.detail}
-                    </p>
-                    {address.note ? (
-                      <p className="mt-2 rounded-xl bg-gray-50 px-3 py-2 text-[11px] leading-5 font-semibold text-gray-500">
-                        {address.note}
-                      </p>
-                    ) : null}
-                    {address.latitude !== null && address.longitude !== null ? (
-                      <a
-                        href={getMapsUrl(address.latitude, address.longitude)}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="mt-2 inline-flex items-center gap-1.5 rounded-xl bg-emerald-50 px-3 py-2 text-[11px] font-extrabold text-emerald-700 transition-colors hover:bg-emerald-100"
-                      >
-                        <MapPin size={13} />
-                        Buka lokasi maps
-                        <ExternalLink size={12} />
-                      </a>
-                    ) : null}
-                  </div>
+            <section className="rounded-[28px] border border-gray-100 bg-white p-5 shadow-sm sm:p-6">
+              <div className="flex items-start gap-4">
+                <div
+                  className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-[20px] ${
+                    hasCoordinates
+                      ? "bg-emerald-50 text-emerald-600"
+                      : "bg-gray-100 text-gray-500"
+                  }`}
+                >
+                  {isLocating ? (
+                    <Navigation size={26} className="animate-pulse" />
+                  ) : (
+                    <MapPin size={28} />
+                  )}
                 </div>
-
-                <div className="mt-4 flex gap-2 border-t border-gray-100 pt-4">
-                  {!address.isPrimary ? (
-                    <button
-                      type="button"
-                      onClick={() => handleSetPrimary(address.id)}
-                      className="flex-1 rounded-xl border border-emerald-100 bg-emerald-50 py-2 text-xs font-bold text-emerald-600 transition-colors hover:bg-emerald-100"
-                    >
-                      Jadikan Utama
-                    </button>
-                  ) : null}
-                  <button
-                    type="button"
-                    onClick={() => handleOpenEdit(address)}
-                    className="flex-1 rounded-xl border border-gray-200 py-2 text-xs font-bold text-gray-600 transition-colors hover:bg-gray-50"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setDeletingAddress(address)}
-                    className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs font-bold text-red-500 transition-colors hover:bg-red-100"
-                    aria-label={`Hapus alamat ${address.label}`}
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              </article>
-            );
-          })}
-          </div>
-
-          <button
-            type="button"
-            onClick={handleOpenAdd}
-            className="mt-4 flex w-full items-center justify-center gap-2 rounded-[24px] border-2 border-dashed border-emerald-300 bg-emerald-50/50 py-4 text-sm font-bold text-emerald-600 transition-colors hover:bg-emerald-50"
-          >
-            <Plus size={18} />
-            Tambah Lokasi Baru
-          </button>
-        </div>
-
-        {isEditorOpen ? (
-          <div className="absolute inset-0 z-50 flex items-end bg-gray-950/35 backdrop-blur-sm md:items-center md:justify-center md:p-6">
-            <div className="max-h-[92vh] w-full overflow-y-auto rounded-t-[40px] bg-white px-6 pt-5 pb-8 shadow-[0_-24px_70px_rgba(15,23,42,0.22)] [scrollbar-width:none] md:max-w-xl md:rounded-[32px] md:p-7 [&::-webkit-scrollbar]:hidden">
-              <div className="mx-auto mb-5 h-1.5 w-12 rounded-full bg-gray-200" />
-
-              <div className="mb-6 flex items-start justify-between gap-4">
-                <div>
-                  <p className="text-xs font-extrabold tracking-[0.2em] text-emerald-600 uppercase">
-                    Location
+                <div className="min-w-0">
+                  <p className="text-xs font-extrabold tracking-[0.18em] text-emerald-600 uppercase">
+                    Customer
                   </p>
                   <h2 className="mt-1 text-xl font-extrabold text-gray-950">
-                    {editingAddressId ? "Edit Lokasi" : "Tambah Lokasi"}
+                    {isCustomerLocationLoading
+                      ? "Memuat lokasi"
+                      : hasCoordinates
+                        ? customerLocation.label
+                        : "Lokasi belum aktif"}
                   </h2>
+                  <p className="mt-2 text-sm leading-6 font-medium text-gray-500">
+                    {hasCoordinates
+                      ? "Lokasi otomatis sudah menjadi patokan pickup."
+                      : "Aktifkan lokasi otomatis agar menu terdekat dan rute pickup dihitung dari posisimu."}
+                  </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={handleCloseEditor}
-                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-500 transition-colors hover:bg-gray-200"
-                  aria-label="Tutup editor alamat"
-                >
-                  <X size={18} />
-                </button>
               </div>
 
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-3">
-                  {[
-                    { key: "home" as const, label: "Rumah", icon: Home },
-                    { key: "office" as const, label: "Kantor", icon: Building2 },
-                  ].map(({ key, label, icon: Icon }) => {
-                    const isSelected = draft.kind === key;
+              <button
+                type="button"
+                onClick={() => void handleUseAutomaticLocation()}
+                disabled={isBusy}
+                className="mt-6 flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-5 py-4 text-sm font-extrabold text-white transition-colors hover:bg-emerald-600 disabled:cursor-wait disabled:bg-gray-300"
+              >
+                <Navigation size={18} />
+                {isLocating
+                  ? "Mencari Lokasi..."
+                  : hasCoordinates
+                    ? "Perbarui Lokasi Otomatis"
+                    : "Aktifkan Lokasi Otomatis"}
+              </button>
 
-                    return (
-                      <button
-                        key={key}
-                        type="button"
-                        onClick={() =>
-                          setDraft((currentDraft) => ({
-                            ...currentDraft,
-                            kind: key,
-                            label:
-                              currentDraft.label.trim() === ""
-                                ? label
-                                : currentDraft.label,
-                          }))
-                        }
-                        className={`flex items-center justify-center gap-2 rounded-2xl border py-3 text-sm font-extrabold transition-colors ${
-                          isSelected
-                            ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                            : "border-gray-200 bg-white text-gray-500 hover:bg-gray-50"
-                        }`}
-                      >
-                        <Icon size={17} />
-                        {label}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <label className="block">
-                  <span className="mb-2 block text-sm font-extrabold text-gray-800">
-                    Label
-                  </span>
-                  <input
-                    type="text"
-                    value={draft.label}
-                    onChange={(event) =>
-                      setDraft((currentDraft) => ({
-                        ...currentDraft,
-                        label: event.target.value,
-                      }))
-                    }
-                    placeholder="Contoh: Rumah, Kantor, Kos"
-                    className="h-12 w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 text-sm font-bold text-gray-900 outline-none placeholder:text-gray-400 focus:border-emerald-500 focus:bg-white"
-                  />
-                </label>
-
-                <label className="block">
-                  <span className="mb-2 block text-sm font-extrabold text-gray-800">
-                    Patokan Lokasi
-                  </span>
-                  <textarea
-                    value={draft.detail}
-                    onChange={(event) =>
-                      setDraft((currentDraft) => ({
-                        ...currentDraft,
-                        detail: event.target.value,
-                      }))
-                    }
-                    placeholder="Opsional, contoh: dekat kampus, area kantor, sekitar kos."
-                    className="min-h-28 w-full resize-none rounded-[24px] border border-gray-200 bg-gray-50 p-4 text-sm leading-6 font-medium text-gray-900 outline-none placeholder:text-gray-400 focus:border-emerald-500 focus:bg-white"
-                  />
-                </label>
-
-                <label className="block">
-                  <span className="mb-2 block text-sm font-extrabold text-gray-800">
-                    Catatan
-                  </span>
-                  <input
-                    type="text"
-                    value={draft.note}
-                    onChange={(event) =>
-                      setDraft((currentDraft) => ({
-                        ...currentDraft,
-                        note: event.target.value,
-                      }))
-                    }
-                    placeholder="Opsional, contoh: biasa pickup dari area ini"
-                    className="h-12 w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 text-sm font-bold text-gray-900 outline-none placeholder:text-gray-400 focus:border-emerald-500 focus:bg-white"
-                  />
-                </label>
-
-                <section className="rounded-[24px] border border-emerald-100 bg-emerald-50/60 p-4">
-                  <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                      <p className="text-sm font-extrabold text-gray-900">
-                        Titik Maps
-                      </p>
-                      <p className="mt-1 text-xs leading-5 font-semibold text-gray-500">
-                        Dipakai untuk estimasi jarak dan rute pickup. Angka koordinat disimpan otomatis.
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={handleUseCurrentLocation}
-                      disabled={isLocatingAddress}
-                      className="inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-4 py-3 text-xs font-extrabold text-white transition-colors hover:bg-emerald-600 disabled:bg-gray-300"
-                    >
-                      <Navigation size={15} />
-                      {isLocatingAddress ? "Mengambil..." : "Ambil Lokasi"}
-                    </button>
-                  </div>
-
-                  {draft.latitude && draft.longitude ? (
-                    <div className="rounded-2xl border border-emerald-100 bg-white px-4 py-3 text-xs font-bold text-emerald-700">
-                      Titik maps sudah tersimpan untuk lokasi ini.
-                    </div>
-                  ) : null}
-                  {coordinateError ? (
-                    <p className="mt-3 text-xs leading-5 font-bold text-red-600">
-                      {coordinateError}
-                    </p>
-                  ) : null}
-                </section>
-              </div>
-
-              <div className="mt-6 flex gap-3">
-                <button
-                  type="button"
-                  onClick={handleCloseEditor}
-                  className="flex-1 rounded-2xl border border-gray-200 bg-white py-3.5 text-sm font-extrabold text-gray-700 transition-colors hover:bg-gray-50"
-                >
-                  Batal
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSaveAddress}
-                  disabled={isDraftInvalid || isSavingAddress}
-                  className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-gray-900 py-3.5 text-sm font-extrabold text-white shadow-lg transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-gray-300 disabled:shadow-none"
-                >
-                  <Save size={17} />
-                  {isSavingAddress ? "Menyimpan..." : "Simpan"}
-                </button>
-              </div>
-            </div>
-          </div>
-        ) : null}
-
-        {deletingAddress ? (
-          <div className="absolute inset-0 z-50 flex items-end bg-gray-950/35 backdrop-blur-sm md:items-center md:justify-center md:p-6">
-            <div className="w-full rounded-t-[36px] bg-white px-6 pt-6 pb-8 shadow-[0_-24px_70px_rgba(15,23,42,0.22)] md:max-w-md md:rounded-[32px]">
-              <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-red-50 text-red-500">
-                <Trash2 size={30} />
-              </div>
-              <div className="text-center">
-                <h2 className="text-xl font-extrabold text-gray-950">
-                  Hapus Alamat?
-                </h2>
-                <p className="mx-auto mt-2 max-w-xs text-sm leading-6 font-medium text-gray-500">
-                  Alamat {deletingAddress.label} akan dihapus dari daftar alamat
-                  tersimpan.
-                </p>
-              </div>
-              <div className="mt-7 grid grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={() => setDeletingAddress(null)}
-                  className="rounded-2xl border border-gray-200 bg-white py-3.5 text-sm font-extrabold text-gray-700 transition-colors hover:bg-gray-50"
-                >
-                  Batal
-                </button>
-                <button
-                  type="button"
-                  onClick={handleDeleteAddress}
-                  className="flex items-center justify-center gap-2 rounded-2xl bg-red-500 py-3.5 text-sm font-extrabold text-white transition-colors hover:bg-red-600"
+              {customerLocation.coordinates ? (
+                <a
+                  href={getMapsUrl(
+                    customerLocation.coordinates.latitude,
+                    customerLocation.coordinates.longitude,
+                  )}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl border border-emerald-100 bg-emerald-50 px-5 py-3.5 text-sm font-extrabold text-emerald-700 transition-colors hover:bg-emerald-100"
                 >
                   <CheckCircle2 size={17} />
-                  Hapus
-                </button>
-              </div>
-            </div>
+                  Buka Lokasi Aktif
+                  <ExternalLink size={15} />
+                </a>
+              ) : null}
+            </section>
           </div>
-        ) : null}
+        </main>
       </div>
     </MobileDeviceFrame>
   );

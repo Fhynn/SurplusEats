@@ -10,6 +10,12 @@ import {
 } from "react";
 
 import type { CartItem, Food } from "@/lib/customer-data";
+import {
+  defaultCustomerLocation,
+  getCustomerLocationFromAddresses,
+  type ApiCustomerAddress,
+  type CustomerLocation,
+} from "@/lib/customer-location";
 import { menuItemToFood, type ApiMenuItem } from "@/lib/food-mapper";
 
 interface CustomerAppContextValue {
@@ -18,9 +24,15 @@ interface CustomerAppContextValue {
   cartTotal: number;
   originalTotal: number;
   totalSaved: number;
+  customerLocation: CustomerLocation;
+  isCustomerLocationLoading: boolean;
+  unreadNotificationCount: number;
   addToCart: (food: Food, quantity?: number) => Promise<boolean>;
   updateCartQty: (id: string, delta: number) => Promise<boolean>;
   clearCart: () => Promise<boolean>;
+  setCustomerLocation: (location: CustomerLocation) => void;
+  refreshCustomerLocation: () => Promise<void>;
+  refreshUnreadNotifications: () => Promise<void>;
 }
 
 const MAX_CART_ITEM_QTY = 20;
@@ -41,6 +53,20 @@ type CartResponse = {
 type CartMutationResponse = CartResponse & {
   cartItem?: ApiCartItem;
   message?: string;
+};
+
+type AddressesResponse = {
+  ok: boolean;
+  addresses?: ApiCustomerAddress[];
+};
+
+type NotificationSummary = {
+  readAt: string | null;
+};
+
+type NotificationsResponse = {
+  ok: boolean;
+  notifications?: NotificationSummary[];
 };
 
 function apiCartItemToCartItem(item: ApiCartItem): CartItem {
@@ -118,9 +144,60 @@ export function CustomerAppProvider({
   children: React.ReactNode;
 }>) {
   const [cart, setCart] = useState<CartItem[]>([]);
+  const [customerLocation, setCustomerLocationState] =
+    useState<CustomerLocation>(defaultCustomerLocation);
+  const [isCustomerLocationLoading, setIsCustomerLocationLoading] =
+    useState(true);
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
 
   const setCartSnapshot = useCallback((nextCart: CartItem[]) => {
     setCart(nextCart);
+  }, []);
+
+  const setCustomerLocation = useCallback((location: CustomerLocation) => {
+    setCustomerLocationState(location);
+    setIsCustomerLocationLoading(false);
+  }, []);
+
+  const refreshCustomerLocation = useCallback(async () => {
+    setIsCustomerLocationLoading(true);
+
+    try {
+      const response = await fetch("/api/addresses", { cache: "no-store" });
+      const data = (await response.json()) as AddressesResponse;
+
+      if (!response.ok || !data.ok) {
+        setCustomerLocationState(defaultCustomerLocation);
+        return;
+      }
+
+      setCustomerLocationState(
+        getCustomerLocationFromAddresses(data.addresses ?? []),
+      );
+    } catch {
+      setCustomerLocationState(defaultCustomerLocation);
+    } finally {
+      setIsCustomerLocationLoading(false);
+    }
+  }, []);
+
+  const refreshUnreadNotifications = useCallback(async () => {
+    try {
+      const response = await fetch("/api/notifications", { cache: "no-store" });
+      const data = (await response.json()) as NotificationsResponse;
+
+      if (!response.ok || !data.ok) {
+        setUnreadNotificationCount(0);
+        return;
+      }
+
+      setUnreadNotificationCount(
+        (data.notifications ?? []).filter((notification) => !notification.readAt)
+          .length,
+      );
+    } catch {
+      setUnreadNotificationCount(0);
+    }
   }, []);
 
   useEffect(() => {
@@ -155,6 +232,50 @@ export function CustomerAppProvider({
       ignore = true;
     };
   }, [setCartSnapshot]);
+
+  useEffect(() => {
+    let ignore = false;
+
+    async function hydrateCustomerLocation() {
+      setIsCustomerLocationLoading(true);
+
+      try {
+        const response = await fetch("/api/addresses", { cache: "no-store" });
+        const data = (await response.json()) as AddressesResponse;
+
+        if (ignore) {
+          return;
+        }
+
+        if (!response.ok || !data.ok) {
+          setCustomerLocationState(defaultCustomerLocation);
+          return;
+        }
+
+        setCustomerLocationState(
+          getCustomerLocationFromAddresses(data.addresses ?? []),
+        );
+      } catch {
+        if (!ignore) {
+          setCustomerLocationState(defaultCustomerLocation);
+        }
+      } finally {
+        if (!ignore) {
+          setIsCustomerLocationLoading(false);
+        }
+      }
+    }
+
+    void hydrateCustomerLocation();
+
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    void refreshUnreadNotifications();
+  }, [refreshUnreadNotifications]);
 
   const value = useMemo<CustomerAppContextValue>(() => {
     const upsertCartItem = (cartItem: CartItem) => {
@@ -236,11 +357,25 @@ export function CustomerAppProvider({
       cartTotal,
       originalTotal,
       totalSaved,
+      customerLocation,
+      isCustomerLocationLoading,
+      unreadNotificationCount,
       addToCart,
       updateCartQty,
       clearCart,
+      setCustomerLocation,
+      refreshCustomerLocation,
+      refreshUnreadNotifications,
     };
-  }, [cart]);
+  }, [
+    cart,
+    customerLocation,
+    isCustomerLocationLoading,
+    refreshCustomerLocation,
+    refreshUnreadNotifications,
+    setCustomerLocation,
+    unreadNotificationCount,
+  ]);
 
   return (
     <CustomerAppContext.Provider value={value}>

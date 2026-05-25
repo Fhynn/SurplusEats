@@ -5,6 +5,7 @@ import { Bot, Home, ShoppingBag, User } from "lucide-react";
 import { usePathname } from "next/navigation";
 
 import { useCustomerApp } from "@/components/customer-app-provider";
+import { CustomerLocationControl } from "@/components/customer-location-control";
 import { MobileDeviceFrame } from "@/components/mobile-device-frame";
 
 const NAV_ITEMS = [
@@ -20,7 +21,15 @@ export function MainShell({
   children: React.ReactNode;
 }>) {
   const pathname = usePathname();
-  const { cartCount } = useCustomerApp();
+  const {
+    cartCount,
+    customerLocation,
+    isCustomerLocationLoading,
+    setCustomerLocation,
+  } = useCustomerApp();
+  const showSidebarLocation = !["/home", "/browse", "/browser"].includes(
+    pathname,
+  );
 
   const renderNavItem = (
     href: (typeof NAV_ITEMS)[number]["href"],
@@ -99,6 +108,16 @@ export function MainShell({
               ResQ<span className="text-emerald-500">Food</span>
             </span>
           </Link>
+
+          {showSidebarLocation ? (
+            <div className="mb-5 rounded-3xl border border-emerald-100 bg-emerald-50/60 p-4">
+              <CustomerLocationControl
+                location={customerLocation}
+                isLoading={isCustomerLocationLoading}
+                onLocationChange={setCustomerLocation}
+              />
+            </div>
+          ) : null}
 
           <nav className="grid gap-2">
             {NAV_ITEMS.map(({ href, label, icon: Icon }) =>

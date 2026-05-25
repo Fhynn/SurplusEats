@@ -15,7 +15,9 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
+import { useCustomerApp } from "@/components/customer-app-provider";
 import { MobileDeviceFrame } from "@/components/mobile-device-frame";
+import { emitUnreadNotificationsChanged } from "@/components/use-unread-notification-count";
 
 type NotificationType = "order" | "promo" | "refund" | "system";
 type NotificationFilter = "all" | "unread" | NotificationType;
@@ -112,6 +114,7 @@ function apiNotificationToUi(notification: ApiNotification): CustomerNotificatio
 }
 
 export default function CustomerNotificationsPage() {
+  const { refreshUnreadNotifications } = useCustomerApp();
   const [notifications, setNotifications] = useState<CustomerNotification[]>([]);
   const [activeFilter, setActiveFilter] = useState<NotificationFilter>("all");
   const [isLoadingNotifications, setIsLoadingNotifications] = useState(true);
@@ -134,6 +137,8 @@ export default function CustomerNotificationsPage() {
           setNotifications(
             result.notifications?.map(apiNotificationToUi) ?? [],
           );
+          await refreshUnreadNotifications();
+          emitUnreadNotificationsChanged();
         }
       } catch {
         if (!ignore) {
@@ -151,7 +156,7 @@ export default function CustomerNotificationsPage() {
     return () => {
       ignore = true;
     };
-  }, []);
+  }, [refreshUnreadNotifications]);
   const filteredNotifications = useMemo(() => {
     if (activeFilter === "all") {
       return notifications;
@@ -194,6 +199,8 @@ export default function CustomerNotificationsPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ all: true }),
     });
+    await refreshUnreadNotifications();
+    emitUnreadNotificationsChanged();
   };
 
   const markAsRead = async (notificationId: string) => {
@@ -209,6 +216,8 @@ export default function CustomerNotificationsPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id: notificationId }),
     });
+    await refreshUnreadNotifications();
+    emitUnreadNotificationsChanged();
   };
 
   const removeNotification = async (notificationId: string) => {
@@ -222,6 +231,8 @@ export default function CustomerNotificationsPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id: notificationId }),
     });
+    await refreshUnreadNotifications();
+    emitUnreadNotificationsChanged();
   };
 
   return (

@@ -31,8 +31,17 @@ import {
 } from "react";
 
 import { LoadingScreen } from "@/components/loading-screen";
+import { LocationMapPicker } from "@/components/location-map-picker";
 import { WelcomeLoadingOverlay } from "@/components/welcome-loading-overlay";
+import {
+  getBestBrowserLocation,
+  getLocationAccuracyNotice,
+} from "@/lib/browser-location";
 import { waitForLoadingScreen } from "@/lib/loading-delay";
+import {
+  formatCoordinatesInput,
+  parseCoordinatesFromText,
+} from "@/lib/maps-coordinate";
 
 const inputWrapClassName =
   "relative rounded-2xl border border-gray-200 bg-white shadow-[0_4px_20px_rgba(15,23,42,0.03)] transition-all focus-within:border-emerald-300 focus-within:ring-4 focus-within:ring-emerald-500/10";
@@ -164,9 +173,9 @@ function validatePartnerForm(form: PartnerForm, uploadedDocs: UploadedDocs) {
 
   if (!latitude && !longitude) {
     errors.latitude =
-      "Titik lokasi toko wajib diisi. Klik Ambil Lokasi atau isi latitude dan longitude manual.";
+      "Titik lokasi toko wajib diisi. Klik Ambil Lokasi agar sistem menyimpan patokan maps.";
   } else if ((latitude && !longitude) || (!latitude && longitude)) {
-    errors.latitude = "Latitude dan longitude lokasi toko harus diisi bersama.";
+    errors.latitude = "Titik lokasi toko belum lengkap. Klik Ambil Lokasi lagi.";
   }
 
   if (latitude) {
@@ -177,7 +186,7 @@ function validatePartnerForm(form: PartnerForm, uploadedDocs: UploadedDocs) {
       latitudeNumber < -90 ||
       latitudeNumber > 90
     ) {
-      errors.latitude = "Latitude lokasi toko harus berada di antara -90 dan 90.";
+      errors.latitude = "Titik lokasi toko tidak valid. Klik Ambil Lokasi lagi.";
     }
   }
 
@@ -190,7 +199,7 @@ function validatePartnerForm(form: PartnerForm, uploadedDocs: UploadedDocs) {
       longitudeNumber > 180
     ) {
       errors.longitude =
-        "Longitude lokasi toko harus berada di antara -180 dan 180.";
+        "Titik lokasi toko tidak valid. Klik Ambil Lokasi lagi.";
     }
   }
 
@@ -313,6 +322,8 @@ export default function RegisterMitraPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isWelcomeLoading, setIsWelcomeLoading] = useState(false);
   const [isLocatingStore, setIsLocatingStore] = useState(false);
+  const [storeMapsInput, setStoreMapsInput] = useState("");
+  const [storeMapsError, setStoreMapsError] = useState<string | null>(null);
   const [uploadedDocs, setUploadedDocs] = useState<UploadedDocs>({
     identity: null,
     permit: null,
@@ -328,6 +339,7 @@ export default function RegisterMitraPage() {
       form.address,
       form.pickupWindow,
       form.averageSurplus,
+      form.latitude && form.longitude,
       form.password,
       uploadedDocs.identity?.name,
       uploadedDocs.permit?.name,
@@ -337,6 +349,42 @@ export default function RegisterMitraPage() {
 
     return Math.round((completed / requiredItems.length) * 100);
   }, [form, uploadedDocs]);
+  const hasStoreCoordinates = Boolean(
+    form.latitude.trim() && form.longitude.trim(),
+  );
+  const storeCoordinates = hasStoreCoordinates
+    ? {
+        latitude: Number(form.latitude),
+        longitude: Number(form.longitude),
+      }
+    : null;
+  const storeMapsHref = hasStoreCoordinates
+    ? `https://www.google.com/maps?q=${encodeURIComponent(
+        `${form.latitude.trim()},${form.longitude.trim()}`,
+      )}`
+    : "";
+  const setStoreCoordinates = (coordinates: {
+    latitude: number;
+    longitude: number;
+  }) => {
+    const formattedCoordinates = formatCoordinatesInput(coordinates);
+
+    setForm((current) => ({
+      ...current,
+      ...formattedCoordinates,
+    }));
+    setFormErrors((current) => {
+      if (!current.latitude && !current.longitude) {
+        return current;
+      }
+
+      const next = { ...current };
+      delete next.latitude;
+      delete next.longitude;
+
+      return next;
+    });
+  };
 
   const handleInputChange =
     (key: keyof PartnerForm) =>
@@ -395,7 +443,7 @@ export default function RegisterMitraPage() {
       });
     };
 
-  const handleUseCurrentLocation = () => {
+  const handleUseCurrentLocation = async () => {
     if (!navigator.geolocation) {
       setNotice("Browser belum mendukung akses lokasi.");
       return;
@@ -404,35 +452,44 @@ export default function RegisterMitraPage() {
     setIsLocatingStore(true);
     setNotice("");
 
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        setForm((current) => ({
-          ...current,
-          latitude: position.coords.latitude.toFixed(6),
-          longitude: position.coords.longitude.toFixed(6),
-        }));
-        setFormErrors((current) => {
-          if (!current.latitude && !current.longitude) {
-            return current;
-          }
+    try {
+      const result = await getBestBrowserLocation();
 
-          const next = { ...current };
-          delete next.latitude;
-          delete next.longitude;
+      setStoreCoordinates(result.coordinates);
+      setStoreMapsError(null);
+      setNotice(getLocationAccuracyNotice(result.accuracy));
+    } catch (error) {
+      setNotice(
+        error instanceof Error
+          ? error.message
+          : "Lokasi toko gagal diambil. Izinkan akses lokasi browser lalu coba lagi.",
+      );
+    } finally {
+      setIsLocatingStore(false);
+    }
+  };
 
-          return next;
-        });
-        setIsLocatingStore(false);
-      },
-      () => {
-        setNotice("Lokasi toko gagal diambil. Izinkan akses lokasi atau isi manual.");
-        setIsLocatingStore(false);
-      },
-      {
-        enableHighAccuracy: true,
-        maximumAge: 60_000,
-        timeout: 12_000,
-      },
+  const handleStoreMapsInputChange = (value: string) => {
+    setStoreMapsInput(value);
+
+    const coordinates = parseCoordinatesFromText(value);
+
+    if (!coordinates) {
+      return;
+    }
+
+    setStoreCoordinates(coordinates);
+    setStoreMapsError(null);
+  };
+
+  const handleStoreMapsInputBlur = () => {
+    if (!storeMapsInput.trim() || parseCoordinatesFromText(storeMapsInput)) {
+      setStoreMapsError(null);
+      return;
+    }
+
+    setStoreMapsError(
+      "Tempel link Google Maps yang berisi pin atau format -6.200000,106.816666.",
     );
   };
 
@@ -760,37 +817,89 @@ export default function RegisterMitraPage() {
                     </button>
                   </div>
 
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <label className="block">
+                  <div
+                    className={`rounded-2xl border p-4 ${
+                      hasStoreCoordinates
+                        ? "border-emerald-200 bg-white"
+                        : formErrors.latitude || formErrors.longitude
+                          ? "border-red-100 bg-red-50"
+                          : "border-emerald-100 bg-white/80"
+                    }`}
+                  >
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex min-w-0 items-start gap-3">
+                        <span
+                          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${
+                            hasStoreCoordinates
+                              ? "bg-emerald-100 text-emerald-600"
+                              : "bg-gray-100 text-gray-500"
+                          }`}
+                        >
+                          <MapPin size={19} />
+                        </span>
+                        <div className="min-w-0">
+                          <p className="text-sm font-extrabold text-gray-950">
+                            {hasStoreCoordinates
+                              ? "Titik lokasi sudah aktif"
+                              : "Titik lokasi belum aktif"}
+                          </p>
+                          <p className="mt-1 text-xs leading-5 font-semibold text-gray-500">
+                            {hasStoreCoordinates
+                              ? "Koordinat toko tersimpan sebagai patokan maps untuk rute pickup."
+                              : "Klik Ambil Lokasi di area toko agar customer bisa membuka rute pickup."}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap gap-2">
+                        <LocationMapPicker
+                          coordinates={storeCoordinates}
+                          onCoordinatesChange={(coordinates) => {
+                            setStoreCoordinates(coordinates);
+                            setStoreMapsError(null);
+                            setNotice("");
+                          }}
+                          title="Pin Lokasi Toko"
+                          description="Klik peta atau geser pin tepat di lokasi pickup mitra."
+                        />
+                        {storeMapsHref ? (
+                          <a
+                            href={storeMapsHref}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-xs font-extrabold text-emerald-700 transition-colors hover:bg-emerald-100"
+                          >
+                            <Navigation size={15} />
+                            Buka Maps
+                          </a>
+                        ) : null}
+                      </div>
+                    </div>
+                    <label className="mt-4 block">
                       <span className="mb-2 block text-xs font-extrabold text-gray-700">
-                        Latitude
+                        Link Google Maps / Koordinat Pin
                       </span>
                       <input
-                        type="number"
-                        step="any"
-                        value={form.latitude}
-                        onChange={handleInputChange("latitude")}
-                        placeholder="-6.200000"
-                        className="h-11 w-full rounded-2xl border border-emerald-100 bg-white px-3 text-sm font-bold text-gray-900 outline-none placeholder:text-gray-300 focus:border-emerald-500"
-                        aria-invalid={Boolean(formErrors.latitude)}
+                        type="text"
+                        value={storeMapsInput}
+                        onChange={(event) =>
+                          handleStoreMapsInputChange(event.target.value)
+                        }
+                        onBlur={handleStoreMapsInputBlur}
+                        placeholder="Tempel link Google Maps atau -6.200000,106.816666"
+                        className="h-11 w-full rounded-2xl border border-emerald-100 bg-white px-3 text-xs font-bold text-gray-900 outline-none placeholder:text-gray-400 focus:border-emerald-500"
                       />
-                      <FieldError message={formErrors.latitude} />
                     </label>
-                    <label className="block">
-                      <span className="mb-2 block text-xs font-extrabold text-gray-700">
-                        Longitude
-                      </span>
-                      <input
-                        type="number"
-                        step="any"
-                        value={form.longitude}
-                        onChange={handleInputChange("longitude")}
-                        placeholder="106.816666"
-                        className="h-11 w-full rounded-2xl border border-emerald-100 bg-white px-3 text-sm font-bold text-gray-900 outline-none placeholder:text-gray-300 focus:border-emerald-500"
-                        aria-invalid={Boolean(formErrors.longitude)}
-                      />
-                      <FieldError message={formErrors.longitude} />
-                    </label>
+                    {storeMapsError ? (
+                      <p className="mt-2 text-xs leading-5 font-bold text-red-600">
+                        {storeMapsError}
+                      </p>
+                    ) : null}
+                    <input type="hidden" value={form.latitude} readOnly />
+                    <input type="hidden" value={form.longitude} readOnly />
+                    <FieldError
+                      message={formErrors.latitude || formErrors.longitude}
+                    />
                   </div>
                 </section>
               </div>

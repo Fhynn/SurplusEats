@@ -5,6 +5,7 @@ import { z } from "zod";
 import { getCurrentSession } from "@/lib/auth-session";
 import { slugify } from "@/lib/backend-utils";
 import { prisma } from "@/lib/prisma";
+import { notifyRestaurantFollowers } from "@/lib/restaurant-follower-notifications";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -148,6 +149,15 @@ export async function POST(request: Request) {
       restaurant: true,
     },
   });
+
+  if (menuItem.status === MenuItemStatus.ACTIVE) {
+    await notifyRestaurantFollowers({
+      restaurantId: restaurant.id,
+      title: `Menu baru dari ${restaurant.name}`,
+      body: `${menuItem.name} sekarang tersedia untuk pickup ${menuItem.pickupStart || restaurant.pickupStart || "18:00"} - ${menuItem.pickupEnd || restaurant.pickupEnd || "21:00"}.`,
+      href: `/detail/${menuItem.id}`,
+    });
+  }
 
   return NextResponse.json({ ok: true, menuItem }, { status: 201 });
 }

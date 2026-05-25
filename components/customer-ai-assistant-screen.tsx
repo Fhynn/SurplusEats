@@ -16,6 +16,7 @@ import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useCustomerApp } from "@/components/customer-app-provider";
 import { formatRp, type Food } from "@/lib/customer-data";
 import { normalizeFoodCategory } from "@/lib/food-mapper";
+import { applyFoodDistance, type Coordinates } from "@/lib/geo-distance";
 
 type AiRecommendation = {
   id: string;
@@ -30,6 +31,14 @@ type AiRecommendation = {
   pickupWindow: string;
   rating: number;
   reviews: number;
+  restaurantId: string;
+  restaurantSlug: string;
+  restaurantAddress: string;
+  restaurantCity: string;
+  restaurantLatitude: number | null;
+  restaurantLongitude: number | null;
+  distance: string | null;
+  distanceKm: number | null;
 };
 
 type AiMessage = {
@@ -57,13 +66,23 @@ const starterPrompts = [
   "Cek keranjang saya, sudah cocok belum?",
 ];
 
-function recommendationToFood(item: AiRecommendation): Food {
-  return {
+function recommendationToFood(
+  item: AiRecommendation,
+  origin: Coordinates | null,
+): Food {
+  return applyFoodDistance({
     id: item.id,
     name: item.name,
     restaurant: item.restaurant,
-    distance: "1.2 km",
-    rating: item.rating || 4.8,
+    restaurantId: item.restaurantId,
+    restaurantSlug: item.restaurantSlug,
+    restaurantAddress: item.restaurantAddress,
+    restaurantCity: item.restaurantCity,
+    restaurantLatitude: item.restaurantLatitude,
+    restaurantLongitude: item.restaurantLongitude,
+    distance: item.distance || "Atur lokasi",
+    distanceKm: item.distanceKm,
+    rating: item.reviews > 0 ? item.rating : 0,
     reviews: item.reviews,
     stock: item.stock,
     time: item.pickupWindow,
@@ -72,12 +91,13 @@ function recommendationToFood(item: AiRecommendation): Food {
     image: item.imageUrl || "/placeholder-food.svg",
     category: normalizeFoodCategory(item.category),
     description: item.description,
-  };
+  }, origin);
 }
 
 export function CustomerAiAssistantScreen() {
   const router = useRouter();
-  const { cart, cartCount, cartTotal, addToCart } = useCustomerApp();
+  const { cart, cartCount, cartTotal, addToCart, customerLocation } =
+    useCustomerApp();
   const [messages, setMessages] = useState<AiMessage[]>([
     {
       id: "welcome",
@@ -162,6 +182,7 @@ export function CustomerAiAssistantScreen() {
             role: item.role,
             content: item.content,
           })),
+          location: customerLocation.coordinates,
         }),
       });
       const data = (await response.json()) as AiChatResponse;
@@ -206,7 +227,7 @@ export function CustomerAiAssistantScreen() {
   };
 
   const handleAddRecommendation = (item: AiRecommendation) => {
-    addToCart(recommendationToFood(item));
+    addToCart(recommendationToFood(item, customerLocation.coordinates));
   };
 
   return (
@@ -333,7 +354,9 @@ export function CustomerAiAssistantScreen() {
                                     {item.name}
                                   </h3>
                                   <p className="mt-1 truncate text-xs font-bold text-gray-500">
-                                    {item.restaurant}
+                                    {item.distance
+                                      ? `${item.restaurant} • ${item.distance}`
+                                      : item.restaurant}
                                   </p>
                                   <p className="mt-2 text-xs font-bold text-gray-500">
                                     Pickup {item.pickupWindow}

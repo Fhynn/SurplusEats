@@ -14,16 +14,10 @@ import {
   Store,
 } from "lucide-react";
 
+import { useCustomerApp } from "@/components/customer-app-provider";
 import { MobileDeviceFrame } from "@/components/mobile-device-frame";
 import { formatRp } from "@/lib/customer-data";
-import {
-  getCustomerLocationFromAddresses,
-  type ApiCustomerAddress,
-} from "@/lib/customer-location";
-import {
-  getPickupRouteUrl,
-  type Coordinates,
-} from "@/lib/geo-distance";
+import { getPickupRouteUrl } from "@/lib/geo-distance";
 import type { ApiOrder } from "@/lib/order-mapper";
 
 function formatDate(value: string | null) {
@@ -41,6 +35,7 @@ function formatDate(value: string | null) {
 
 function PaymentSuccessContent() {
   const searchParams = useSearchParams();
+  const { customerLocation } = useCustomerApp();
   const ordersParam = searchParams.get("orders");
   const legacyOrderCode = searchParams.get("order");
   const orderCodes = useMemo(
@@ -52,8 +47,6 @@ function PaymentSuccessContent() {
     [legacyOrderCode, ordersParam],
   );
   const [orders, setOrders] = useState<ApiOrder[]>([]);
-  const [customerCoordinates, setCustomerCoordinates] =
-    useState<Coordinates | null>(null);
   const [isLoading, setIsLoading] = useState(orderCodes.length > 0);
 
   useEffect(() => {
@@ -69,16 +62,13 @@ function PaymentSuccessContent() {
       setIsLoading(true);
 
       try {
-        const [orderResponses, addressesResponse] = await Promise.all([
-          Promise.all(
-            orderCodes.map((orderCode) =>
-              fetch(`/api/orders/${orderCode}`, {
-                cache: "no-store",
-              }),
-            ),
+        const orderResponses = await Promise.all(
+          orderCodes.map((orderCode) =>
+            fetch(`/api/orders/${orderCode}`, {
+              cache: "no-store",
+            }),
           ),
-          fetch("/api/addresses", { cache: "no-store" }),
-        ]);
+        );
         const orderPayloads = await Promise.all(
           orderResponses.map(async (response) => {
             if (!response.ok) {
@@ -93,18 +83,9 @@ function PaymentSuccessContent() {
             return data.ok ? (data.order ?? null) : null;
           }),
         );
-        const addressesData = (await addressesResponse.json()) as {
-          ok: boolean;
-          addresses?: ApiCustomerAddress[];
-        };
 
         if (!ignore) {
-          const customerLocation = getCustomerLocationFromAddresses(
-            addressesData.addresses ?? [],
-          );
-
           setOrders(orderPayloads.filter((order): order is ApiOrder => Boolean(order)));
-          setCustomerCoordinates(customerLocation.coordinates);
         }
       } catch {
         if (!ignore) {
@@ -189,7 +170,7 @@ function PaymentSuccessContent() {
         }
       : null;
   const pickupRoute = getPickupRouteUrl(
-    customerCoordinates,
+    customerLocation.coordinates,
     restaurantCoordinates,
     `${order.restaurant.name} ${order.restaurant.city}`,
   );

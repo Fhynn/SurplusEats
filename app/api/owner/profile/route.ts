@@ -34,7 +34,7 @@ const updateRestaurantLocationSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["latitude"],
-        message: "Latitude dan longitude lokasi toko harus diisi bersama.",
+        message: "Titik lokasi toko belum lengkap. Klik Ambil Lokasi lagi.",
       });
     }
 
@@ -42,7 +42,7 @@ const updateRestaurantLocationSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["latitude"],
-        message: "Latitude lokasi toko harus berada di antara -90 dan 90.",
+        message: "Titik lokasi toko tidak valid. Klik Ambil Lokasi lagi.",
       });
     }
 
@@ -53,7 +53,7 @@ const updateRestaurantLocationSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["longitude"],
-        message: "Longitude lokasi toko harus berada di antara -180 dan 180.",
+        message: "Titik lokasi toko tidak valid. Klik Ambil Lokasi lagi.",
       });
     }
   });

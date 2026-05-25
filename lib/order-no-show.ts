@@ -1,0 +1,133 @@
+import {
+  NotificationType,
+  OrderStatus,
+  WalletTransactionStatus,
+  WalletTransactionType,
+} from "@prisma/client";
+
+import { prisma } from "@/lib/prisma";
+
+const defaultNoShowGraceMinutes = 15;
+
+export type ExpireNoShowOrdersResult = {
+  expiredCount: number;
+  graceMinutes: number;
+  cutoff: Date;
+  expiredOrders: Array<{
+    orderCode: string;
+    customerName: string;
+    restaurantName: string;
+  }>;
+};
+
+function getNoShowGraceMinutes() {
+  const configuredValue = Number(process.env.ORDER_NO_SHOW_GRACE_MINUTES);
+
+  if (!Number.isFinite(configuredValue) || configuredValue < 0) {
+    return defaultNoShowGraceMinutes;
+  }
+
+  return configuredValue;
+}
+
+export async function expireNoShowOrders(now = new Date()) {
+  const graceMinutes = getNoShowGraceMinutes();
+  const cutoff = new Date(now.getTime() - graceMinutes * 60 * 1000);
+  const readyExpiredOrders = await prisma.order.findMany({
+    where: {
+      status: OrderStatus.READY,
+      pickupTime: {
+        not: null,
+        lte: cutoff,
+      },
+    },
+    orderBy: { pickupTime: "asc" },
+    take: 100,
+    include: {
+      customer: true,
+      restaurant: {
+        include: {
+          owner: true,
+        },
+      },
+    },
+  });
+
+  if (readyExpiredOrders.length === 0) {
+    return {
+      expiredCount: 0,
+      graceMinutes,
+      cutoff,
+      expiredOrders: [],
+    } satisfies ExpireNoShowOrdersResult;
+  }
+
+  const expiredOrders: ExpireNoShowOrdersResult["expiredOrders"] = [];
+
+  await prisma.$transaction(async (tx) => {
+    for (const order of readyExpiredOrders) {
+      const updatedOrder = await tx.order.updateMany({
+        where: {
+          id: order.id,
+          status: OrderStatus.READY,
+          pickupTime: {
+            not: null,
+            lte: cutoff,
+          },
+        },
+        data: {
+          status: OrderStatus.NO_SHOW,
+          noShowAt: now,
+        },
+      });
+
+      if (updatedOrder.count !== 1) {
+        continue;
+      }
+
+      await tx.walletTransaction.updateMany({
+        where: {
+          restaurantId: order.restaurantId,
+          type: WalletTransactionType.ORDER_INCOME,
+          reference: order.orderCode,
+        },
+        data: {
+          status: WalletTransactionStatus.COMPLETED,
+          description: `Order ${order.orderCode} no-show pickup`,
+        },
+      });
+
+      await tx.notification.createMany({
+        data: [
+          {
+            userId: order.customerId,
+            type: NotificationType.ORDER,
+            title: "Pesanan tidak diambil",
+            body: `${order.orderCode} melewati batas pickup dan ditandai no-show.`,
+            href: `/orders/${order.orderCode}`,
+          },
+          {
+            userId: order.restaurant.ownerId,
+            type: NotificationType.ORDER,
+            title: "Order no-show",
+            body: `${order.customer.name} tidak mengambil ${order.orderCode} sampai batas pickup.`,
+            href: `/owner/orders/${order.orderCode}`,
+          },
+        ],
+      });
+
+      expiredOrders.push({
+        orderCode: order.orderCode,
+        customerName: order.customer.name,
+        restaurantName: order.restaurant.name,
+      });
+    }
+  });
+
+  return {
+    expiredCount: expiredOrders.length,
+    graceMinutes,
+    cutoff,
+    expiredOrders,
+  } satisfies ExpireNoShowOrdersResult;
+}

@@ -15,6 +15,8 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { emitUnreadNotificationsChanged } from "@/components/use-unread-notification-count";
+
 type NotificationType = "order" | "stock" | "wallet" | "review" | "system";
 type FilterKey = "all" | "unread" | NotificationType;
 
@@ -194,12 +196,17 @@ export default function OwnerNotificationsPage() {
       setNotifications(
         (notificationsData.notifications || []).map(mapApiNotification),
       );
+      emitUnreadNotificationsChanged();
       setActiveOrderCount(
         (ordersData.orders || []).filter(
           (order) =>
-            !["COMPLETED", "CANCELLED", "REFUNDED", "PAYMENT_FAILED"].includes(
-              order.status,
-            ),
+            ![
+              "COMPLETED",
+              "NO_SHOW",
+              "CANCELLED",
+              "REFUNDED",
+              "PAYMENT_FAILED",
+            ].includes(order.status),
         ).length,
       );
       setNotice(null);
@@ -261,6 +268,7 @@ export default function OwnerNotificationsPage() {
           unread: false,
         })),
       );
+      emitUnreadNotificationsChanged();
     } catch (error) {
       setNotice(
         error instanceof Error
@@ -294,6 +302,7 @@ export default function OwnerNotificationsPage() {
             : notification,
         ),
       );
+      emitUnreadNotificationsChanged();
     } catch (error) {
       setNotice(
         error instanceof Error

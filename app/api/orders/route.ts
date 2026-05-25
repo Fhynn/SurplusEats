@@ -11,7 +11,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { getCurrentSession } from "@/lib/auth-session";
-import { createOrderCode } from "@/lib/backend-utils";
+import { createOrderCode, createPickupCode } from "@/lib/backend-utils";
+import { expireNoShowOrders } from "@/lib/order-no-show";
 import { prisma, type PrismaTransactionClient } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -68,6 +69,8 @@ export async function GET(request: Request) {
       { status: 401 },
     );
   }
+
+  await expireNoShowOrders();
 
   const orders = await prisma.order.findMany({
     where: {
@@ -142,6 +145,27 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { ok: false, message: "Customer tidak ditemukan." },
       { status: 404 },
+    );
+  }
+
+  const activeCustomerLocation = await prisma.address.findFirst({
+    where: {
+      userId: session.userId,
+      isPrimary: true,
+      latitude: { not: null },
+      longitude: { not: null },
+    },
+    select: { id: true },
+  });
+
+  if (!activeCustomerLocation) {
+    return NextResponse.json(
+      {
+        ok: false,
+        message:
+          "Aktifkan lokasi customer dulu sebelum checkout agar rute pickup memakai titik yang benar.",
+      },
+      { status: 400 },
     );
   }
 
@@ -323,7 +347,7 @@ export async function POST(request: Request) {
             discount: groupDiscount,
             serviceFee: groupServiceFee,
             total: groupTotal,
-            pickupCode: Math.floor(100000 + Math.random() * 900000).toString(),
+            pickupCode: createPickupCode(),
             pickupTime: new Date(Date.now() + 1000 * 60 * 60),
             note: data.note,
             paidAt: new Date(),

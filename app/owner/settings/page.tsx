@@ -12,6 +12,16 @@ import {
   UserRound,
 } from "lucide-react";
 
+import { LocationMapPicker } from "@/components/location-map-picker";
+import {
+  getBestBrowserLocation,
+  getLocationAccuracyNotice,
+} from "@/lib/browser-location";
+import {
+  formatCoordinatesInput,
+  parseCoordinatesFromText,
+} from "@/lib/maps-coordinate";
+
 type OwnerProfile = {
   owner: {
     id: string;
@@ -55,18 +65,18 @@ function getCoordinateError(draft: LocationDraft) {
   const longitude = draft.longitude.trim();
 
   if (!latitude && !longitude) {
-    return "Titik lokasi toko wajib diisi.";
+    return "Titik lokasi toko wajib diisi. Klik Ambil Lokasi.";
   }
 
   if (!latitude || !longitude) {
-    return "Latitude dan longitude lokasi toko harus diisi bersama.";
+    return "Titik lokasi toko belum lengkap. Klik Ambil Lokasi lagi.";
   }
 
   const latitudeNumber = Number(latitude);
   const longitudeNumber = Number(longitude);
 
   if (!Number.isFinite(latitudeNumber) || latitudeNumber < -90 || latitudeNumber > 90) {
-    return "Latitude lokasi toko harus berada di antara -90 dan 90.";
+    return "Titik lokasi toko tidak valid. Klik Ambil Lokasi lagi.";
   }
 
   if (
@@ -74,7 +84,7 @@ function getCoordinateError(draft: LocationDraft) {
     longitudeNumber < -180 ||
     longitudeNumber > 180
   ) {
-    return "Longitude lokasi toko harus berada di antara -180 dan 180.";
+    return "Titik lokasi toko tidak valid. Klik Ambil Lokasi lagi.";
   }
 
   return "";
@@ -88,8 +98,24 @@ export default function OwnerSettingsPage() {
   const [isSavingLocation, setIsSavingLocation] = useState(false);
   const [isLocatingStore, setIsLocatingStore] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [mapsInput, setMapsInput] = useState("");
+  const [mapsInputError, setMapsInputError] = useState<string | null>(null);
   const coordinateError = getCoordinateError(locationDraft);
   const isSuccessNotice = notice?.toLowerCase().includes("berhasil") ?? false;
+  const hasLocationDraftCoordinates = Boolean(
+    locationDraft.latitude.trim() && locationDraft.longitude.trim(),
+  );
+  const locationDraftCoordinates = hasLocationDraftCoordinates
+    ? {
+        latitude: Number(locationDraft.latitude),
+        longitude: Number(locationDraft.longitude),
+      }
+    : null;
+  const locationMapsHref = hasLocationDraftCoordinates
+    ? `https://www.google.com/maps?q=${encodeURIComponent(
+        `${locationDraft.latitude.trim()},${locationDraft.longitude.trim()}`,
+      )}`
+    : "";
 
   useEffect(() => {
     let ignore = false;
@@ -140,7 +166,7 @@ export default function OwnerSettingsPage() {
     };
   }, []);
 
-  const handleUseCurrentLocation = () => {
+  const handleUseCurrentLocation = async () => {
     if (!navigator.geolocation) {
       setNotice("Browser belum mendukung akses lokasi.");
       return;
@@ -149,23 +175,44 @@ export default function OwnerSettingsPage() {
     setIsLocatingStore(true);
     setNotice(null);
 
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        setLocationDraft({
-          latitude: position.coords.latitude.toFixed(6),
-          longitude: position.coords.longitude.toFixed(6),
-        });
-        setIsLocatingStore(false);
-      },
-      () => {
-        setNotice("Lokasi toko gagal diambil. Izinkan akses lokasi atau isi manual.");
-        setIsLocatingStore(false);
-      },
-      {
-        enableHighAccuracy: true,
-        maximumAge: 60_000,
-        timeout: 12_000,
-      },
+    try {
+      const result = await getBestBrowserLocation();
+
+      setLocationDraft(formatCoordinatesInput(result.coordinates));
+      setMapsInputError(null);
+      setNotice(getLocationAccuracyNotice(result.accuracy));
+    } catch (error) {
+      setNotice(
+        error instanceof Error
+          ? error.message
+          : "Lokasi toko gagal diambil. Izinkan akses lokasi browser lalu coba lagi.",
+      );
+    } finally {
+      setIsLocatingStore(false);
+    }
+  };
+
+  const handleMapsInputChange = (value: string) => {
+    setMapsInput(value);
+
+    const coordinates = parseCoordinatesFromText(value);
+
+    if (!coordinates) {
+      return;
+    }
+
+    setLocationDraft(formatCoordinatesInput(coordinates));
+    setMapsInputError(null);
+  };
+
+  const handleMapsInputBlur = () => {
+    if (!mapsInput.trim() || parseCoordinatesFromText(mapsInput)) {
+      setMapsInputError(null);
+      return;
+    }
+
+    setMapsInputError(
+      "Tempel link Google Maps yang berisi pin atau format -6.200000,106.816666.",
     );
   };
 
@@ -355,43 +402,86 @@ export default function OwnerSettingsPage() {
                     </button>
                   </div>
 
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <label className="block">
+                  <div
+                    className={`rounded-2xl border p-4 ${
+                      hasLocationDraftCoordinates
+                        ? "border-emerald-200 bg-white"
+                        : coordinateError
+                          ? "border-red-100 bg-red-50"
+                          : "border-emerald-100 bg-white/80"
+                    }`}
+                  >
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex min-w-0 items-start gap-3">
+                        <span
+                          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${
+                            hasLocationDraftCoordinates
+                              ? "bg-emerald-100 text-emerald-600"
+                              : "bg-gray-100 text-gray-500"
+                          }`}
+                        >
+                          <MapPin size={19} />
+                        </span>
+                        <div className="min-w-0">
+                          <p className="text-sm font-extrabold text-gray-950">
+                            {hasLocationDraftCoordinates
+                              ? "Titik lokasi sudah aktif"
+                              : "Titik lokasi belum aktif"}
+                          </p>
+                          <p className="mt-1 text-xs leading-5 font-semibold text-gray-500">
+                            {hasLocationDraftCoordinates
+                              ? "Koordinat toko tersimpan sebagai patokan maps untuk rute pickup."
+                              : "Klik Ambil Lokasi di area toko, lalu simpan titik toko."}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap gap-2">
+                        <LocationMapPicker
+                          coordinates={locationDraftCoordinates}
+                          onCoordinatesChange={(coordinates) => {
+                            setLocationDraft(formatCoordinatesInput(coordinates));
+                            setMapsInputError(null);
+                            setNotice(null);
+                          }}
+                          title="Pin Lokasi Toko"
+                          description="Klik peta atau geser pin tepat di lokasi pickup toko."
+                        />
+                        {locationMapsHref ? (
+                          <a
+                            href={locationMapsHref}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-xs font-extrabold text-emerald-700 transition-colors hover:bg-emerald-100"
+                          >
+                            <Navigation size={15} />
+                            Buka Maps
+                          </a>
+                        ) : null}
+                      </div>
+                    </div>
+                    <label className="mt-4 block">
                       <span className="mb-2 block text-xs font-extrabold text-gray-700">
-                        Latitude
+                        Link Google Maps / Koordinat Pin
                       </span>
                       <input
-                        type="number"
-                        step="any"
-                        value={locationDraft.latitude}
+                        type="text"
+                        value={mapsInput}
                         onChange={(event) =>
-                          setLocationDraft((current) => ({
-                            ...current,
-                            latitude: event.target.value,
-                          }))
+                          handleMapsInputChange(event.target.value)
                         }
-                        placeholder="-6.200000"
-                        className="h-11 w-full rounded-2xl border border-emerald-100 bg-white px-3 text-sm font-bold text-gray-900 outline-none placeholder:text-gray-300 focus:border-emerald-500"
+                        onBlur={handleMapsInputBlur}
+                        placeholder="Tempel link Google Maps atau -6.200000,106.816666"
+                        className="h-11 w-full rounded-2xl border border-emerald-100 bg-white px-3 text-xs font-bold text-gray-900 outline-none placeholder:text-gray-400 focus:border-emerald-500"
                       />
                     </label>
-                    <label className="block">
-                      <span className="mb-2 block text-xs font-extrabold text-gray-700">
-                        Longitude
-                      </span>
-                      <input
-                        type="number"
-                        step="any"
-                        value={locationDraft.longitude}
-                        onChange={(event) =>
-                          setLocationDraft((current) => ({
-                            ...current,
-                            longitude: event.target.value,
-                          }))
-                        }
-                        placeholder="106.816666"
-                        className="h-11 w-full rounded-2xl border border-emerald-100 bg-white px-3 text-sm font-bold text-gray-900 outline-none placeholder:text-gray-300 focus:border-emerald-500"
-                      />
-                    </label>
+                    {mapsInputError ? (
+                      <p className="mt-2 text-xs leading-5 font-bold text-red-600">
+                        {mapsInputError}
+                      </p>
+                    ) : null}
+                    <input type="hidden" value={locationDraft.latitude} readOnly />
+                    <input type="hidden" value={locationDraft.longitude} readOnly />
                   </div>
 
                   {coordinateError ? (

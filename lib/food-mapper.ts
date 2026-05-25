@@ -63,11 +63,12 @@ export function menuItemToFood(menuItem: ApiMenuItem): Food {
     restaurantLongitude: menuItem.restaurant.longitude,
     distance:
       menuItem.restaurant.latitude !== null && menuItem.restaurant.longitude !== null
-        ? "Atur lokasi"
-        : "Belum diset",
+        ? "Lokasi belum aktif"
+        : "Pin toko belum ada",
     distanceKm: null,
-    rating: menuItem.restaurant.rating || 4.8,
-    reviews: menuItem.restaurant.reviewCount || 0,
+    rating:
+      menuItem.restaurant.reviewCount > 0 ? menuItem.restaurant.rating : 0,
+    reviews: menuItem.restaurant.reviewCount,
     stock: menuItem.stock,
     time: `${pickupStart} - ${pickupEnd}`,
     originalPrice: menuItem.originalPrice,

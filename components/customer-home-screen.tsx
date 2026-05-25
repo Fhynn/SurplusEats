@@ -18,15 +18,21 @@ import { useEffect, useMemo, useState } from "react";
 
 import { useCustomerApp } from "@/components/customer-app-provider";
 import { CustomerLocationControl } from "@/components/customer-location-control";
-import { CATEGORIES, formatRp, type Food } from "@/lib/customer-data";
 import {
-  defaultCustomerLocation,
-  getCustomerLocationFromAddresses,
-  type ApiCustomerAddress,
-  type CustomerLocation,
-} from "@/lib/customer-location";
+  CATEGORIES,
+  formatRatingValue,
+  formatRp,
+  type Food,
+} from "@/lib/customer-data";
+import type { CustomerLocation } from "@/lib/customer-location";
 import { menuItemToFood, type ApiMenuItem } from "@/lib/food-mapper";
-import { applyFoodDistance, sortFoodsByDistance } from "@/lib/geo-distance";
+import {
+  applyFoodDistance,
+  hasFoodPickupCoordinates,
+  isFoodWithinPickupRadius,
+  NEARBY_PICKUP_RADIUS_KM,
+  sortFoodsByDistance,
+} from "@/lib/geo-distance";
 
 const quickActions = [
   {
@@ -57,10 +63,13 @@ export function CustomerHomeScreen() {
   const [orderCount, setOrderCount] = useState(0);
   const [voucherCount, setVoucherCount] = useState(0);
   const [isLoadingFoods, setIsLoadingFoods] = useState(true);
-  const [customerLocation, setCustomerLocation] = useState<CustomerLocation>(
-    defaultCustomerLocation,
-  );
-  const { addToCart } = useCustomerApp();
+  const {
+    addToCart,
+    customerLocation,
+    isCustomerLocationLoading,
+    setCustomerLocation,
+    unreadNotificationCount,
+  } = useCustomerApp();
 
   useEffect(() => {
     let ignore = false;
@@ -69,19 +78,12 @@ export function CustomerHomeScreen() {
       setIsLoadingFoods(true);
 
       try {
-        const [
-          meResponse,
-          response,
-          ordersResponse,
-          vouchersResponse,
-          addressesResponse,
-        ] =
+        const [meResponse, response, ordersResponse, vouchersResponse] =
           await Promise.all([
             fetch("/api/auth/me", { cache: "no-store" }),
             fetch("/api/menu-items", { cache: "no-store" }),
             fetch("/api/orders", { cache: "no-store" }),
             fetch("/api/vouchers", { cache: "no-store" }),
-            fetch("/api/addresses", { cache: "no-store" }),
           ]);
         const meData = (await meResponse.json()) as {
           ok: boolean;
@@ -97,13 +99,8 @@ export function CustomerHomeScreen() {
         };
         const vouchersData = (await vouchersResponse.json()) as {
           ok: boolean;
-          vouchers?: unknown[];
+          vouchers?: Array<{ status?: string }>;
         };
-        const addressesData = (await addressesResponse.json()) as {
-          ok: boolean;
-          addresses?: ApiCustomerAddress[];
-        };
-
         if (!meResponse.ok || !meData.ok || !meData.user) {
           await fetch("/api/auth/logout", { method: "POST" });
           router.replace("/");
@@ -112,17 +109,17 @@ export function CustomerHomeScreen() {
         }
 
         if (!ignore) {
-          const nextLocation = getCustomerLocationFromAddresses(
-            addressesData.addresses ?? [],
-          );
           const nextFoods = (result.menuItems?.map(menuItemToFood) ?? []).map(
-            (food) => applyFoodDistance(food, nextLocation.coordinates),
+            (food) => applyFoodDistance(food, customerLocation.coordinates),
           );
 
-          setCustomerLocation(nextLocation);
           setAllFoods(sortFoodsByDistance(nextFoods));
           setOrderCount(ordersData.orders?.length ?? 0);
-          setVoucherCount(vouchersData.vouchers?.length ?? 0);
+          setVoucherCount(
+            vouchersData.vouchers?.filter(
+              (voucher) => voucher.status === "available",
+            ).length ?? 0,
+          );
         }
       } catch {
         if (!ignore) {
@@ -140,7 +137,7 @@ export function CustomerHomeScreen() {
     return () => {
       ignore = true;
     };
-  }, [router]);
+  }, [customerLocation.coordinates, router]);
 
   const foods = useMemo(() => {
     if (activeCategory === "Semua") {
@@ -151,6 +148,12 @@ export function CustomerHomeScreen() {
       allFoods.filter((food) => food.category === activeCategory),
     );
   }, [activeCategory, allFoods]);
+  const nearbyFoodCount = foods.filter((food) =>
+    isFoodWithinPickupRadius(food),
+  ).length;
+  const foodWithoutPickupPinCount = foods.filter(
+    (food) => !hasFoodPickupCoordinates(food),
+  ).length;
 
   const handleLocationChange = (nextLocation: CustomerLocation) => {
     setCustomerLocation(nextLocation);
@@ -169,6 +172,7 @@ export function CustomerHomeScreen() {
         <div className="mx-auto mb-5 flex w-full max-w-7xl items-center justify-between">
           <CustomerLocationControl
             location={customerLocation}
+            isLoading={isCustomerLocationLoading}
             onLocationChange={handleLocationChange}
           />
 
@@ -180,7 +184,11 @@ export function CustomerHomeScreen() {
               aria-label="Buka notifikasi"
             >
               <Bell size={19} />
-              <span className="absolute top-2 right-2 h-2.5 w-2.5 rounded-full border-2 border-white bg-red-500" />
+              {unreadNotificationCount > 0 ? (
+                <span className="absolute -top-1 -right-1 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-white bg-red-500 px-1 text-[9px] font-extrabold text-white">
+                  {unreadNotificationCount > 9 ? "9+" : unreadNotificationCount}
+                </span>
+              ) : null}
             </button>
 
             <button
@@ -293,7 +301,9 @@ export function CustomerHomeScreen() {
               Flash Rescue
             </h2>
             <p className="text-xs font-medium text-gray-500">
-              Makanan terdekat yang segera habis
+              {customerLocation.coordinates
+                ? `${nearbyFoodCount} menu dalam ${NEARBY_PICKUP_RADIUS_KM} km, hasil lain tetap tampil`
+                : "Aktifkan lokasi agar menu diurutkan dari titik pickup terdekat"}
             </p>
           </div>
           <button
@@ -306,6 +316,14 @@ export function CustomerHomeScreen() {
           </button>
         </section>
 
+        {!customerLocation.coordinates || foodWithoutPickupPinCount > 0 ? (
+          <section className="mb-4 rounded-[22px] border border-emerald-100 bg-emerald-50 px-4 py-3 text-xs leading-5 font-semibold text-emerald-800">
+            {!customerLocation.coordinates
+              ? "Aktifkan lokasi otomatis di atas untuk melihat jarak pickup dari posisimu."
+              : `${foodWithoutPickupPinCount} menu belum punya pin toko, jadi jaraknya belum bisa dihitung.`}
+          </section>
+        ) : null}
+
         <section className="space-y-4 md:grid md:grid-cols-2 md:gap-4 md:space-y-0 xl:grid-cols-3">
           {isLoadingFoods ? (
             <div className="rounded-[24px] border border-gray-100 bg-white p-6 text-center text-sm font-bold text-gray-500 shadow-sm">
@@ -316,12 +334,21 @@ export function CustomerHomeScreen() {
             const discount = Math.round(
               ((food.originalPrice - food.price) / food.originalPrice) * 100,
             );
+            const detailRoute = `/detail/${food.id}`;
 
             return (
               <article
                 key={food.id}
-                onClick={() => router.push(`/detail/${food.id}`)}
-                className="group flex gap-4 rounded-[24px] border border-gray-100 bg-white p-3 shadow-[0_2px_10px_rgba(0,0,0,0.03)] transition-all hover:border-emerald-100 hover:shadow-md"
+                onClick={() => router.push(detailRoute)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    router.push(detailRoute);
+                  }
+                }}
+                role="button"
+                tabIndex={0}
+                className="group flex cursor-pointer gap-4 rounded-[24px] border border-gray-100 bg-white p-3 shadow-[0_2px_10px_rgba(0,0,0,0.03)] transition-all hover:border-emerald-100 hover:shadow-md focus:outline-none focus:ring-4 focus:ring-emerald-100"
               >
                 <div className="relative h-28 w-28 shrink-0 overflow-hidden rounded-[18px]">
                   <Image
@@ -348,9 +375,17 @@ export function CustomerHomeScreen() {
                   <div className="mb-3 flex flex-wrap items-center gap-2 text-[10px] font-bold text-gray-500">
                     <span className="flex items-center gap-1 rounded bg-amber-50 px-1.5 py-0.5 text-amber-700">
                       <Star size={10} className="fill-amber-500 text-amber-500" />
-                      {food.rating}
+                      {formatRatingValue(food.rating, food.reviews)}
                     </span>
-                    <span className="flex items-center gap-1 rounded bg-gray-50 px-1.5 py-0.5">
+                    <span
+                      className={`flex items-center gap-1 rounded px-1.5 py-0.5 ${
+                        food.distanceKm !== null && food.distanceKm !== undefined
+                          ? "bg-emerald-50 text-emerald-700"
+                          : hasFoodPickupCoordinates(food)
+                            ? "bg-blue-50 text-blue-700"
+                            : "bg-amber-50 text-amber-700"
+                      }`}
+                    >
                       <MapPin size={10} />
                       {food.distance}
                     </span>

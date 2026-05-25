@@ -18,8 +18,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { formatRp } from "@/lib/customer-data";
 import { apiOrderToCard, type ApiOrder } from "@/lib/order-mapper";
+import { showSweetError, showSweetToast } from "@/lib/sweet-alert";
 
-type HistoryOrderStatus = "completed" | "cancelled";
+type HistoryOrderStatus = "completed" | "cancelled" | "noShow";
 
 type HistoryOrder = {
   id: string;
@@ -40,12 +41,17 @@ type HistoryOrder = {
 const statusClassNameByStatus: Record<HistoryOrderStatus, string> = {
   completed: "border-emerald-100 bg-emerald-50 text-emerald-700",
   cancelled: "border-red-100 bg-red-50 text-red-600",
+  noShow: "border-amber-100 bg-amber-50 text-amber-700",
 };
 
 function mapApiOrderToHistory(order: ApiOrder): HistoryOrder | null {
   const card = apiOrderToCard(order);
 
-  if (card.status !== "completed" && card.status !== "cancelled") {
+  if (
+    card.status !== "completed" &&
+    card.status !== "cancelled" &&
+    card.status !== "noShow"
+  ) {
     return null;
   }
 
@@ -71,8 +77,10 @@ function mapApiOrderToHistory(order: ApiOrder): HistoryOrder | null {
       card.status === "completed"
         ? card.reviewRating
           ? `Sudah diulas ${card.reviewRating}/5.`
-          : "Pickup selesai dan order sudah tercatat."
-        : "Order dibatalkan atau pembayaran tidak berhasil.",
+        : "Pickup selesai dan order sudah tercatat."
+        : card.status === "noShow"
+          ? "Order melewati batas pickup dan ditandai tidak diambil."
+          : "Order dibatalkan atau pembayaran tidak berhasil.",
   };
 }
 
@@ -199,12 +207,22 @@ export function CustomerHistoryScreen() {
         type: "success",
         message: "Ulasan berhasil disimpan.",
       });
+      showSweetToast({
+        icon: "success",
+        title: "Ulasan berhasil disimpan.",
+      });
       handleCloseReview();
     } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Ulasan gagal disimpan.";
+
       setNotice({
         type: "error",
-        message:
-          error instanceof Error ? error.message : "Ulasan gagal disimpan.",
+        message,
+      });
+      void showSweetError({
+        title: "Ulasan gagal",
+        text: message,
       });
     } finally {
       setIsSubmittingReview(false);
@@ -302,7 +320,9 @@ export function CustomerHistoryScreen() {
                   fill
                   sizes="72px"
                   className={`object-cover ${
-                    order.status === "cancelled" ? "grayscale" : ""
+                    order.status === "cancelled" || order.status === "noShow"
+                      ? "grayscale"
+                      : ""
                   }`}
                 />
               </div>
@@ -374,7 +394,7 @@ export function CustomerHistoryScreen() {
                     Pesan Lagi
                   </button>
                 </div>
-              ) : (
+              ) : order.status === "cancelled" ? (
                 <button
                   type="button"
                   onClick={() => router.push(`/orders/${order.id}/refund`)}
@@ -383,6 +403,10 @@ export function CustomerHistoryScreen() {
                   <RefreshCcw size={14} />
                   Ajukan Refund
                 </button>
+              ) : (
+                <div className="rounded-xl border border-amber-100 bg-amber-50 px-3 py-3 text-xs leading-5 font-bold text-amber-800">
+                  Order melewati batas pickup dan ditandai tidak diambil.
+                </div>
               )}
             </div>
           </article>

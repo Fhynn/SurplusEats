@@ -3,6 +3,11 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { getCurrentSession } from "@/lib/auth-session";
+import {
+  calculateDistanceKm,
+  formatDistance,
+  type Coordinates,
+} from "@/lib/geo-distance";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -32,6 +37,13 @@ const chatSchema = z.object({
       }),
     )
     .max(8)
+    .optional(),
+  location: z
+    .object({
+      latitude: z.coerce.number().finite().min(-90).max(90),
+      longitude: z.coerce.number().finite().min(-180).max(180),
+    })
+    .nullable()
     .optional(),
 });
 
@@ -251,6 +263,33 @@ function calculateDiscountRate(menuItem: MenuContextItem) {
   return (menuItem.originalPrice - menuItem.discountedPrice) / menuItem.originalPrice;
 }
 
+function getRestaurantCoordinates(menuItem: MenuContextItem): Coordinates | null {
+  if (
+    menuItem.restaurant.latitude === null ||
+    menuItem.restaurant.longitude === null
+  ) {
+    return null;
+  }
+
+  return {
+    latitude: menuItem.restaurant.latitude,
+    longitude: menuItem.restaurant.longitude,
+  };
+}
+
+function calculateMenuDistanceKm(
+  menuItem: MenuContextItem,
+  origin?: Coordinates,
+) {
+  const destination = getRestaurantCoordinates(menuItem);
+
+  if (!origin || !destination) {
+    return null;
+  }
+
+  return calculateDistanceKm(origin, destination);
+}
+
 function scoreMenuItemForTaste(menuItem: MenuContextItem, preference: TastePreference) {
   const searchableText = normalizeText(
     [
@@ -270,12 +309,14 @@ function scoreMenuItemForTaste(menuItem: MenuContextItem, preference: TastePrefe
 function pickMenuRecommendations(
   menuItems: MenuContextItem[],
   preference?: TastePreference,
+  origin?: Coordinates,
 ) {
   const scoredItems = menuItems
     .map((menuItem) => ({
       menuItem,
       tasteScore: preference ? scoreMenuItemForTaste(menuItem, preference) : 0,
       discountRate: calculateDiscountRate(menuItem),
+      distanceKm: calculateMenuDistanceKm(menuItem, origin),
     }))
     .sort((first, second) => {
       if (second.tasteScore !== first.tasteScore) {
@@ -291,6 +332,13 @@ function pickMenuRecommendations(
 
       if (secondRating !== firstRating) {
         return secondRating - firstRating;
+      }
+
+      const firstDistance = first.distanceKm ?? Number.POSITIVE_INFINITY;
+      const secondDistance = second.distanceKm ?? Number.POSITIVE_INFINITY;
+
+      if (firstDistance !== secondDistance) {
+        return firstDistance - secondDistance;
       }
 
       return second.menuItem.stock - first.menuItem.stock;
@@ -310,6 +358,7 @@ function buildTastePreferenceReply(
   history: ChatHistoryItem[],
   menuItems: MenuContextItem[],
   cartCount: number,
+  origin?: Coordinates,
 ): AiResult | null {
   const preference = getTastePreference(message);
 
@@ -317,7 +366,7 @@ function buildTastePreferenceReply(
     return null;
   }
 
-  const selectedMenuItems = pickMenuRecommendations(menuItems, preference);
+  const selectedMenuItems = pickMenuRecommendations(menuItems, preference, origin);
 
   if (!selectedMenuItems.length) {
     return {
@@ -344,8 +393,11 @@ function buildTastePreferenceReply(
   };
 }
 
-function buildRepeatedReplyFallback(menuItems: MenuContextItem[]): AiResult | null {
-  const selectedMenuItems = pickMenuRecommendations(menuItems);
+function buildRepeatedReplyFallback(
+  menuItems: MenuContextItem[],
+  origin?: Coordinates,
+): AiResult | null {
+  const selectedMenuItems = pickMenuRecommendations(menuItems, undefined, origin);
 
   if (!selectedMenuItems.length) {
     return null;
@@ -389,6 +441,7 @@ function ensureRecommendationCards(
   aiResult: AiResult,
   menuItems: MenuContextItem[],
   message: string,
+  origin?: Coordinates,
 ): AiResult {
   const allowedIds = new Set(menuItems.map((item) => item.id));
   const hasValidRecommendationIds = Boolean(
@@ -406,6 +459,7 @@ function ensureRecommendationCards(
   const selectedMenuItems = pickMenuRecommendations(
     menuItems,
     getTastePreference(message) || undefined,
+    origin,
   );
 
   return {
@@ -460,11 +514,10 @@ function sanitizeQuickReplies(quickReplies: string[]) {
     .slice(0, 4);
 }
 
-function mapRecommendation(
-  menuItem: MenuContextItem,
-) {
+function mapRecommendation(menuItem: MenuContextItem, origin?: Coordinates) {
   const pickupStart = menuItem.pickupStart || menuItem.restaurant.pickupStart || "18:00";
   const pickupEnd = menuItem.pickupEnd || menuItem.restaurant.pickupEnd || "21:00";
+  const distanceKm = calculateMenuDistanceKm(menuItem, origin);
 
   return {
     id: menuItem.id,
@@ -472,17 +525,30 @@ function mapRecommendation(
     description: menuItem.description,
     category: menuItem.category,
     restaurant: menuItem.restaurant.name,
+    restaurantId: menuItem.restaurant.id,
+    restaurantSlug: menuItem.restaurant.slug,
+    restaurantAddress: menuItem.restaurant.address,
+    restaurantCity: menuItem.restaurant.city,
+    restaurantLatitude: menuItem.restaurant.latitude,
+    restaurantLongitude: menuItem.restaurant.longitude,
     originalPrice: menuItem.originalPrice,
     discountedPrice: menuItem.discountedPrice,
     stock: menuItem.stock,
     imageUrl: menuItem.imageUrl,
     pickupWindow: `${pickupStart} - ${pickupEnd}`,
-    rating: menuItem.restaurant.rating || 4.8,
+    rating:
+      menuItem.restaurant.reviewCount > 0 ? menuItem.restaurant.rating : 0,
     reviews: menuItem.restaurant.reviewCount,
+    distanceKm,
+    distance: distanceKm === null ? null : formatDistance(distanceKm),
   };
 }
 
-function buildChatResponse(aiResult: AiResult, menuItems: MenuContextItem[]) {
+function buildChatResponse(
+  aiResult: AiResult,
+  menuItems: MenuContextItem[],
+  origin?: Coordinates,
+) {
   const allowedIds = new Set(menuItems.map((item) => item.id));
   const recommendedIds = (aiResult.recommendedMenuItemIds || [])
     .filter((id) => allowedIds.has(id))
@@ -490,7 +556,7 @@ function buildChatResponse(aiResult: AiResult, menuItems: MenuContextItem[]) {
   const recommendations = recommendedIds
     .map((id) => menuItems.find((item) => item.id === id))
     .filter((item): item is MenuContextItem => Boolean(item))
-    .map(mapRecommendation);
+    .map((item) => mapRecommendation(item, origin));
 
   return {
     ok: true,
@@ -545,6 +611,7 @@ export async function POST(request: Request) {
   const apiKey = process.env.GEMINI_API_KEY;
   const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
   const { message, cart = [], history = [] } = parsed.data;
+  const location = parsed.data.location ?? undefined;
   const now = new Date();
   const [{ menuItems }, user, orders, vouchers] = await Promise.all([
     loadMenuContext(),
@@ -597,7 +664,7 @@ export async function POST(request: Request) {
     : buildNoActiveMenuReply(message, cartItemCount);
 
   if (noActiveMenuResult) {
-    return NextResponse.json(buildChatResponse(noActiveMenuResult, menuItems));
+    return NextResponse.json(buildChatResponse(noActiveMenuResult, menuItems, location));
   }
 
   const localTasteResult = buildTastePreferenceReply(
@@ -605,10 +672,11 @@ export async function POST(request: Request) {
     history,
     menuItems,
     cartItemCount,
+    location,
   );
 
   if (localTasteResult) {
-    return NextResponse.json(buildChatResponse(localTasteResult, menuItems));
+    return NextResponse.json(buildChatResponse(localTasteResult, menuItems, location));
   }
 
   if (!apiKey) {
@@ -618,25 +686,31 @@ export async function POST(request: Request) {
     );
   }
 
-  const menuContext = menuItems.map((item) => ({
-    id: item.id,
-    name: item.name,
-    restaurant: item.restaurant.name,
-    category: item.category,
-    description: item.description,
-    price: item.discountedPrice,
-    originalPrice: item.originalPrice,
-    discountText: `${Math.max(
-      0,
-      Math.round(((item.originalPrice - item.discountedPrice) / item.originalPrice) * 100),
-    )}%`,
-    stock: item.stock,
-    pickupWindow: `${item.pickupStart || item.restaurant.pickupStart || "18:00"} - ${
-      item.pickupEnd || item.restaurant.pickupEnd || "21:00"
-    }`,
-    rating: item.restaurant.rating || 4.8,
-    reviews: item.restaurant.reviewCount,
-  }));
+  const menuContext = menuItems.map((item) => {
+    const distanceKm = calculateMenuDistanceKm(item, location);
+
+    return {
+      id: item.id,
+      name: item.name,
+      restaurant: item.restaurant.name,
+      category: item.category,
+      description: item.description,
+      price: item.discountedPrice,
+      originalPrice: item.originalPrice,
+      discountText: `${Math.max(
+        0,
+        Math.round(((item.originalPrice - item.discountedPrice) / item.originalPrice) * 100),
+      )}%`,
+      stock: item.stock,
+      pickupWindow: `${item.pickupStart || item.restaurant.pickupStart || "18:00"} - ${
+        item.pickupEnd || item.restaurant.pickupEnd || "21:00"
+      }`,
+      rating: item.restaurant.reviewCount > 0 ? item.restaurant.rating : 0,
+      reviews: item.restaurant.reviewCount,
+      distanceKm,
+      distanceText: distanceKm === null ? null : formatDistance(distanceKm),
+    };
+  });
   const cartTotal = cart.reduce((total, item) => total + item.price * item.qty, 0);
   const promptPayload = {
     user: {
@@ -650,6 +724,12 @@ export async function POST(request: Request) {
       count: cart.reduce((total, item) => total + item.qty, 0),
     },
     menuItems: menuContext,
+    activeLocation: location
+      ? {
+          latitude: location.latitude,
+          longitude: location.longitude,
+        }
+      : null,
     recentOrders: orders.map((order) => ({
       code: order.orderCode,
       status: order.status,
@@ -663,7 +743,9 @@ export async function POST(request: Request) {
     lastAssistantMessage: previousAssistantMessage,
     contextHint: getTastePreference(message)
       ? "latestUserMessage kemungkinan jawaban quick reply dari assistant sebelumnya. Lanjutkan konteks sebelumnya dan jangan ulangi pertanyaan yang sama."
-      : null,
+      : location
+        ? "User punya lokasi aktif. Saat rekomendasi, prioritaskan menu yang relevan, stok tersedia, diskon bagus, rating baik, dan jaraknya dekat jika cocok dengan permintaan."
+        : null,
     history: history.slice(-6),
   };
 
@@ -756,11 +838,15 @@ export async function POST(request: Request) {
     rawAiResult.reply,
     previousAssistantMessage,
   )
-    ? buildRepeatedReplyFallback(menuItems)
+    ? buildRepeatedReplyFallback(menuItems, location)
     : null;
   const aiResult = normalizeAiResult(repeatedReplyFallback || rawAiResult);
 
   return NextResponse.json(
-    buildChatResponse(ensureRecommendationCards(aiResult, menuItems, message), menuItems),
+    buildChatResponse(
+      ensureRecommendationCards(aiResult, menuItems, message, location),
+      menuItems,
+      location,
+    ),
   );
 }

@@ -177,6 +177,8 @@ export async function GET() {
       status:
         order.status === OrderStatus.COMPLETED
           ? "Selesai"
+          : order.status === OrderStatus.NO_SHOW
+            ? "Tidak Diambil"
           : order.status === OrderStatus.READY
             ? "Pickup"
             : "Diproses",

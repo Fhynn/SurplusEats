@@ -25,15 +25,14 @@ import { useEffect, useMemo, useState } from "react";
 import { useCustomerApp } from "@/components/customer-app-provider";
 import { MobileDeviceFrame } from "@/components/mobile-device-frame";
 import type { Food } from "@/lib/customer-data";
-import { formatRp } from "@/lib/customer-data";
 import {
-  getCustomerLocationFromAddresses,
-  type ApiCustomerAddress,
-} from "@/lib/customer-location";
+  formatRatingSummary,
+  formatRatingValue,
+  formatRp,
+} from "@/lib/customer-data";
 import {
   applyFoodDistance,
   getPickupRouteUrl,
-  type Coordinates,
 } from "@/lib/geo-distance";
 
 interface CustomerFoodDetailScreenProps {
@@ -50,14 +49,13 @@ export function CustomerFoodDetailScreen({
   food,
 }: CustomerFoodDetailScreenProps) {
   const router = useRouter();
-  const { addToCart } = useCustomerApp();
+  const { addToCart, customerLocation } = useCustomerApp();
   const [displayFood, setDisplayFood] = useState(food);
-  const [customerCoordinates, setCustomerCoordinates] =
-    useState<Coordinates | null>(null);
   const [isAdded, setIsAdded] = useState(false);
   const [isFavorite, setIsFavorite] = useState(false);
   const [isTogglingFavorite, setIsTogglingFavorite] = useState(false);
   const [qty, setQty] = useState(1);
+  const customerCoordinates = customerLocation.coordinates;
 
   const subtotal = displayFood.price * qty;
   const originalSubtotal = displayFood.originalPrice * qty;
@@ -82,49 +80,39 @@ export function CustomerFoodDetailScreen({
         ? `${displayFood.restaurantCity} - estimasi ${displayFood.distance} dari lokasimu.`
         : `Estimasi ${displayFood.distance} dari lokasimu.`
       : displayFood.restaurantCity
-        ? `${displayFood.restaurantCity} - atur titik maps untuk estimasi jarak.`
-        : "Atur titik maps untuk estimasi jarak.";
+        ? `${displayFood.restaurantCity} - aktifkan lokasi otomatis untuk estimasi jarak.`
+        : "Aktifkan lokasi otomatis untuk estimasi jarak.";
   const savedPercent = useMemo(
     () => Math.round((savedAmount / originalSubtotal) * 100),
     [originalSubtotal, savedAmount],
   );
 
   useEffect(() => {
+    setDisplayFood(applyFoodDistance(food, customerCoordinates));
+  }, [customerCoordinates, food]);
+
+  useEffect(() => {
     let ignore = false;
 
-    async function loadDistance() {
+    async function loadFavorite() {
       try {
-        const [response, favoriteResponse] = await Promise.all([
-          fetch("/api/addresses", { cache: "no-store" }),
-          fetch(`/api/favorites?menuItemId=${food.id}`, { cache: "no-store" }),
-        ]);
-        const data = (await response.json()) as {
-          ok: boolean;
-          addresses?: ApiCustomerAddress[];
-        };
-        const favoriteData = (await favoriteResponse.json()) as {
+        const response = await fetch(`/api/favorites?menuItemId=${food.id}`, {
+          cache: "no-store",
+        });
+        const favoriteData = (await response.json()) as {
           ok: boolean;
           isFavorite?: boolean;
         };
 
-        if (!ignore && data.ok) {
-          const location = getCustomerLocationFromAddresses(data.addresses ?? []);
-          setCustomerCoordinates(location.coordinates);
-          setDisplayFood(applyFoodDistance(food, location.coordinates));
-        }
-
-        if (!ignore && favoriteData.ok) {
+        if (!ignore && response.ok && favoriteData.ok) {
           setIsFavorite(Boolean(favoriteData.isFavorite));
         }
       } catch {
-        if (!ignore) {
-          setCustomerCoordinates(null);
-          setDisplayFood(applyFoodDistance(food, null));
-        }
+        // Favorite state stays unchanged when the status request fails.
       }
     }
 
-    void loadDistance();
+    void loadFavorite();
 
     return () => {
       ignore = true;
@@ -260,10 +248,14 @@ export function CustomerFoodDetailScreen({
               <div className="rounded-[20px] border border-amber-100 bg-amber-50 p-3 text-center">
                 <div className="mb-1 flex items-center justify-center gap-1 text-amber-600">
                   <Star size={15} className="fill-amber-500 text-amber-500" />
-                  <span className="text-sm font-extrabold">{displayFood.rating}</span>
+                  <span className="text-sm font-extrabold">
+                    {formatRatingValue(displayFood.rating, displayFood.reviews)}
+                  </span>
                 </div>
                 <p className="text-[10px] font-bold text-gray-500">
-                  {displayFood.reviews} ulasan
+                  {displayFood.reviews > 0
+                    ? `${displayFood.reviews} ulasan`
+                    : "Belum ada ulasan"}
                 </p>
               </div>
               <div className="rounded-[20px] border border-emerald-100 bg-emerald-50 p-3 text-center">
@@ -352,7 +344,7 @@ export function CustomerFoodDetailScreen({
                         {displayFood.restaurant}
                       </h2>
                       <p className="mt-0.5 text-xs font-semibold text-gray-500">
-                        {displayFood.reviews} ulasan • {displayFood.rating}/5
+                        {formatRatingSummary(displayFood.rating, displayFood.reviews)}
                       </p>
                     </div>
                   </div>
@@ -471,19 +463,27 @@ export function CustomerFoodDetailScreen({
                   </h2>
                 </div>
                 <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-extrabold text-amber-600">
-                  {displayFood.rating}/5
+                  {displayFood.reviews > 0
+                    ? `${formatRatingValue(displayFood.rating, displayFood.reviews)}/5`
+                    : "Baru"}
                 </span>
               </div>
               <div className="rounded-2xl bg-gray-50 p-4">
                 <div className="mb-1 flex items-center gap-1 text-amber-500">
                   <Star size={14} className="fill-amber-500" />
                   <span className="text-xs font-extrabold">
-                    {displayFood.rating}/5 dari {displayFood.reviews} ulasan
+                    {displayFood.reviews > 0
+                      ? `${formatRatingValue(
+                          displayFood.rating,
+                          displayFood.reviews,
+                        )}/5 dari ${displayFood.reviews} ulasan`
+                      : "Belum ada ulasan"}
                   </span>
                 </div>
                 <p className="text-xs leading-5 font-medium text-gray-500">
-                  Detail komentar akan muncul setelah customer menyelesaikan
-                  order dan mengirim ulasan.
+                  {displayFood.reviews > 0
+                    ? "Detail komentar akan muncul dari ulasan order customer."
+                    : "Ulasan akan muncul setelah customer menyelesaikan order dan memberi rating."}
                 </p>
               </div>
             </section>

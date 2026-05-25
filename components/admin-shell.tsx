@@ -19,6 +19,8 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { ReactNode } from "react";
 import { useState } from "react";
 
+import { useUnreadNotificationCount } from "@/components/use-unread-notification-count";
+
 const adminNavItems = [
   {
     href: "/admin/dashboard",
@@ -164,6 +166,7 @@ export function AdminShell({ children }: Readonly<{ children: ReactNode }>) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const { unreadNotificationCount } = useUnreadNotificationCount();
   const dashboardTab = searchParams.get("tab");
   const pageLabel =
     pageLabelByPath.find((item) => item.test(pathname))?.label ??
@@ -206,6 +209,12 @@ export function AdminShell({ children }: Readonly<{ children: ReactNode }>) {
             </p>
             {adminNavItems.map(({ href, label, icon: Icon, badge, match }) => {
               const isActive = match(pathname, dashboardTab);
+              const itemBadge =
+                label === "Notifikasi" && unreadNotificationCount > 0
+                  ? unreadNotificationCount > 9
+                    ? "9+"
+                    : String(unreadNotificationCount)
+                  : badge;
 
               return (
                 <Link
@@ -224,9 +233,9 @@ export function AdminShell({ children }: Readonly<{ children: ReactNode }>) {
                     />
                     {label}
                   </span>
-                  {badge ? (
+                  {itemBadge ? (
                     <span className="rounded-full bg-red-500 px-2 py-0.5 text-[10px] font-extrabold text-white">
-                      {badge}
+                      {itemBadge}
                     </span>
                   ) : null}
                 </Link>
@@ -266,7 +275,11 @@ export function AdminShell({ children }: Readonly<{ children: ReactNode }>) {
                   aria-label="Buka notifikasi admin"
                 >
                   <Bell size={18} />
-                  <span className="absolute top-2.5 right-2.5 h-2 w-2 rounded-full bg-red-500" />
+                  {unreadNotificationCount > 0 ? (
+                    <span className="absolute -top-1 -right-1 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-white bg-red-500 px-1 text-[9px] font-extrabold text-white">
+                      {unreadNotificationCount > 9 ? "9+" : unreadNotificationCount}
+                    </span>
+                  ) : null}
                 </Link>
                 <button
                   type="button"

@@ -9,6 +9,7 @@ import {
   Leaf,
   MapPin,
   MessageSquareText,
+  Navigation,
   ReceiptText,
   Store,
   TicketPercent,
@@ -16,18 +17,24 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { useCustomerApp } from "@/components/customer-app-provider";
 import { CustomerLocationControl } from "@/components/customer-location-control";
 import { MobileDeviceFrame } from "@/components/mobile-device-frame";
-import { formatRp } from "@/lib/customer-data";
+import { formatRp, type CartItem } from "@/lib/customer-data";
+import type { CustomerLocation } from "@/lib/customer-location";
 import {
-  defaultCustomerLocation,
-  getCustomerLocationFromAddresses,
-  type ApiCustomerAddress,
-  type CustomerLocation,
-} from "@/lib/customer-location";
+  calculateDistanceKm,
+  formatDistance,
+  getPickupRouteUrl,
+  type Coordinates,
+} from "@/lib/geo-distance";
+import {
+  showSweetError,
+  showSweetSuccess,
+  showSweetWarning,
+} from "@/lib/sweet-alert";
 
 const pickupOptions = [
   {
@@ -84,10 +91,75 @@ type CheckoutVoucher = {
   title: string;
 };
 
+type CheckoutPickupStore = {
+  key: string;
+  name: string;
+  address: string;
+  city: string;
+  coordinates: Coordinates | null;
+  itemCount: number;
+  quantity: number;
+  pickupWindows: string[];
+};
+
+function getCheckoutPickupStores(cart: CartItem[]) {
+  const stores = new Map<string, CheckoutPickupStore>();
+
+  for (const item of cart) {
+    const key =
+      item.restaurantId ||
+      `${item.restaurant}-${item.restaurantLatitude ?? "no-lat"}-${item.restaurantLongitude ?? "no-lng"}`;
+    const coordinates =
+      item.restaurantLatitude !== null &&
+      item.restaurantLatitude !== undefined &&
+      item.restaurantLongitude !== null &&
+      item.restaurantLongitude !== undefined
+        ? {
+            latitude: item.restaurantLatitude,
+            longitude: item.restaurantLongitude,
+          }
+        : null;
+    const currentStore = stores.get(key);
+
+    if (currentStore) {
+      currentStore.itemCount += 1;
+      currentStore.quantity += item.qty;
+
+      if (!currentStore.pickupWindows.includes(item.time)) {
+        currentStore.pickupWindows.push(item.time);
+      }
+
+      continue;
+    }
+
+    stores.set(key, {
+      key,
+      name: item.restaurant,
+      address: item.restaurantAddress || "Alamat toko belum tersedia.",
+      city: item.restaurantCity || "",
+      coordinates,
+      itemCount: 1,
+      quantity: item.qty,
+      pickupWindows: [item.time],
+    });
+  }
+
+  return Array.from(stores.values());
+}
+
 export function CustomerCheckoutScreen() {
   const router = useRouter();
-  const { cart, cartCount, cartTotal, originalTotal, totalSaved, clearCart } =
-    useCustomerApp();
+  const {
+    cart,
+    cartCount,
+    cartTotal,
+    originalTotal,
+    totalSaved,
+    clearCart,
+    customerLocation,
+    isCustomerLocationLoading,
+    setCustomerLocation,
+  } = useCustomerApp();
   const [pickupTime, setPickupTime] =
     useState<(typeof pickupOptions)[number]["id"]>("early");
   const [paymentMethod, setPaymentMethod] =
@@ -95,10 +167,6 @@ export function CustomerCheckoutScreen() {
   const [notes, setNotes] = useState("");
   const [agreePickup, setAgreePickup] = useState(true);
   const [isSubmittingOrder, setIsSubmittingOrder] = useState(false);
-  const [isLoadingLocation, setIsLoadingLocation] = useState(true);
-  const [customerLocation, setCustomerLocation] = useState<CustomerLocation>(
-    defaultCustomerLocation,
-  );
   const [checkoutNotice, setCheckoutNotice] = useState<string | null>(null);
   const [voucherCode, setVoucherCode] = useState("");
   const [activeVoucher, setActiveVoucher] = useState<CheckoutVoucher | null>(
@@ -113,57 +181,26 @@ export function CustomerCheckoutScreen() {
   const grandTotal = Math.max(0, cartTotal - voucherDiscount) + serviceFee;
   const selectedPickup = pickupOptions.find((item) => item.id === pickupTime);
   const hasCustomerCoordinates = Boolean(customerLocation.coordinates);
-  const hasRestaurantCoordinates = cart.every(
-    (item) =>
-      item.restaurantLatitude !== null &&
-      item.restaurantLatitude !== undefined &&
-      item.restaurantLongitude !== null &&
-      item.restaurantLongitude !== undefined,
+  const pickupStores = useMemo(() => getCheckoutPickupStores(cart), [cart]);
+  const hasRestaurantCoordinates = pickupStores.every(
+    (store) => store.coordinates,
   );
-  const locationIssue = !hasRestaurantCoordinates
-      ? "Restoran di keranjang belum punya titik lokasi. Minta mitra melengkapi lokasi toko dulu."
+  const locationIssue = !hasCustomerCoordinates
+      ? "Aktifkan lokasi otomatis dulu sebelum checkout agar rute pickup memakai titik customer yang benar."
+      : !hasRestaurantCoordinates
+        ? "Restoran di keranjang belum punya titik lokasi. Minta mitra melengkapi lokasi toko dulu."
       : "";
   const canPay =
     agreePickup &&
     !isSubmittingOrder &&
-    !isLoadingLocation &&
+    !isCustomerLocationLoading &&
     !locationIssue;
-
-  useEffect(() => {
-    let ignore = false;
-
-    async function loadCustomerLocation() {
-      setIsLoadingLocation(true);
-
-      try {
-        const response = await fetch("/api/addresses", { cache: "no-store" });
-        const data = (await response.json()) as {
-          ok: boolean;
-          addresses?: ApiCustomerAddress[];
-        };
-
-        if (!ignore && data.ok) {
-          setCustomerLocation(
-            getCustomerLocationFromAddresses(data.addresses ?? []),
-          );
-        }
-      } catch {
-        if (!ignore) {
-          setCustomerLocation(defaultCustomerLocation);
-        }
-      } finally {
-        if (!ignore) {
-          setIsLoadingLocation(false);
-        }
-      }
-    }
-
-    void loadCustomerLocation();
-
-    return () => {
-      ignore = true;
-    };
-  }, []);
+  const paymentBlockNotice =
+    checkoutNotice ||
+    locationIssue ||
+    (!agreePickup
+      ? "Centang ketentuan pickup dulu sebelum melanjutkan pembayaran."
+      : null);
 
   const handleLocationChange = (nextLocation: CustomerLocation) => {
     setCustomerLocation(nextLocation);
@@ -263,6 +300,10 @@ export function CustomerCheckoutScreen() {
 
     if (locationIssue) {
       setCheckoutNotice(locationIssue);
+      void showSweetWarning({
+        title: "Lokasi belum siap",
+        text: locationIssue,
+      });
       return;
     }
 
@@ -304,13 +345,25 @@ export function CustomerCheckoutScreen() {
       }
 
       await clearCart();
+      await showSweetSuccess({
+        title: "Order berhasil dibuat",
+        text:
+          orderCodes.length > 1
+            ? `${orderCodes.length} order tersimpan. Kamu bisa lanjut melihat struk dan rute pickup.`
+            : "Order tersimpan. Kamu bisa lanjut melihat struk dan rute pickup.",
+        confirmButtonText: "Lihat struk",
+      });
       router.push(
         `/payment-success?orders=${encodeURIComponent(orderCodes.join(","))}`,
       );
     } catch (error) {
-      setCheckoutNotice(
-        error instanceof Error ? error.message : "Checkout gagal.",
-      );
+      const message = error instanceof Error ? error.message : "Checkout gagal.";
+
+      setCheckoutNotice(message);
+      void showSweetError({
+        title: "Checkout gagal",
+        text: message,
+      });
     } finally {
       setIsSubmittingOrder(false);
     }
@@ -398,6 +451,7 @@ export function CustomerCheckoutScreen() {
                   </div>
                   <CustomerLocationControl
                     location={customerLocation}
+                    isLoading={isCustomerLocationLoading}
                     onLocationChange={handleLocationChange}
                   />
                 </div>
@@ -409,7 +463,7 @@ export function CustomerCheckoutScreen() {
                   }`}
                 >
                   <p className="text-sm font-extrabold text-gray-950">
-                    {isLoadingLocation
+                    {isCustomerLocationLoading
                       ? "Memeriksa titik lokasi..."
                       : hasCustomerCoordinates
                         ? customerLocation.label
@@ -423,8 +477,116 @@ export function CustomerCheckoutScreen() {
                     {locationIssue ||
                       (hasCustomerCoordinates
                         ? "Rute pickup akan dibuat dari lokasi aktif ke toko."
-                        : "Checkout tetap bisa lanjut. Aktifkan lokasi jika ingin estimasi jarak dan rute pickup lebih akurat.")}
+                        : "Aktifkan lokasi otomatis untuk melanjutkan checkout.")}
                   </p>
+                </div>
+              </section>
+
+              <section className="rounded-[28px] border border-gray-100 bg-white p-5 shadow-sm">
+                <div className="mb-4 flex items-center gap-2">
+                  <Navigation size={19} className="text-blue-500" />
+                  <div>
+                    <h2 className="text-sm font-extrabold text-gray-950">
+                      Rute Pickup per Toko
+                    </h2>
+                    <p className="mt-0.5 text-xs font-semibold text-gray-500">
+                      {pickupStores.length} titik pickup akan dibuat dari keranjang ini.
+                    </p>
+                  </div>
+                </div>
+                <div className="space-y-3">
+                  {pickupStores.map((store) => {
+                    const distanceKm =
+                      customerLocation.coordinates && store.coordinates
+                        ? calculateDistanceKm(
+                            customerLocation.coordinates,
+                            store.coordinates,
+                          )
+                        : null;
+                    const pickupRoute = getPickupRouteUrl(
+                      customerLocation.coordinates,
+                      store.coordinates,
+                      `${store.name} ${store.city}`,
+                    );
+
+                    return (
+                      <article
+                        key={store.key}
+                        className={`rounded-[22px] border p-4 ${
+                          store.coordinates
+                            ? "border-emerald-100 bg-emerald-50/65"
+                            : "border-red-100 bg-red-50"
+                        }`}
+                      >
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                          <div className="min-w-0">
+                            <div className="flex items-start gap-2">
+                              <Store
+                                size={15}
+                                className="mt-0.5 shrink-0 text-gray-500"
+                              />
+                              <div className="min-w-0">
+                                <h3 className="truncate text-sm font-extrabold text-gray-950">
+                                  {store.name}
+                                </h3>
+                                <p className="mt-1 text-xs leading-5 font-semibold text-gray-600">
+                                  {store.address}
+                                  {store.city ? `, ${store.city}` : ""}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="mt-3 flex flex-wrap gap-2 text-[10px] font-extrabold">
+                              <span className="rounded-lg bg-white px-2 py-1 text-gray-600">
+                                {store.itemCount} menu / {store.quantity} item
+                              </span>
+                              <span className="rounded-lg bg-white px-2 py-1 text-amber-700">
+                                Pickup {store.pickupWindows.join(", ")}
+                              </span>
+                              <span
+                                className={`rounded-lg px-2 py-1 ${
+                                  distanceKm !== null
+                                    ? "bg-white text-emerald-700"
+                                    : store.coordinates
+                                      ? "bg-white text-blue-700"
+                                      : "bg-white text-red-700"
+                                }`}
+                              >
+                                {distanceKm !== null
+                                  ? formatDistance(distanceKm)
+                                  : store.coordinates
+                                    ? "Aktifkan lokasi otomatis"
+                                    : "Pin toko belum ada"}
+                              </span>
+                            </div>
+                          </div>
+                          <a
+                            href={pickupRoute.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className={`inline-flex shrink-0 items-center justify-center gap-1.5 rounded-2xl px-4 py-3 text-xs font-extrabold transition-colors ${
+                              store.coordinates
+                                ? "bg-white text-blue-700 shadow-sm hover:bg-blue-50"
+                                : "bg-red-100 text-red-700 hover:bg-red-200"
+                            }`}
+                          >
+                            <MapPin size={14} />
+                            {pickupRoute.label}
+                          </a>
+                        </div>
+                        <p
+                          className={`mt-3 text-xs leading-5 font-semibold ${
+                            store.coordinates ? "text-emerald-800" : "text-red-700"
+                          }`}
+                        >
+                          {store.coordinates
+                            ? distanceKm !== null
+                              ? "Jarak dihitung dari lokasi customer aktif."
+                              : "Titik toko siap. Aktifkan lokasi otomatis sebelum bayar."
+                            : "Checkout ditahan sampai mitra melengkapi titik lokasi toko ini."}
+                        </p>
+                      </article>
+                    );
+                  })}
                 </div>
               </section>
 
@@ -643,9 +805,9 @@ export function CustomerCheckoutScreen() {
                     <span>{formatRp(grandTotal)}</span>
                   </div>
                 </div>
-                {checkoutNotice ? (
+                {paymentBlockNotice ? (
                   <div className="mt-5 hidden rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-xs font-bold text-red-700 lg:block">
-                    {checkoutNotice}
+                    {paymentBlockNotice}
                   </div>
                 ) : null}
                 <button
@@ -676,9 +838,9 @@ export function CustomerCheckoutScreen() {
 
         {cart.length > 0 ? (
           <div className="absolute right-0 bottom-0 left-0 z-50 rounded-t-[32px] border-t border-gray-50 bg-white/95 p-6 shadow-[0_-15px_40px_rgba(0,0,0,0.08)] backdrop-blur-md lg:hidden">
-            {checkoutNotice ? (
+            {paymentBlockNotice ? (
               <div className="mb-4 rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-xs font-bold text-red-700">
-                {checkoutNotice}
+                {paymentBlockNotice}
               </div>
             ) : null}
             <div className="mb-4 flex items-start justify-between gap-4 px-1">

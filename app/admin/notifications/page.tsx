@@ -4,6 +4,8 @@ import Link from "next/link";
 import { Bell, CheckCircle2, Clock3, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { emitUnreadNotificationsChanged } from "@/components/use-unread-notification-count";
+
 type AdminNotification = {
   id: string;
   title: string;
@@ -49,6 +51,7 @@ export default function AdminNotificationsPage() {
       }
 
       setNotifications(data.notifications ?? []);
+      emitUnreadNotificationsChanged();
       setNotice(null);
     } catch (error) {
       setNotice(
@@ -70,6 +73,7 @@ export default function AdminNotificationsPage() {
       body: JSON.stringify({ all: true }),
     });
     await loadNotifications();
+    emitUnreadNotificationsChanged();
   };
 
   const deleteNotification = async (id: string) => {
@@ -79,6 +83,7 @@ export default function AdminNotificationsPage() {
       body: JSON.stringify({ id }),
     });
     await loadNotifications();
+    emitUnreadNotificationsChanged();
   };
 
   return (

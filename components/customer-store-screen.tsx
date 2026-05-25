@@ -5,6 +5,8 @@ import {
   ChevronLeft,
   Clock3,
   MapPin,
+  Heart,
+  Loader2,
   MessageCircle,
   Navigation,
   Plus,
@@ -14,19 +16,20 @@ import {
   Store,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 import { useCustomerApp } from "@/components/customer-app-provider";
-import { CATEGORIES, formatRp, type Food } from "@/lib/customer-data";
 import {
-  getCustomerLocationFromAddresses,
-  type ApiCustomerAddress,
-} from "@/lib/customer-location";
+  CATEGORIES,
+  formatRatingSummary,
+  formatRatingValue,
+  formatRp,
+  type Food,
+} from "@/lib/customer-data";
 import {
   applyFoodDistance,
   getPickupRouteUrl,
   sortFoodsByDistance,
-  type Coordinates,
 } from "@/lib/geo-distance";
 
 export type CustomerStoreDetail = {
@@ -45,6 +48,8 @@ export type CustomerStoreDetail = {
   longitude: number | null;
   pickupStart: string | null;
   pickupEnd: string | null;
+  favoriteCount: number;
+  isFavorite: boolean;
   reviews: Array<{
     id: string;
     rating: number;
@@ -77,14 +82,17 @@ export function CustomerStoreScreen({
   store: CustomerStoreDetail;
 }>) {
   const router = useRouter();
-  const { addToCart } = useCustomerApp();
-  const [foods, setFoods] = useState(store.foods);
+  const { addToCart, customerLocation } = useCustomerApp();
   const [query, setQuery] = useState("");
   const [activeCategory, setActiveCategory] =
     useState<(typeof CATEGORIES)[number]>("Semua");
   const [activeSort, setActiveSort] = useState<StoreSort>("recommended");
-  const [customerCoordinates, setCustomerCoordinates] =
-    useState<Coordinates | null>(null);
+  const [isFavoriteStore, setIsFavoriteStore] = useState(store.isFavorite);
+  const [favoriteCount, setFavoriteCount] = useState(store.favoriteCount);
+  const [isTogglingFavoriteStore, setIsTogglingFavoriteStore] = useState(false);
+  const [favoriteStoreNotice, setFavoriteStoreNotice] = useState<string | null>(
+    null,
+  );
 
   const storeCoordinates =
     store.latitude !== null && store.longitude !== null
@@ -94,7 +102,7 @@ export function CustomerStoreScreen({
         }
       : null;
   const pickupRoute = getPickupRouteUrl(
-    customerCoordinates,
+    customerLocation.coordinates,
     storeCoordinates,
     `${store.name} ${store.city}`,
   );
@@ -104,43 +112,15 @@ export function CustomerStoreScreen({
   const pickupWindow = `${store.pickupStart || "18:00"} - ${
     store.pickupEnd || "21:00"
   }`;
-
-  useEffect(() => {
-    let ignore = false;
-
-    async function loadCustomerLocation() {
-      try {
-        const response = await fetch("/api/addresses", { cache: "no-store" });
-        const data = (await response.json()) as {
-          ok: boolean;
-          addresses?: ApiCustomerAddress[];
-        };
-
-        if (!ignore && data.ok) {
-          const location = getCustomerLocationFromAddresses(data.addresses ?? []);
-          setCustomerCoordinates(location.coordinates);
-          setFoods(
-            sortFoodsByDistance(
-              store.foods.map((food) =>
-                applyFoodDistance(food, location.coordinates),
-              ),
-            ),
-          );
-        }
-      } catch {
-        if (!ignore) {
-          setCustomerCoordinates(null);
-          setFoods(store.foods.map((food) => applyFoodDistance(food, null)));
-        }
-      }
-    }
-
-    void loadCustomerLocation();
-
-    return () => {
-      ignore = true;
-    };
-  }, [store.foods]);
+  const foods = useMemo(
+    () =>
+      sortFoodsByDistance(
+        store.foods.map((food) =>
+          applyFoodDistance(food, customerLocation.coordinates),
+        ),
+      ),
+    [customerLocation.coordinates, store.foods],
+  );
 
   const visibleFoods = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -172,6 +152,60 @@ export function CustomerStoreScreen({
     return sortFoodsByDistance(nextFoods);
   }, [activeCategory, activeSort, foods, query]);
 
+  const handleToggleFavoriteStore = async () => {
+    if (isTogglingFavoriteStore) {
+      return;
+    }
+
+    const nextIsFavorite = !isFavoriteStore;
+    const previousIsFavorite = isFavoriteStore;
+    const previousFavoriteCount = favoriteCount;
+
+    setIsFavoriteStore(nextIsFavorite);
+    setFavoriteCount((currentCount) =>
+      Math.max(0, currentCount + (nextIsFavorite ? 1 : -1)),
+    );
+    setIsTogglingFavoriteStore(true);
+    setFavoriteStoreNotice(null);
+
+    try {
+      const response = await fetch(
+        nextIsFavorite
+          ? "/api/favorite-restaurants"
+          : `/api/favorite-restaurants?restaurantId=${encodeURIComponent(store.id)}`,
+        {
+          method: nextIsFavorite ? "POST" : "DELETE",
+          headers: nextIsFavorite
+            ? {
+                "Content-Type": "application/json",
+              }
+            : undefined,
+          body: nextIsFavorite
+            ? JSON.stringify({ restaurantId: store.id })
+            : undefined,
+        },
+      );
+      const data = (await response.json()) as {
+        ok: boolean;
+        message?: string;
+      };
+
+      if (!response.ok || !data.ok) {
+        throw new Error(data.message || "Status toko favorit gagal disimpan.");
+      }
+    } catch (error) {
+      setIsFavoriteStore(previousIsFavorite);
+      setFavoriteCount(previousFavoriteCount);
+      setFavoriteStoreNotice(
+        error instanceof Error
+          ? error.message
+          : "Status toko favorit gagal disimpan.",
+      );
+    } finally {
+      setIsTogglingFavoriteStore(false);
+    }
+  };
+
   return (
     <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-gray-50">
       <div className="min-h-0 flex-1 overflow-y-auto pb-28 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -195,6 +229,28 @@ export function CustomerStoreScreen({
             <ChevronLeft size={23} />
           </button>
 
+          <button
+            type="button"
+            onClick={() => void handleToggleFavoriteStore()}
+            disabled={isTogglingFavoriteStore}
+            aria-pressed={isFavoriteStore}
+            className={`absolute top-8 right-5 z-10 inline-flex h-11 items-center gap-2 rounded-full px-4 text-xs font-extrabold shadow-sm backdrop-blur transition-colors disabled:cursor-wait ${
+              isFavoriteStore
+                ? "bg-red-500 text-white"
+                : "bg-white/90 text-gray-900 hover:bg-red-50 hover:text-red-500"
+            }`}
+          >
+            {isTogglingFavoriteStore ? (
+              <Loader2 size={16} className="animate-spin" />
+            ) : (
+              <Heart
+                size={16}
+                className={isFavoriteStore ? "fill-white" : ""}
+              />
+            )}
+            {isFavoriteStore ? "Diikuti" : "Ikuti"}
+          </button>
+
           <div className="absolute right-5 bottom-7 left-5 flex items-end gap-4 md:right-8 md:left-8">
             <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-[24px] border-4 border-white bg-white shadow-xl">
               <Image
@@ -216,10 +272,13 @@ export function CustomerStoreScreen({
               <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] font-bold text-white/90">
                 <span className="inline-flex items-center gap-1 rounded-full bg-white/15 px-2.5 py-1 backdrop-blur">
                   <Star size={12} className="fill-amber-300 text-amber-300" />
-                  {store.rating || 4.8} ({store.reviewCount})
+                  {formatRatingSummary(store.rating, store.reviewCount)}
                 </span>
                 <span className="rounded-full bg-white/15 px-2.5 py-1 backdrop-blur">
                   {store.foods.length} menu
+                </span>
+                <span className="rounded-full bg-white/15 px-2.5 py-1 backdrop-blur">
+                  {favoriteCount} pengikut
                 </span>
               </div>
             </div>
@@ -227,6 +286,12 @@ export function CustomerStoreScreen({
         </section>
 
         <main className="mx-auto w-full max-w-6xl px-5 py-6 md:px-8">
+          {favoriteStoreNotice ? (
+            <section className="mb-5 rounded-[22px] border border-red-100 bg-red-50 p-4 text-sm font-bold text-red-700">
+              {favoriteStoreNotice}
+            </section>
+          ) : null}
+
           <section className="mb-5 grid gap-3 md:grid-cols-[1.4fr_0.8fr]">
             <div className="rounded-[28px] border border-gray-100 bg-white p-5 shadow-sm">
               <div className="mb-4 flex items-start gap-3">
@@ -287,7 +352,9 @@ export function CustomerStoreScreen({
               </div>
               <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-3 py-1.5 text-xs font-extrabold text-amber-700">
                 <Star size={13} className="fill-amber-500 text-amber-500" />
-                {store.rating || 0}/5
+                {store.reviewCount > 0
+                  ? `${formatRatingValue(store.rating, store.reviewCount)}/5`
+                  : "Belum ada"}
               </span>
             </div>
 
@@ -388,12 +455,21 @@ export function CustomerStoreScreen({
                 const discount = Math.round(
                   ((food.originalPrice - food.price) / food.originalPrice) * 100,
                 );
+                const detailRoute = `/detail/${food.id}`;
 
                 return (
                   <article
                     key={food.id}
-                    onClick={() => router.push(`/detail/${food.id}`)}
-                    className="group cursor-pointer overflow-hidden rounded-[24px] border border-gray-100 bg-white shadow-sm transition-all hover:border-emerald-100 hover:shadow-md"
+                    onClick={() => router.push(detailRoute)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        router.push(detailRoute);
+                      }
+                    }}
+                    role="button"
+                    tabIndex={0}
+                    className="group cursor-pointer overflow-hidden rounded-[24px] border border-gray-100 bg-white shadow-sm transition-all hover:border-emerald-100 hover:shadow-md focus:outline-none focus:ring-4 focus:ring-emerald-100"
                   >
                     <div className="relative aspect-[4/3] overflow-hidden bg-gray-100">
                       <Image

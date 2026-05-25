@@ -18,6 +18,8 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { FormEvent, ReactNode } from "react";
 import { useState } from "react";
 
+import { useUnreadNotificationCount } from "@/components/use-unread-notification-count";
+
 const shellRoutes = new Set([
   "/owner/dashboard",
   "/owner/menu",
@@ -76,6 +78,7 @@ export function OwnerShell({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const dashboardTab = searchParams.get("tab");
+  const { unreadNotificationCount } = useUnreadNotificationCount();
   const [shellQuery, setShellQuery] = useState("");
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const shouldUseShell = shellRoutes.has(pathname) || pathname.startsWith("/owner/orders/");
@@ -233,7 +236,11 @@ export function OwnerShell({
                 }`}
               >
                 <Bell size={20} />
-                <div className="absolute top-2 right-2 h-2 w-2 rounded-full border-2 border-white bg-red-500" />
+                {unreadNotificationCount > 0 ? (
+                  <span className="absolute -top-1 -right-1 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-white bg-red-500 px-1 text-[9px] font-extrabold text-white">
+                    {unreadNotificationCount > 9 ? "9+" : unreadNotificationCount}
+                  </span>
+                ) : null}
               </Link>
               <div className="h-8 w-px bg-gray-200" />
               <Link href="/owner/settings" className="group flex items-center gap-3">

@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { getCurrentSession } from "@/lib/auth-session";
 import { prisma } from "@/lib/prisma";
+import { notifyRestaurantFollowers } from "@/lib/restaurant-follower-notifications";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -114,6 +115,23 @@ export async function PATCH(request: Request, { params }: MenuItemRouteProps) {
       restaurant: true,
     },
   });
+
+  const becameActive =
+    menuItem.status !== MenuItemStatus.ACTIVE &&
+    updatedMenuItem.status === MenuItemStatus.ACTIVE;
+  const restockedActiveMenu =
+    menuItem.status === MenuItemStatus.ACTIVE &&
+    menuItem.stock <= 0 &&
+    updatedMenuItem.stock > 0;
+
+  if (becameActive || restockedActiveMenu) {
+    await notifyRestaurantFollowers({
+      restaurantId: updatedMenuItem.restaurantId,
+      title: `${updatedMenuItem.restaurant.name} punya menu tersedia`,
+      body: `${updatedMenuItem.name} sekarang bisa dipesan untuk pickup ${updatedMenuItem.pickupStart || updatedMenuItem.restaurant.pickupStart || "18:00"} - ${updatedMenuItem.pickupEnd || updatedMenuItem.restaurant.pickupEnd || "21:00"}.`,
+      href: `/detail/${updatedMenuItem.id}`,
+    });
+  }
 
   return NextResponse.json({ ok: true, menuItem: updatedMenuItem });
 }

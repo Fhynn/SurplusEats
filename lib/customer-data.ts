@@ -41,3 +41,19 @@ export const formatRp = (amount: number) =>
     currency: "IDR",
     maximumFractionDigits: 0,
   }).format(amount);
+
+export function formatRatingValue(rating: number, reviewCount: number) {
+  if (reviewCount <= 0 || rating <= 0) {
+    return "Baru";
+  }
+
+  return rating.toFixed(1).replace(/\.0$/, "");
+}
+
+export function formatRatingSummary(rating: number, reviewCount: number) {
+  if (reviewCount <= 0 || rating <= 0) {
+    return "Belum ada ulasan";
+  }
+
+  return `${formatRatingValue(rating, reviewCount)} (${reviewCount})`;
+}

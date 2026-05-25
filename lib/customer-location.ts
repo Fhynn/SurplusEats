@@ -20,7 +20,7 @@ export const defaultCustomerLocation: CustomerLocation = {
   hasSavedAddress: false,
 };
 
-function getCoordinates(address: ApiCustomerAddress) {
+function getCustomerAddressCoordinates(address: ApiCustomerAddress) {
   if (
     address.latitude === null ||
     address.longitude === null ||
@@ -42,13 +42,15 @@ export function getCustomerLocationFromAddresses(
   const primaryAddress = addresses.find((address) => address.isPrimary);
   const fallbackAddress = primaryAddress ?? addresses[0];
   const coordinateAddress =
-    (primaryAddress && getCoordinates(primaryAddress) ? primaryAddress : null) ??
-    addresses.find((address) => getCoordinates(address));
+    (primaryAddress && getCustomerAddressCoordinates(primaryAddress)
+      ? primaryAddress
+      : null) ??
+    addresses.find((address) => getCustomerAddressCoordinates(address));
 
   if (coordinateAddress) {
     return {
       label: coordinateAddress.label,
-      coordinates: getCoordinates(coordinateAddress),
+      coordinates: getCustomerAddressCoordinates(coordinateAddress),
       hasSavedAddress: true,
     };
   }

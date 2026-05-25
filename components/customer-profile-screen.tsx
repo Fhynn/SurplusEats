@@ -24,6 +24,8 @@ import {
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
+import { useCustomerApp } from "@/components/customer-app-provider";
+
 const menuGroups: {
   title: string;
   items: {
@@ -71,8 +73,8 @@ const menuGroups: {
         className: "bg-blue-50 text-blue-600",
       },
       {
-        title: "Alamat Tersimpan",
-        description: "Kelola rumah, kantor, kos, dan titik pickup.",
+        title: "Lokasi Aktif",
+        description: "Perbarui lokasi otomatis untuk jarak pickup.",
         route: "/profile/addresses",
         icon: MapPin,
         className: "bg-rose-50 text-rose-600",
@@ -114,20 +116,59 @@ const menuGroups: {
   },
 ];
 
-const accountBadges = [
-  "Email terverifikasi",
-  "Nomor HP aktif",
-  "Refund protection",
-] as const;
+type ApiProfileOrder = {
+  status: string;
+  discount: number;
+  items?: Array<{
+    priceSnapshot: number;
+    originalPriceSnapshot: number;
+    quantity: number;
+  }>;
+};
+
+type ApiProfileVoucher = {
+  status: "available" | "used" | "expired";
+};
+
+function formatCompactRp(value: number) {
+  if (value >= 1_000_000) {
+    return `Rp${Math.round(value / 100_000) / 10}jt`;
+  }
+
+  if (value >= 1_000) {
+    return `Rp${Math.round(value / 1_000)}rb`;
+  }
+
+  return `Rp${value}`;
+}
+
+function getOrderSavedAmount(order: ApiProfileOrder) {
+  const itemSavedAmount = (order.items ?? []).reduce((total, item) => {
+    const savedPerItem = Math.max(0, item.originalPriceSnapshot - item.priceSnapshot);
+
+    return total + savedPerItem * item.quantity;
+  }, 0);
+
+  return itemSavedAmount + Math.max(0, order.discount);
+}
 
 export function CustomerProfileScreen() {
   const router = useRouter();
+  const { unreadNotificationCount } = useCustomerApp();
   const [isLogoutOpen, setIsLogoutOpen] = useState(false);
-  const [user, setUser] = useState<{ name: string; email: string } | null>(null);
+  const [user, setUser] = useState<{
+    name: string;
+    email: string;
+    phone: string | null;
+    emailVerified: string | null;
+  } | null>(null);
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
   const [orderCount, setOrderCount] = useState(0);
   const [voucherCount, setVoucherCount] = useState(0);
   const [favoriteCount, setFavoriteCount] = useState(0);
+  const [favoriteStoreCount, setFavoriteStoreCount] = useState(0);
+  const [completedPickupCount, setCompletedPickupCount] = useState(0);
+  const [totalSavedAmount, setTotalSavedAmount] = useState(0);
 
   useEffect(() => {
     let ignore = false;
@@ -136,26 +177,41 @@ export function CustomerProfileScreen() {
       setIsLoadingProfile(true);
 
       try {
-        const [meResponse, ordersResponse, vouchersResponse, favoritesResponse] =
-          await Promise.all([
-            fetch("/api/auth/me", { cache: "no-store" }),
-            fetch("/api/orders", { cache: "no-store" }),
-            fetch("/api/vouchers", { cache: "no-store" }),
-            fetch("/api/favorites", { cache: "no-store" }),
-          ]);
+        const [
+          meResponse,
+          ordersResponse,
+          vouchersResponse,
+          favoritesResponse,
+          favoriteStoresResponse,
+        ] = await Promise.all([
+          fetch("/api/auth/me", { cache: "no-store" }),
+          fetch("/api/orders", { cache: "no-store" }),
+          fetch("/api/vouchers", { cache: "no-store" }),
+          fetch("/api/favorites", { cache: "no-store" }),
+          fetch("/api/favorite-restaurants", { cache: "no-store" }),
+        ]);
         const meData = (await meResponse.json()) as {
           ok: boolean;
-          user?: { name: string; email: string };
+          user?: {
+            name: string;
+            email: string;
+            phone: string | null;
+            emailVerified: string | null;
+          };
         };
         const ordersData = (await ordersResponse.json()) as {
           ok: boolean;
-          orders?: unknown[];
+          orders?: ApiProfileOrder[];
         };
         const vouchersData = (await vouchersResponse.json()) as {
           ok: boolean;
-          vouchers?: unknown[];
+          vouchers?: ApiProfileVoucher[];
         };
         const favoritesData = (await favoritesResponse.json()) as {
+          ok: boolean;
+          favorites?: unknown[];
+        };
+        const favoriteStoresData = (await favoriteStoresResponse.json()) as {
           ok: boolean;
           favorites?: unknown[];
         };
@@ -168,10 +224,25 @@ export function CustomerProfileScreen() {
         }
 
         if (!ignore) {
+          const orders = ordersData.orders ?? [];
+          const activeVoucherCount = (vouchersData.vouchers ?? []).filter(
+            (voucher) => voucher.status === "available",
+          ).length;
+
           setUser(meData.user);
-          setOrderCount(ordersData.orders?.length ?? 0);
-          setVoucherCount(vouchersData.vouchers?.length ?? 0);
+          setOrderCount(orders.length);
+          setVoucherCount(activeVoucherCount);
           setFavoriteCount(favoritesData.favorites?.length ?? 0);
+          setFavoriteStoreCount(favoriteStoresData.favorites?.length ?? 0);
+          setCompletedPickupCount(
+            orders.filter((order) => order.status === "COMPLETED").length,
+          );
+          setTotalSavedAmount(
+            orders.reduce(
+              (total, order) => total + getOrderSavedAmount(order),
+              0,
+            ),
+          );
         }
       } catch {
         if (!ignore) {
@@ -209,13 +280,32 @@ export function CustomerProfileScreen() {
       },
       {
         label: "Favorit",
-        value: `${favoriteCount} Menu`,
+        value: `${favoriteCount + favoriteStoreCount} Item`,
         icon: Heart,
         className: "border-blue-100 bg-blue-50 text-blue-700",
       },
     ],
-    [favoriteCount, orderCount, voucherCount],
+    [favoriteCount, favoriteStoreCount, orderCount, voucherCount],
   );
+  const accountBadges = useMemo(() => {
+    const badges = ["Sesi aktif"];
+
+    if (user?.emailVerified) {
+      badges.push("Email terverifikasi");
+    } else if (user?.email) {
+      badges.push("Email akun tersimpan");
+    }
+
+    if (user?.phone) {
+      badges.push("Nomor HP aktif");
+    }
+
+    if (completedPickupCount > 0) {
+      badges.push(`${completedPickupCount} pickup selesai`);
+    }
+
+    return badges;
+  }, [completedPickupCount, user?.email, user?.emailVerified, user?.phone]);
 
   const handleLogout = async () => {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -317,10 +407,10 @@ export function CustomerProfileScreen() {
             >
               <WalletCards size={22} className="mb-3 text-emerald-600" />
               <p className="text-sm font-extrabold text-emerald-950">
-                Hemat Rp 48rb
+                Hemat {formatCompactRp(totalSavedAmount)}
               </p>
               <p className="mt-1 text-xs font-medium text-emerald-700">
-                dari voucher aktif
+                dari diskon menu dan voucher
               </p>
             </button>
             <button
@@ -330,10 +420,10 @@ export function CustomerProfileScreen() {
             >
               <Star size={22} className="mb-3 text-amber-600" />
               <p className="text-sm font-extrabold text-amber-950">
-                Rating 4.9
+                {completedPickupCount} Pickup
               </p>
               <p className="mt-1 text-xs font-medium text-amber-700">
-                dari pickup selesai
+                selesai dari order kamu
               </p>
             </button>
           </div>
@@ -355,9 +445,17 @@ export function CustomerProfileScreen() {
                       className="motion-card group flex w-full items-center gap-3 rounded-[24px] border border-gray-100 bg-white p-4 text-left shadow-sm transition-all hover:border-emerald-100 hover:shadow-md active:scale-[0.99]"
                     >
                       <span
-                        className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${item.className}`}
+                        className={`relative flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${item.className}`}
                       >
                         <Icon size={21} />
+                        {item.route === "/notifications" &&
+                        unreadNotificationCount > 0 ? (
+                          <span className="absolute -top-1 -right-1 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-white bg-red-500 px-1 text-[9px] font-extrabold text-white">
+                            {unreadNotificationCount > 9
+                              ? "9+"
+                              : unreadNotificationCount}
+                          </span>
+                        ) : null}
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="block text-sm font-extrabold text-gray-950">

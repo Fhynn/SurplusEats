@@ -17,12 +17,10 @@ import {
   Store,
 } from "lucide-react";
 
+import { useCustomerApp } from "@/components/customer-app-provider";
 import { MobileDeviceFrame } from "@/components/mobile-device-frame";
+import { PickupQrCode } from "@/components/pickup-qr-code";
 import { formatRp } from "@/lib/customer-data";
-import {
-  getCustomerLocationFromAddresses,
-  type ApiCustomerAddress,
-} from "@/lib/customer-location";
 import {
   apiOrderToCard,
   type ApiOrder,
@@ -47,6 +45,7 @@ type TrackingStep = {
 
 const finalStatuses = new Set([
   "COMPLETED",
+  "NO_SHOW",
   "CANCELLED",
   "REFUNDED",
   "PAYMENT_FAILED",
@@ -57,6 +56,7 @@ const statusClassNameByStatus: Record<UiOrderStatus, string> = {
   preparing: "bg-blue-50 text-blue-700",
   completed: "bg-gray-100 text-gray-600",
   cancelled: "bg-red-50 text-red-700",
+  noShow: "bg-amber-50 text-amber-700",
 };
 
 const trackingSteps: TrackingStep[] = [
@@ -89,6 +89,7 @@ const statusRankByRawStatus: Record<string, number> = {
   PREPARING: 2,
   READY: 3,
   COMPLETED: 4,
+  NO_SHOW: 4,
   CANCELLED: 4,
   REFUNDED: 4,
   PAYMENT_FAILED: 0,
@@ -131,11 +132,19 @@ function mapTrackingOrder(
 
 export function CustomerOrderTrackingScreen() {
   const router = useRouter();
+  const { customerLocation } = useCustomerApp();
   const [requestedOrderId, setRequestedOrderId] = useState<string | null>(null);
-  const [orders, setOrders] = useState<TrackingOrder[]>([]);
+  const [apiOrders, setApiOrders] = useState<ApiOrder[]>([]);
   const [selectedOrderId, setSelectedOrderId] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
+  const orders = useMemo(
+    () =>
+      apiOrders
+        .filter(isActiveOrder)
+        .map((order) => mapTrackingOrder(order, customerLocation.coordinates)),
+    [apiOrders, customerLocation.coordinates],
+  );
 
   useEffect(() => {
     const query = new URLSearchParams(window.location.search);
@@ -150,18 +159,13 @@ export function CustomerOrderTrackingScreen() {
       setNotice(null);
 
       try {
-        const [ordersResponse, addressesResponse] = await Promise.all([
-          fetch("/api/orders", { cache: "no-store" }),
-          fetch("/api/addresses", { cache: "no-store" }),
-        ]);
+        const ordersResponse = await fetch("/api/orders", {
+          cache: "no-store",
+        });
         const ordersData = (await ordersResponse.json()) as {
           ok: boolean;
           message?: string;
           orders?: ApiOrder[];
-        };
-        const addressesData = (await addressesResponse.json()) as {
-          ok: boolean;
-          addresses?: ApiCustomerAddress[];
         };
 
         if (!ordersResponse.ok || !ordersData.ok) {
@@ -172,17 +176,10 @@ export function CustomerOrderTrackingScreen() {
           return;
         }
 
-        const customerLocation = getCustomerLocationFromAddresses(
-          addressesData.addresses ?? [],
-        );
-        const activeOrders = (ordersData.orders ?? [])
-          .filter(isActiveOrder)
-          .map((order) => mapTrackingOrder(order, customerLocation.coordinates));
-
-        setOrders(activeOrders);
+        setApiOrders(ordersData.orders ?? []);
       } catch (error) {
         if (!ignore) {
-          setOrders([]);
+          setApiOrders([]);
           setNotice(
             error instanceof Error
               ? error.message
@@ -360,8 +357,16 @@ export function CustomerOrderTrackingScreen() {
                       <p className="text-[11px] font-extrabold tracking-wider text-gray-400 uppercase">
                         Kode Pickup
                       </p>
-                      <p className="mt-1 font-mono text-lg font-black text-gray-950">
-                        {selectedOrder.pickupCode || "-"}
+                      <p
+                        className={`mt-1 font-black text-gray-950 ${
+                          selectedOrder.status === "ready"
+                            ? "font-mono text-lg"
+                            : "text-xs leading-5"
+                        }`}
+                      >
+                        {selectedOrder.status === "ready"
+                          ? selectedOrder.pickupCode || "-"
+                          : "Aktif saat siap"}
                       </p>
                     </div>
                     <div className="rounded-2xl bg-gray-50 p-4">
@@ -374,6 +379,22 @@ export function CustomerOrderTrackingScreen() {
                       </p>
                     </div>
                   </div>
+
+                  {selectedOrder.status === "ready" ? (
+                    <div className="mt-5 rounded-[24px] border border-emerald-100 bg-emerald-50/60 p-4">
+                      <div className="flex flex-col items-center gap-3">
+                        <PickupQrCode
+                          orderId={selectedOrder.id}
+                          pickupCode={selectedOrder.pickupCode}
+                          isActive={Boolean(selectedOrder.pickupCode)}
+                        />
+                        <p className="text-center text-xs leading-5 font-bold text-emerald-700">
+                          Tunjukkan QR atau kode pickup ini ke mitra saat
+                          mengambil pesanan.
+                        </p>
+                      </div>
+                    </div>
+                  ) : null}
 
                   <div className="mt-5 rounded-[24px] border border-emerald-100 bg-emerald-50 p-4">
                     <div className="flex gap-3">

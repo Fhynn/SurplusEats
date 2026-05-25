@@ -20,17 +20,15 @@ import {
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
+import { useCustomerApp } from "@/components/customer-app-provider";
 import { MobileDeviceFrame } from "@/components/mobile-device-frame";
-import {
-  getCustomerLocationFromAddresses,
-  type ApiCustomerAddress,
-} from "@/lib/customer-location";
 import {
   apiOrderToCard,
   type ApiOrder,
   type CustomerOrderCard,
   type UiOrderStatus,
 } from "@/lib/order-mapper";
+import { showSweetError, showSweetToast } from "@/lib/sweet-alert";
 
 const formatRp = (amount: number) =>
   new Intl.NumberFormat("id-ID", {
@@ -44,22 +42,31 @@ const statusClassNameByStatus: Record<UiOrderStatus, string> = {
   preparing: "bg-blue-50 text-blue-600",
   completed: "bg-gray-100 text-gray-600",
   cancelled: "bg-red-50 text-red-600",
+  noShow: "bg-amber-50 text-amber-700",
 };
 
 export default function CustomerOrdersPage() {
   const router = useRouter();
+  const { customerLocation } = useCustomerApp();
   const [activeTab, setActiveTab] = useState<"aktif" | "selesai">("aktif");
   const [query, setQuery] = useState("");
   const [reviewOrder, setReviewOrder] = useState<CustomerOrderCard | null>(null);
   const [rating, setRating] = useState(0);
   const [reviewComment, setReviewComment] = useState("");
-  const [allOrders, setAllOrders] = useState<CustomerOrderCard[]>([]);
+  const [apiOrders, setApiOrders] = useState<ApiOrder[]>([]);
   const [isLoadingOrders, setIsLoadingOrders] = useState(true);
   const [isSubmittingReview, setIsSubmittingReview] = useState(false);
   const [notice, setNotice] = useState<{
     type: "success" | "error";
     message: string;
   } | null>(null);
+  const allOrders = useMemo(
+    () =>
+      apiOrders.map((order) =>
+        apiOrderToCard(order, customerLocation.coordinates),
+      ),
+    [apiOrders, customerLocation.coordinates],
+  );
   const activeOrders = useMemo(
     () =>
       allOrders.filter(
@@ -70,7 +77,10 @@ export default function CustomerOrdersPage() {
   const pastOrders = useMemo(
     () =>
       allOrders.filter(
-        (order) => order.status === "completed" || order.status === "cancelled",
+        (order) =>
+          order.status === "completed" ||
+          order.status === "cancelled" ||
+          order.status === "noShow",
       ),
     [allOrders],
   );
@@ -98,33 +108,23 @@ export default function CustomerOrdersPage() {
       setIsLoadingOrders(true);
 
       try {
-        const [response, addressesResponse] = await Promise.all([
-          fetch("/api/orders", { cache: "no-store" }),
-          fetch("/api/addresses", { cache: "no-store" }),
-        ]);
+        const response = await fetch("/api/orders", { cache: "no-store" });
         const result = (await response.json()) as {
           ok: boolean;
+          message?: string;
           orders?: ApiOrder[];
         };
-        const addressesData = (await addressesResponse.json()) as {
-          ok: boolean;
-          addresses?: ApiCustomerAddress[];
-        };
+
+        if (!response.ok || !result.ok) {
+          throw new Error(result.message || "Pesanan gagal dimuat.");
+        }
 
         if (!ignore) {
-          const customerLocation = getCustomerLocationFromAddresses(
-            addressesData.addresses ?? [],
-          );
-
-          setAllOrders(
-            result.orders?.map((order) =>
-              apiOrderToCard(order, customerLocation.coordinates),
-            ) ?? [],
-          );
+          setApiOrders(result.orders ?? []);
         }
       } catch {
         if (!ignore) {
-          setAllOrders([]);
+          setApiOrders([]);
           setNotice({
             type: "error",
             message: "Pesanan gagal dimuat.",
@@ -188,13 +188,15 @@ export default function CustomerOrdersPage() {
         throw new Error(data.message || "Ulasan gagal disimpan.");
       }
 
-      setAllOrders((currentOrders) =>
+      setApiOrders((currentOrders) =>
         currentOrders.map((order) =>
-          order.id === reviewOrder.id
+          order.orderCode === reviewOrder.id
             ? {
                 ...order,
-                reviewRating: rating,
-                reviewComment: reviewComment.trim() || null,
+                review: {
+                  rating,
+                  comment: reviewComment.trim() || null,
+                },
               }
             : order,
         ),
@@ -203,12 +205,22 @@ export default function CustomerOrdersPage() {
         type: "success",
         message: "Ulasan berhasil disimpan.",
       });
+      showSweetToast({
+        icon: "success",
+        title: "Ulasan berhasil disimpan.",
+      });
       handleCloseReview();
     } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Ulasan gagal disimpan.";
+
       setNotice({
         type: "error",
-        message:
-          error instanceof Error ? error.message : "Ulasan gagal disimpan.",
+        message,
+      });
+      void showSweetError({
+        title: "Ulasan gagal",
+        text: message,
       });
     } finally {
       setIsSubmittingReview(false);
@@ -414,7 +426,9 @@ export default function CustomerOrdersPage() {
                       fill
                       sizes="72px"
                       className={`object-cover ${
-                        order.status === "cancelled" ? "grayscale" : ""
+                        order.status === "cancelled" || order.status === "noShow"
+                          ? "grayscale"
+                          : ""
                       }`}
                     />
                   </div>
@@ -504,6 +518,12 @@ export default function CustomerOrdersPage() {
                     </button>
                   ) : null}
 
+                  {order.status === "noShow" ? (
+                    <div className="mt-4 rounded-xl border border-amber-100 bg-amber-50 px-3 py-3 text-xs leading-5 font-bold text-amber-800">
+                      Order melewati batas pickup dan tidak bisa diambil lagi.
+                    </div>
+                  ) : null}
+
                   {order.status === "completed" ? (
                     <div className="mt-4 grid grid-cols-2 gap-2">
                       <button
@@ -532,7 +552,9 @@ export default function CustomerOrdersPage() {
                         type="button"
                         onClick={(event) => {
                           event.stopPropagation();
-                          router.push(`/detail/${order.foodId ?? 1}`);
+                          router.push(
+                            order.foodId ? `/detail/${order.foodId}` : "/browse",
+                          );
                         }}
                         className="col-span-2 flex min-h-11 min-w-0 items-center justify-center gap-1.5 rounded-xl bg-gray-900 px-2 text-[12px] font-extrabold whitespace-nowrap text-white shadow-sm transition-colors hover:bg-emerald-500"
                       >

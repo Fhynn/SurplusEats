@@ -4,6 +4,8 @@ import { Plus_Jakarta_Sans } from "next/font/google";
 import { CustomerAppProvider } from "@/components/customer-app-provider";
 import { RouteTransitionProvider } from "@/components/route-transition-provider";
 
+import "leaflet/dist/leaflet.css";
+import "sweetalert2/dist/sweetalert2.min.css";
 import "./globals.css";
 
 const plusJakartaSans = Plus_Jakarta_Sans({

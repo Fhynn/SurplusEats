@@ -7,6 +7,7 @@ import {
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { createPayoutReference } from "@/lib/backend-utils";
 import { getCurrentSession } from "@/lib/auth-session";
 import { prisma } from "@/lib/prisma";
 
@@ -17,13 +18,6 @@ const payoutRequestSchema = z.object({
   amount: z.coerce.number().int().min(10_000).max(50_000_000),
   destination: z.string().trim().min(8).max(160),
 });
-
-function createPayoutReference() {
-  return `PAYOUT-${Date.now().toString(36).toUpperCase()}-${Math.random()
-    .toString(36)
-    .slice(2, 6)
-    .toUpperCase()}`;
-}
 
 function getWalletSummary(
   transactions: Array<{

@@ -133,6 +133,8 @@ export async function GET(_request: Request, { params }: AdminUserRouteProps) {
       tone:
         order.status === "CANCELLED" || order.status === "REFUNDED"
           ? "red"
+          : order.status === "NO_SHOW"
+            ? "amber"
           : order.status === "COMPLETED"
             ? "emerald"
             : "blue",

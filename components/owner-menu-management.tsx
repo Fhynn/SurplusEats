@@ -16,6 +16,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import type { ChangeEvent, FormEvent } from "react";
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
 
+import { showSweetError, showSweetToast } from "@/lib/sweet-alert";
+
 type SurplusMenuItem = {
   id: string;
   name: string;
@@ -461,15 +463,24 @@ export function OwnerMenuManagement() {
 
       await loadMenuItems();
       handleCloseModal();
-      setMenuNotice(
-        editingItem
-          ? "Perubahan menu berhasil disimpan."
-          : "Menu baru berhasil dipublish.",
-      );
+      const successMessage = editingItem
+        ? "Perubahan menu berhasil disimpan."
+        : "Menu baru berhasil dipublish.";
+
+      setMenuNotice(successMessage);
+      showSweetToast({
+        icon: "success",
+        title: successMessage,
+      });
     } catch (error) {
-      setMenuNotice(
-        error instanceof Error ? error.message : "Menu gagal disimpan.",
-      );
+      const message =
+        error instanceof Error ? error.message : "Menu gagal disimpan.";
+
+      setMenuNotice(message);
+      void showSweetError({
+        title: "Menu gagal disimpan",
+        text: message,
+      });
     } finally {
       setIsSavingMenu(false);
     }
@@ -501,10 +512,19 @@ export function OwnerMenuManagement() {
       );
       setDeletingItem(null);
       setMenuNotice("Menu berhasil dihapus.");
+      showSweetToast({
+        icon: "success",
+        title: "Menu berhasil dihapus.",
+      });
     } catch (error) {
-      setMenuNotice(
-        error instanceof Error ? error.message : "Menu gagal dihapus.",
-      );
+      const message =
+        error instanceof Error ? error.message : "Menu gagal dihapus.";
+
+      setMenuNotice(message);
+      void showSweetError({
+        title: "Menu gagal dihapus",
+        text: message,
+      });
     } finally {
       setIsDeletingMenu(false);
     }

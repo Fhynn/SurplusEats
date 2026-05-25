@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { getCurrentSession } from "@/lib/auth-session";
+import { expireNoShowOrders } from "@/lib/order-no-show";
 import { prisma, type PrismaTransactionClient } from "@/lib/prisma";
 import {
   MenuItemStatus,
@@ -28,7 +29,44 @@ const updateOrderStatusSchema = z.object({
     OrderStatus.COMPLETED,
     OrderStatus.CANCELLED,
   ]),
+  pickupCode: z.string().trim().max(20).optional(),
 });
+
+function normalizePickupCode(value: string | null | undefined) {
+  return (value ?? "").replace(/\D/g, "");
+}
+
+function isValidOrderStatusTransition(
+  currentStatus: OrderStatus,
+  nextStatus: OrderStatus,
+) {
+  if (currentStatus === nextStatus) {
+    return true;
+  }
+
+  const allowedNextStatuses: Record<OrderStatus, OrderStatus[]> = {
+    [OrderStatus.PENDING]: [
+      OrderStatus.CONFIRMED,
+      OrderStatus.PREPARING,
+      OrderStatus.CANCELLED,
+    ],
+    [OrderStatus.PAID]: [
+      OrderStatus.CONFIRMED,
+      OrderStatus.PREPARING,
+      OrderStatus.CANCELLED,
+    ],
+    [OrderStatus.CONFIRMED]: [OrderStatus.PREPARING, OrderStatus.CANCELLED],
+    [OrderStatus.PREPARING]: [OrderStatus.READY, OrderStatus.CANCELLED],
+    [OrderStatus.READY]: [OrderStatus.COMPLETED, OrderStatus.CANCELLED],
+    [OrderStatus.COMPLETED]: [],
+    [OrderStatus.NO_SHOW]: [],
+    [OrderStatus.CANCELLED]: [],
+    [OrderStatus.REFUNDED]: [],
+    [OrderStatus.PAYMENT_FAILED]: [],
+  };
+
+  return allowedNextStatuses[currentStatus]?.includes(nextStatus) ?? false;
+}
 
 async function restoreOrderStock(
   tx: PrismaTransactionClient,
@@ -76,6 +114,8 @@ export async function GET(_request: Request, { params }: OrderDetailRouteProps) 
     );
   }
 
+  await expireNoShowOrders();
+
   const order = await prisma.order.findFirst({
     where: {
       orderCode: id,
@@ -107,7 +147,11 @@ export async function GET(_request: Request, { params }: OrderDetailRouteProps) 
     );
   }
 
-  return NextResponse.json({ ok: true, order });
+  return NextResponse.json({
+    ok: true,
+    order:
+      session.role === UserRole.OWNER ? { ...order, pickupCode: null } : order,
+  });
 }
 
 export async function PATCH(request: Request, { params }: OrderDetailRouteProps) {
@@ -130,6 +174,8 @@ export async function PATCH(request: Request, { params }: OrderDetailRouteProps)
     );
   }
 
+  await expireNoShowOrders();
+
   const order = await prisma.order.findFirst({
     where: {
       orderCode: id,
@@ -151,6 +197,53 @@ export async function PATCH(request: Request, { params }: OrderDetailRouteProps)
   }
 
   const nextStatus = parsed.data.status;
+
+  if (!isValidOrderStatusTransition(order.status, nextStatus)) {
+    return NextResponse.json(
+      {
+        ok: false,
+        message: `Status order tidak bisa diubah dari ${order.status} ke ${nextStatus}.`,
+      },
+      { status: 400 },
+    );
+  }
+
+  if (nextStatus === OrderStatus.COMPLETED) {
+    if (order.status !== OrderStatus.READY) {
+      return NextResponse.json(
+        {
+          ok: false,
+          message: "Order harus ditandai siap diambil dulu sebelum pickup selesai.",
+        },
+        { status: 400 },
+      );
+    }
+
+    const expectedPickupCode = normalizePickupCode(order.pickupCode);
+    const submittedPickupCode = normalizePickupCode(parsed.data.pickupCode);
+
+    if (!expectedPickupCode) {
+      return NextResponse.json(
+        { ok: false, message: "Kode pickup order belum tersedia." },
+        { status: 400 },
+      );
+    }
+
+    if (!submittedPickupCode) {
+      return NextResponse.json(
+        { ok: false, message: "Kode pickup wajib diisi untuk menyelesaikan order." },
+        { status: 400 },
+      );
+    }
+
+    if (submittedPickupCode !== expectedPickupCode) {
+      return NextResponse.json(
+        { ok: false, message: "Kode pickup tidak cocok." },
+        { status: 400 },
+      );
+    }
+  }
+
   const updatedOrder = await prisma.$transaction(
     async (tx: PrismaTransactionClient) => {
       if (

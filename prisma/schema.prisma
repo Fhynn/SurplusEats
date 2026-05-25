@@ -46,6 +46,7 @@ enum OrderStatus {
   PREPARING
   READY
   COMPLETED
+  NO_SHOW
   CANCELLED
   REFUNDED
 }
@@ -109,19 +110,20 @@ model User {
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
 
-  addresses        Address[]
-  applications     RestaurantApplication[]
-  cartItems        CartItem[]
-  favoriteMenuItems FavoriteMenuItem[]
-  notifications    Notification[]
-  orders           Order[]                 @relation("CustomerOrders")
-  ownedRestaurants Restaurant[]            @relation("RestaurantOwner")
-  orderMessages    OrderMessage[]
-  refunds          RefundRequest[]         @relation("CustomerRefunds")
-  reviews          Review[]
-  supportTickets   SupportTicket[]
-  uploadedAssets   Asset[]                 @relation("AssetUploader")
-  adminLogs        AdminActionLog[]        @relation("AdminActionActor")
+  addresses           Address[]
+  applications        RestaurantApplication[]
+  cartItems           CartItem[]
+  favoriteMenuItems   FavoriteMenuItem[]
+  favoriteRestaurants FavoriteRestaurant[]
+  notifications       Notification[]
+  orders              Order[]                 @relation("CustomerOrders")
+  ownedRestaurants    Restaurant[]            @relation("RestaurantOwner")
+  orderMessages       OrderMessage[]
+  refunds             RefundRequest[]         @relation("CustomerRefunds")
+  reviews             Review[]
+  supportTickets      SupportTicket[]
+  uploadedAssets      Asset[]                 @relation("AssetUploader")
+  adminLogs           AdminActionLog[]        @relation("AdminActionActor")
 
   @@index([role])
   @@index([status])
@@ -202,6 +204,7 @@ model Restaurant {
   menuItems             MenuItem[]
   orders                Order[]
   owner                 User                   @relation("RestaurantOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  favoritedBy           FavoriteRestaurant[]
   reviews               Review[]
   verificationDocuments VerificationDocument[]
   walletTransactions    WalletTransaction[]
@@ -230,10 +233,10 @@ model MenuItem {
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
 
-  cartItems  CartItem[]
+  cartItems   CartItem[]
   favoritedBy FavoriteMenuItem[]
-  orderItems OrderItem[]
-  restaurant Restaurant  @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  orderItems  OrderItem[]
+  restaurant  Restaurant         @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
 
   @@unique([restaurantId, slug])
   @@index([restaurantId, status])
@@ -270,6 +273,20 @@ model FavoriteMenuItem {
   @@index([menuItemId])
 }
 
+model FavoriteRestaurant {
+  id           String   @id @default(cuid())
+  userId       String
+  restaurantId String
+  createdAt    DateTime @default(now())
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, restaurantId])
+  @@index([userId, createdAt])
+  @@index([restaurantId])
+}
+
 model Order {
   id            String        @id @default(cuid())
   orderCode     String        @unique
@@ -286,16 +303,17 @@ model Order {
   note          String?
   paidAt        DateTime?
   completedAt   DateTime?
+  noShowAt      DateTime?
   cancelledAt   DateTime?
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
-  customer      User           @relation("CustomerOrders", fields: [customerId], references: [id], onDelete: Cascade)
-  items         OrderItem[]
-  messages      OrderMessage[]
-  refundRequest RefundRequest?
-  restaurant    Restaurant     @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
-  review        Review?
+  customer       User            @relation("CustomerOrders", fields: [customerId], references: [id], onDelete: Cascade)
+  items          OrderItem[]
+  messages       OrderMessage[]
+  refundRequest  RefundRequest?
+  restaurant     Restaurant      @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
+  review         Review?
   supportTickets SupportTicket[]
 
   @@index([customerId, status])

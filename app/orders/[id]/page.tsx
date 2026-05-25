@@ -21,18 +21,16 @@ import {
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
+import { useCustomerApp } from "@/components/customer-app-provider";
 import { MobileDeviceFrame } from "@/components/mobile-device-frame";
-import {
-  getCustomerLocationFromAddresses,
-  type ApiCustomerAddress,
-} from "@/lib/customer-location";
+import { PickupQrCode } from "@/components/pickup-qr-code";
 import {
   getPickupRouteUrl,
   type Coordinates,
 } from "@/lib/geo-distance";
 import type { ApiOrder } from "@/lib/order-mapper";
 
-type OrderStatus = "preparing" | "ready" | "cancelled";
+type OrderStatus = "preparing" | "ready" | "cancelled" | "noShow";
 type TimelineKey = "confirmed" | "preparing" | "ready";
 
 type ChatMessage = {
@@ -69,6 +67,7 @@ type TrackingOrder = {
   apiStatus: string;
   createdAt: string;
   pickupTime: string | null;
+  pickupCode: string | null;
 };
 
 const cancelReasons = [
@@ -149,7 +148,9 @@ function apiOrderToTracking(
     quantity: firstItem?.quantity || 1,
     total: order.total,
     status:
-      order.status === "CANCELLED" || order.status === "REFUNDED"
+      order.status === "NO_SHOW"
+        ? "noShow"
+        : order.status === "CANCELLED" || order.status === "REFUNDED"
         ? "cancelled"
         : order.status === "READY"
           ? "ready"
@@ -162,6 +163,7 @@ function apiOrderToTracking(
     apiStatus: order.status,
     createdAt: order.createdAt,
     pickupTime: order.pickupTime,
+    pickupCode: order.pickupCode,
   };
 }
 
@@ -189,8 +191,8 @@ const getTimelineSteps = (order: TrackingOrder) =>
       title: "Pesanan Siap Diambil",
       description:
         order.status === "ready"
-          ? "Tunjukkan QR ke kasir sebelum batas pickup."
-          : "QR pickup akan aktif setelah owner menandai pesanan siap.",
+          ? "Tunjukkan kode pickup ke kasir sebelum batas pickup."
+          : "Kode pickup akan aktif setelah owner menandai pesanan siap.",
       time: order.status === "ready" ? formatClock(order.pickupTime) : "Menunggu",
       icon: QrCode,
     },
@@ -204,9 +206,10 @@ const getTimelineSteps = (order: TrackingOrder) =>
 
 export default function CustomerOrderTrackingPage() {
   const router = useRouter();
+  const { customerLocation } = useCustomerApp();
   const params = useParams<{ id: string }>();
   const orderId = params.id;
-  const [order, setOrder] = useState<TrackingOrder | null>(null);
+  const [apiOrder, setApiOrder] = useState<ApiOrder | null>(null);
   const [isLoadingOrder, setIsLoadingOrder] = useState(true);
   const [isCancelOpen, setIsCancelOpen] = useState(false);
   const [selectedReason, setSelectedReason] = useState("");
@@ -220,6 +223,9 @@ export default function CustomerOrderTrackingPage() {
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [isSendingChat, setIsSendingChat] = useState(false);
   const [chatNotice, setChatNotice] = useState<string | null>(null);
+  const order = apiOrder
+    ? apiOrderToTracking(apiOrder, customerLocation.coordinates)
+    : null;
 
   useEffect(() => {
     let ignore = false;
@@ -228,35 +234,20 @@ export default function CustomerOrderTrackingPage() {
       setIsLoadingOrder(true);
 
       try {
-        const [response, addressesResponse] = await Promise.all([
-          fetch(`/api/orders/${orderId}`, {
-            cache: "no-store",
-          }),
-          fetch("/api/addresses", { cache: "no-store" }),
-        ]);
+        const response = await fetch(`/api/orders/${orderId}`, {
+          cache: "no-store",
+        });
         const result = (await response.json()) as {
           ok: boolean;
           order?: ApiOrder;
         };
-        const addressesData = (await addressesResponse.json()) as {
-          ok: boolean;
-          addresses?: ApiCustomerAddress[];
-        };
 
         if (!ignore) {
-          const customerLocation = getCustomerLocationFromAddresses(
-            addressesData.addresses ?? [],
-          );
-
-          setOrder(
-            result.order
-              ? apiOrderToTracking(result.order, customerLocation.coordinates)
-              : null,
-          );
+          setApiOrder(result.order ?? null);
         }
       } catch {
         if (!ignore) {
-          setOrder(null);
+          setApiOrder(null);
         }
       } finally {
         if (!ignore) {
@@ -333,10 +324,11 @@ export default function CustomerOrderTrackingPage() {
 
   const isReady = order.status === "ready";
   const isCancelled = order.status === "cancelled";
+  const isNoShow = order.status === "noShow";
   const canCancelOrder = ["PENDING", "PAID", "CONFIRMED", "PREPARING"].includes(
     order.apiStatus,
   );
-  const activeStepIndex = isReady ? 2 : isCancelled ? 0 : 1;
+  const activeStepIndex = isReady ? 2 : isCancelled || isNoShow ? 0 : 1;
   const timelineSteps = getTimelineSteps(order);
   const closeCancelModal = () => {
     setIsCancelOpen(false);
@@ -434,7 +426,7 @@ export default function CustomerOrderTrackingPage() {
         throw new Error(data.message || "Pesanan gagal dibatalkan.");
       }
 
-      setOrder(apiOrderToTracking(data.order));
+      setApiOrder(data.order);
       setIsCancelSubmitted(true);
     } catch (error) {
       setCancelError(
@@ -465,7 +457,7 @@ export default function CustomerOrderTrackingPage() {
             </div>
             <div
               className={`flex h-9 w-9 items-center justify-center rounded-full border-4 border-white shadow-xl ${
-                isCancelled
+                isCancelled || isNoShow
                   ? "bg-red-500"
                   : isReady
                     ? "animate-bounce bg-emerald-500"
@@ -496,14 +488,14 @@ export default function CustomerOrderTrackingPage() {
             <div className="mb-6 text-center">
               <div
                 className={`mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full ${
-                  isCancelled
+                  isCancelled || isNoShow
                     ? "bg-red-50 text-red-600"
                     : isReady
                     ? "bg-emerald-50 text-emerald-600"
                     : "bg-blue-50 text-blue-600"
                 }`}
               >
-                {isCancelled ? (
+                {isCancelled || isNoShow ? (
                   <X size={32} />
                 ) : isReady ? (
                   <QrCode size={32} />
@@ -513,40 +505,46 @@ export default function CustomerOrderTrackingPage() {
               </div>
               <p
                 className={`text-xs font-extrabold tracking-[0.18em] uppercase ${
-                  isCancelled
+                  isCancelled || isNoShow
                     ? "text-red-600"
                     : isReady
                       ? "text-emerald-600"
                       : "text-blue-600"
                 }`}
               >
-                {isCancelled
-                  ? "Cancelled"
+                {isNoShow
+                  ? "No Show"
+                  : isCancelled
+                    ? "Cancelled"
                   : isReady
                     ? "Ready for Pickup"
                     : "In Preparation"}
               </p>
               <h1
                 className={`mt-2 text-2xl font-extrabold ${
-                  isCancelled
+                  isCancelled || isNoShow
                     ? "text-red-600"
                     : isReady
                       ? "text-emerald-600"
                       : "text-blue-600"
                 }`}
               >
-                {isCancelled
-                  ? "Pesanan Dibatalkan"
+                {isNoShow
+                  ? "Pesanan Tidak Diambil"
+                  : isCancelled
+                    ? "Pesanan Dibatalkan"
                   : isReady
                     ? "Siap Diambil!"
                     : "Sedang Disiapkan"}
               </h1>
               <p className="mt-2 text-sm leading-6 font-medium text-gray-500">
-                {isCancelled
-                  ? "Pesanan ini sudah dibatalkan dan tidak perlu diambil ke restoran."
+                {isNoShow
+                  ? "Pesanan melewati batas pickup dan sudah ditandai tidak diambil."
+                  : isCancelled
+                    ? "Pesanan ini sudah dibatalkan dan tidak perlu diambil ke restoran."
                   : isReady
-                    ? `Datang ke toko sebelum ${order.deadline} dan tunjukkan QR pickup.`
-                    : "Restoran sedang mengemas pesanan. QR pickup akan aktif saat status siap diambil."}
+                    ? `Datang ke toko sebelum ${order.deadline} dan tunjukkan kode pickup.`
+                    : "Restoran sedang mengemas pesanan. Kode pickup akan aktif saat status siap diambil."}
               </p>
             </div>
 
@@ -561,20 +559,26 @@ export default function CustomerOrderTrackingPage() {
               <div className="absolute bottom-0 left-0 h-20 w-20 bg-blue-500 opacity-20 blur-[50px]" />
 
               <div className="relative z-10 mb-3 rounded-2xl bg-white p-3 shadow-sm">
-                {isCancelled ? (
+                {isCancelled || isNoShow ? (
                   <X size={112} className="text-red-300" />
                 ) : isReady ? (
-                  <QrCode size={120} className="text-gray-900" />
+                  <PickupQrCode
+                    orderId={order.id}
+                    pickupCode={order.pickupCode}
+                    isActive={Boolean(order.pickupCode)}
+                  />
                 ) : (
                   <Package size={112} className="text-gray-300" />
                 )}
               </div>
               <p className="relative z-10 text-center text-xs font-bold tracking-widest text-gray-500 uppercase">
-                {isCancelled
-                  ? "Pickup Dibatalkan"
+                {isNoShow
+                  ? "Pickup Tidak Diambil"
+                  : isCancelled
+                    ? "Pickup Dibatalkan"
                   : isReady
-                    ? "Tunjukkan QR ke Kasir"
-                    : "QR Belum Aktif"}
+                    ? "Tunjukkan Kode ke Kasir"
+                    : "Kode Belum Aktif"}
               </p>
             </div>
 

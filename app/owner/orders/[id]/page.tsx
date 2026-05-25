@@ -23,8 +23,20 @@ import {
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
-type OwnerOrderStatus = "new" | "preparing" | "ready" | "completed" | "rejected";
-type FlowOrderStatus = Exclude<OwnerOrderStatus, "rejected">;
+import {
+  showPickupCodeScanner,
+  showSweetError,
+  showSweetToast,
+} from "@/lib/sweet-alert";
+
+type OwnerOrderStatus =
+  | "new"
+  | "preparing"
+  | "ready"
+  | "completed"
+  | "noShow"
+  | "rejected";
+type FlowOrderStatus = Exclude<OwnerOrderStatus, "rejected" | "noShow">;
 type ActiveModal = "chat" | "reject" | null;
 
 type ApiOrderStatus =
@@ -35,6 +47,7 @@ type ApiOrderStatus =
   | "PREPARING"
   | "READY"
   | "COMPLETED"
+  | "NO_SHOW"
   | "CANCELLED"
   | "REFUNDED";
 
@@ -146,6 +159,8 @@ function mapApiStatusToOwner(status: ApiOrderStatus): OwnerOrderStatus {
       return "ready";
     case "COMPLETED":
       return "completed";
+    case "NO_SHOW":
+      return "noShow";
     case "CANCELLED":
     case "REFUNDED":
       return "rejected";
@@ -210,6 +225,11 @@ const statusMeta = {
     label: "Selesai",
     className: "bg-emerald-50 text-emerald-700 border-emerald-200",
     icon: CheckCircle2,
+  },
+  noShow: {
+    label: "Tidak Diambil",
+    className: "bg-amber-50 text-amber-700 border-amber-200",
+    icon: Timer,
   },
   rejected: {
     label: "Ditolak",
@@ -370,10 +390,15 @@ export default function OwnerOrderDetailPage() {
 
   const total = order.total;
   const currentStatusIndex =
-    status === "rejected" ? -1 : statusOrder.indexOf(status);
+    status === "rejected" || status === "noShow"
+      ? -1
+      : statusOrder.indexOf(status);
   const StatusIcon = statusMeta[status].icon;
 
-  const updateOrderStatus = async (nextStatus: ApiOrderStatus) => {
+  const updateOrderStatus = async (
+    nextStatus: ApiOrderStatus,
+    pickupCode?: string,
+  ) => {
     setOrderNotice(null);
 
     const response = await fetch(`/api/orders/${order.id}`, {
@@ -381,7 +406,7 @@ export default function OwnerOrderDetailPage() {
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ status: nextStatus }),
+      body: JSON.stringify({ status: nextStatus, pickupCode }),
     });
     const data = (await response.json()) as {
       ok: boolean;
@@ -399,7 +424,7 @@ export default function OwnerOrderDetailPage() {
   };
 
   const advanceStatus = async () => {
-    if (status === "rejected") {
+    if (status === "rejected" || status === "noShow") {
       return;
     }
 
@@ -407,8 +432,38 @@ export default function OwnerOrderDetailPage() {
 
     if (nextStatus) {
       try {
-        await updateOrderStatus(apiStatusByOwnerStatus[nextStatus]);
+        let pickupCode: string | undefined;
+
+        if (nextStatus === "completed") {
+          const submittedPickupCode = await showPickupCodeScanner({
+            title: "Verifikasi Pickup",
+            text: `Minta customer menunjukkan kode pickup untuk order ${order.id}.`,
+            orderId: order.id,
+          });
+
+          if (!submittedPickupCode) {
+            return;
+          }
+
+          pickupCode = submittedPickupCode;
+        }
+
+        await updateOrderStatus(apiStatusByOwnerStatus[nextStatus], pickupCode);
+        showSweetToast({
+          icon: "success",
+          title:
+            nextStatus === "completed"
+              ? "Pickup berhasil diverifikasi."
+              : "Status order diperbarui.",
+        });
       } catch (error) {
+        void showSweetError({
+          title: "Status order gagal diperbarui",
+          text:
+            error instanceof Error
+              ? error.message
+              : "Status order gagal diperbarui.",
+        });
         setOrderNotice(
           error instanceof Error
             ? error.message
@@ -557,7 +612,11 @@ export default function OwnerOrderDetailPage() {
                 <div className="flex items-center gap-3 rounded-2xl bg-gray-50 p-4">
                   <QrCode size={18} className="text-gray-500" />
                   <span className="text-sm font-bold text-gray-700">
-                    Pickup code {order.pickupCode}
+                    {status === "completed"
+                      ? "Pickup sudah terverifikasi"
+                      : status === "noShow"
+                        ? "Pickup melewati batas waktu"
+                      : "Verifikasi kode pickup dari customer"}
                   </span>
                 </div>
               </div>
@@ -691,6 +750,7 @@ export default function OwnerOrderDetailPage() {
               {timeline.map((step) => {
                 const isDone =
                   status !== "rejected" &&
+                  status !== "noShow" &&
                   statusOrder.indexOf(step.status as FlowOrderStatus) <=
                     currentStatusIndex;
 
@@ -731,7 +791,9 @@ export default function OwnerOrderDetailPage() {
               Aksi Cepat
             </h2>
             <div className="space-y-3">
-              {status !== "completed" && status !== "rejected" ? (
+              {status !== "completed" &&
+              status !== "rejected" &&
+              status !== "noShow" ? (
                 <button
                   type="button"
                   onClick={advanceStatus}

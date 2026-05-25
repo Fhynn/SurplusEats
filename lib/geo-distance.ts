@@ -6,6 +6,7 @@ export type Coordinates = {
 };
 
 const EARTH_RADIUS_KM = 6371;
+export const NEARBY_PICKUP_RADIUS_KM = 5;
 
 function toRadians(value: number) {
   return (value * Math.PI) / 180;
@@ -110,7 +111,7 @@ export function applyFoodDistance(food: Food, origin: Coordinates | null) {
   if (!destination) {
     return {
       ...food,
-      distance: "Belum diset",
+      distance: "Pin toko belum ada",
       distanceKm: null,
     };
   }
@@ -118,7 +119,7 @@ export function applyFoodDistance(food: Food, origin: Coordinates | null) {
   if (!origin) {
     return {
       ...food,
-      distance: "Atur lokasi",
+      distance: "Lokasi belum aktif",
       distanceKm: null,
     };
   }
@@ -128,7 +129,7 @@ export function applyFoodDistance(food: Food, origin: Coordinates | null) {
   if (distanceKm === null) {
     return {
       ...food,
-      distance: "Lokasi invalid",
+      distance: "Pin tidak valid",
       distanceKm: null,
     };
   }
@@ -138,6 +139,24 @@ export function applyFoodDistance(food: Food, origin: Coordinates | null) {
     distance: formatDistance(distanceKm),
     distanceKm,
   };
+}
+
+export function hasFoodPickupCoordinates(food: Food) {
+  return (
+    food.restaurantLatitude !== null &&
+    food.restaurantLatitude !== undefined &&
+    food.restaurantLongitude !== null &&
+    food.restaurantLongitude !== undefined
+  );
+}
+
+export function isFoodWithinPickupRadius(
+  food: Food,
+  radiusKm = NEARBY_PICKUP_RADIUS_KM,
+) {
+  return food.distanceKm !== null && food.distanceKm !== undefined
+    ? food.distanceKm <= radiusKm
+    : false;
 }
 
 export function sortFoodsByDistance(foods: Food[]) {

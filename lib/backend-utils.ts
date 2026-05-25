@@ -1,3 +1,5 @@
+import { randomInt } from "node:crypto";
+
 export const slugify = (value: string) =>
   value
     .toLowerCase()
@@ -5,12 +7,23 @@ export const slugify = (value: string) =>
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
 
-export const createOrderCode = () => {
-  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  const suffix = Array.from({ length: 5 }, () => {
-    const index = Math.floor(Math.random() * alphabet.length);
-    return alphabet[index];
-  }).join("");
+const codeAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const digitAlphabet = "0123456789";
 
-  return `SFM-${suffix}`;
+function createRandomCode(alphabet: string, length: number) {
+  return Array.from({ length }, () => alphabet[randomInt(alphabet.length)]).join("");
+}
+
+export const createOrderCode = () => {
+  const suffix = createRandomCode(codeAlphabet, 8);
+
+  return `RQF-${suffix}`;
 };
+
+export const createPickupCode = () => createRandomCode(digitAlphabet, 6);
+
+export const createPayoutReference = () =>
+  `PAYOUT-${Date.now().toString(36).toUpperCase()}-${createRandomCode(
+    codeAlphabet,
+    6,
+  )}`;

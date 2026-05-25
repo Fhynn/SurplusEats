@@ -32,8 +32,8 @@ type ConfirmationType = "logout" | "delete" | null;
 const accountMenus = [
   {
     href: "/profile/addresses",
-    label: "Alamat Tersimpan",
-    description: "Kelola alamat pickup favorit",
+    label: "Lokasi Aktif",
+    description: "Perbarui lokasi pickup otomatis",
     icon: MapPin,
     iconClassName: "bg-blue-50 text-blue-600 group-hover:bg-blue-100",
     badge: undefined,

@@ -26,7 +26,7 @@ const addressSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["latitude"],
-        message: "Titik maps wajib diisi untuk alamat customer.",
+        message: "Lokasi otomatis wajib diaktifkan untuk customer.",
       });
     }
 
@@ -37,7 +37,7 @@ const addressSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["latitude"],
-        message: "Latitude dan longitude harus diisi bersama.",
+        message: "Lokasi otomatis belum lengkap. Ambil lokasi lagi.",
       });
     }
 
@@ -45,7 +45,7 @@ const addressSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["latitude"],
-        message: "Latitude harus berada di antara -90 dan 90.",
+        message: "Lokasi otomatis tidak valid. Ambil lokasi lagi.",
       });
     }
 
@@ -56,7 +56,7 @@ const addressSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["longitude"],
-        message: "Longitude harus berada di antara -180 dan 180.",
+        message: "Lokasi otomatis tidak valid. Ambil lokasi lagi.",
       });
     }
   });

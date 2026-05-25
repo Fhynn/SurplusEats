@@ -30,6 +30,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import type { FormEvent } from "react";
 import { useCallback, useEffect, useState } from "react";
 
+import { useUnreadNotificationCount } from "@/components/use-unread-notification-count";
+
 type AdminTab =
   | "dashboard"
   | "users"
@@ -215,6 +217,7 @@ const pageTitleByTab: Record<AdminTab, string> = {
 function AdminDashboardPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { unreadNotificationCount } = useUnreadNotificationCount();
   const tabParam = searchParams.get("tab");
   const activeTab: AdminTab =
     tabParam === "users" ||
@@ -610,7 +613,11 @@ function AdminDashboardPage() {
                 title="Notifikasi"
               >
                 <Bell size={20} />
-                <span className="absolute top-3 right-3 h-2.5 w-2.5 rounded-full border-2 border-white bg-red-500" />
+                {unreadNotificationCount > 0 ? (
+                  <span className="absolute -top-1 -right-1 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-white bg-red-500 px-1 text-[9px] font-extrabold text-white">
+                    {unreadNotificationCount > 9 ? "9+" : unreadNotificationCount}
+                  </span>
+                ) : null}
               </Link>
               <Link
                 href="/admin/settings"

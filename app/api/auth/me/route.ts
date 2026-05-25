@@ -30,6 +30,7 @@ export async function GET() {
       avatarUrl: true,
       role: true,
       status: true,
+      emailVerified: true,
     },
   });
 
@@ -53,6 +54,7 @@ export async function GET() {
       phone: user.phone,
       avatarUrl: user.avatarUrl,
       role: user.role,
+      emailVerified: user.emailVerified,
       ownerStatus: session.ownerStatus,
     },
   });

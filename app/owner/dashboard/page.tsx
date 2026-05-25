@@ -23,6 +23,12 @@ import {
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import {
+  showPickupCodeScanner,
+  showSweetError,
+  showSweetToast,
+} from "@/lib/sweet-alert";
+
 const formatRp = (amount: number) =>
   new Intl.NumberFormat("id-ID", {
     style: "currency",
@@ -42,6 +48,7 @@ type ApiOrderStatus =
   | "PREPARING"
   | "READY"
   | "COMPLETED"
+  | "NO_SHOW"
   | "CANCELLED"
   | "REFUNDED";
 
@@ -499,6 +506,7 @@ export default function OwnerDashboardPage() {
   const updateOrderStatus = async (
     orderId: string,
     nextStatus: ApiOrderStatus,
+    pickupCode?: string,
   ) => {
     setDashboardNotice(null);
 
@@ -507,7 +515,7 @@ export default function OwnerDashboardPage() {
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ status: nextStatus }),
+      body: JSON.stringify({ status: nextStatus, pickupCode }),
     });
     const data = (await response.json()) as {
       ok: boolean;
@@ -528,9 +536,41 @@ export default function OwnerDashboardPage() {
     }
 
     try {
-      await updateOrderStatus(orderId, apiStatusByKanbanStatus[nextStatus]);
+      let pickupCode: string | undefined;
+
+      if (nextStatus === "completed") {
+        const submittedPickupCode = await showPickupCodeScanner({
+          title: "Verifikasi Pickup",
+          text: `Minta customer menunjukkan kode pickup untuk order ${orderId}.`,
+          orderId,
+        });
+
+        if (!submittedPickupCode) {
+          return;
+        }
+
+        pickupCode = submittedPickupCode;
+      }
+
+      await updateOrderStatus(
+        orderId,
+        apiStatusByKanbanStatus[nextStatus],
+        pickupCode,
+      );
       await loadDashboardData();
+      showSweetToast({
+        icon: "success",
+        title:
+          nextStatus === "completed"
+            ? "Pickup berhasil diverifikasi."
+            : "Status order diperbarui.",
+      });
     } catch (error) {
+      void showSweetError({
+        title: "Status order gagal diperbarui",
+        text:
+          error instanceof Error ? error.message : "Status order gagal diperbarui.",
+      });
       setDashboardNotice(
         error instanceof Error ? error.message : "Status order gagal diperbarui.",
       );
