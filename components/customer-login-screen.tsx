@@ -277,16 +277,27 @@ export function CustomerLoginScreen() {
             <div className="h-px flex-1 bg-gray-200" />
           </div>
 
-          <button
-            type="button"
-            onClick={() =>
-              setNotice("Mitra bisa masuk memakai email dan password yang sudah didaftarkan.")
-            }
-            className="mt-8 flex w-full items-center justify-center gap-2.5 rounded-2xl border border-gray-200 bg-white py-3.5 text-sm font-bold text-gray-700 transition-all hover:border-gray-300 hover:bg-gray-50 active:scale-[0.98]"
-          >
-            <Store size={18} className="text-gray-500" />
-            Masuk sebagai Mitra
-          </button>
+          <div className="mt-8 grid gap-3 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={() =>
+                setNotice(
+                  "Masukkan email dan password mitra di form ini, lalu tekan Masuk Sekarang.",
+                )
+              }
+              className="flex items-center justify-center gap-2.5 rounded-2xl border border-gray-200 bg-white py-3.5 text-sm font-bold text-gray-700 transition-all hover:border-gray-300 hover:bg-gray-50 active:scale-[0.98]"
+            >
+              <Store size={18} className="text-gray-500" />
+              Masuk Mitra
+            </button>
+            <Link
+              href="/register-mitra"
+              className="flex items-center justify-center gap-2.5 rounded-2xl border border-emerald-100 bg-emerald-50 py-3.5 text-sm font-bold text-emerald-700 transition-all hover:border-emerald-200 hover:bg-emerald-100 active:scale-[0.98]"
+            >
+              <Store size={18} className="text-emerald-600" />
+              Daftar Mitra
+            </Link>
+          </div>
 
           <p className="mt-10 mb-6 text-center text-sm font-medium text-gray-600">
             Belum punya akun?{" "}
