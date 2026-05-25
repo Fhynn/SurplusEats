@@ -58,8 +58,8 @@ function formatRupiah(value: number) {
 }
 
 const checkoutTransactionOptions = {
-  maxWait: 10_000,
-  timeout: 20_000,
+  maxWait: 5_000,
+  timeout: 12_000,
 };
 
 export async function GET(request: Request) {
@@ -142,9 +142,24 @@ export async function POST(request: Request) {
     );
   }
 
-  const customer = await prisma.user.findUnique({
-    where: { id: session.userId },
-  });
+  const [customer, activeCustomerLocation] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id: session.userId },
+      select: {
+        id: true,
+        name: true,
+      },
+    }),
+    prisma.address.findFirst({
+      where: {
+        userId: session.userId,
+        isPrimary: true,
+        latitude: { not: null },
+        longitude: { not: null },
+      },
+      select: { id: true },
+    }),
+  ]);
 
   if (!customer) {
     return NextResponse.json(
@@ -152,16 +167,6 @@ export async function POST(request: Request) {
       { status: 404 },
     );
   }
-
-  const activeCustomerLocation = await prisma.address.findFirst({
-    where: {
-      userId: session.userId,
-      isPrimary: true,
-      latitude: { not: null },
-      longitude: { not: null },
-    },
-    select: { id: true },
-  });
 
   if (!activeCustomerLocation) {
     return NextResponse.json(
@@ -174,24 +179,38 @@ export async function POST(request: Request) {
     );
   }
 
+  const requestedIds = checkoutItems.map((item) => item.menuItemId);
+  const voucherCode = data.voucherCode?.trim().toUpperCase();
+
   try {
-    const orders = await prisma.$transaction(async (tx: PrismaTransactionClient) => {
-      const requestedIds = checkoutItems.map((item) => item.menuItemId);
-      const voucherCode = data.voucherCode?.trim().toUpperCase();
+    const checkoutResult = await prisma.$transaction(async (tx: PrismaTransactionClient) => {
       const menuItems = await tx.menuItem.findMany({
         where: {
           id: { in: requestedIds },
           status: MenuItemStatus.ACTIVE,
         },
-        include: {
+        select: {
+          id: true,
+          restaurantId: true,
+          name: true,
+          discountedPrice: true,
+          originalPrice: true,
+          stock: true,
           restaurant: {
-            include: {
-              owner: true,
+            select: {
+              id: true,
+              name: true,
+              ownerId: true,
+              latitude: true,
+              longitude: true,
             },
           },
         },
       });
       const menuItemById = new Map(menuItems.map((item) => [item.id, item]));
+      const restaurantById = new Map(
+        menuItems.map((item) => [item.restaurantId, item.restaurant]),
+      );
 
       if (menuItems.length !== requestedIds.length) {
         throw new Error("Sebagian menu tidak tersedia.");
@@ -331,6 +350,21 @@ export async function POST(request: Request) {
       let serviceFeeApplied = false;
       let voucherRedemptionOrderId: string | null = null;
       const createdOrders = [];
+      const walletTransactions: Array<{
+        restaurantId: string;
+        type: WalletTransactionType;
+        status: WalletTransactionStatus;
+        amount: number;
+        reference: string;
+        description: string;
+      }> = [];
+      const notificationPayloads: Array<{
+        userId: string;
+        type: NotificationType;
+        title: string;
+        body: string;
+        href: string;
+      }> = [];
 
       for (const group of groupedCheckoutItems) {
         const groupDiscount = Math.min(remainingVoucherDiscount, group.subtotal);
@@ -385,15 +419,13 @@ export async function POST(request: Request) {
           voucherRedemptionOrderId = createdOrder.id;
         }
 
-        await tx.walletTransaction.create({
-          data: {
-            restaurantId: group.restaurantId,
-            type: WalletTransactionType.ORDER_INCOME,
-            status: WalletTransactionStatus.PENDING,
-            amount: merchantIncome,
-            reference: orderCode,
-            description: `Order ${orderCode} dari ${customer.name}`,
-          },
+        walletTransactions.push({
+          restaurantId: group.restaurantId,
+          type: WalletTransactionType.ORDER_INCOME,
+          status: WalletTransactionStatus.PENDING,
+          amount: merchantIncome,
+          reference: orderCode,
+          description: `Order ${orderCode} dari ${customer.name}`,
         });
 
         for (const cartItem of group.items) {
@@ -414,51 +446,47 @@ export async function POST(request: Request) {
           if (stockUpdate.count !== 1) {
             throw new Error(`${menuItem?.name || "Menu"} stok tidak cukup.`);
           }
-
-          const updatedMenuItem = await tx.menuItem.findUnique({
-            where: { id: cartItem.menuItemId },
-            select: { stock: true },
-          });
-
-          if (updatedMenuItem?.stock === 0) {
-            await tx.menuItem.update({
-              where: { id: cartItem.menuItemId },
-              data: { status: MenuItemStatus.SOLD_OUT },
-            });
-          }
         }
 
-        const ownerId = menuItems.find(
-          (item) => item.restaurantId === group.restaurantId,
-        )?.restaurant.ownerId;
+        const ownerId = restaurantById.get(group.restaurantId)?.ownerId;
 
-        await tx.notification.createMany({
-          data: [
-            {
-              userId: customer.id,
-              type: NotificationType.ORDER,
-              title:
-                groupedCheckoutItems.length > 1
-                  ? "Pesanan marketplace berhasil dibuat"
-                  : "Pesanan berhasil dibuat",
-              body: `${orderCode} sedang diproses oleh ${createdOrder.restaurant.name}.`,
-              href: `/orders/${orderCode}`,
-            },
-            ...(ownerId
-              ? [
-                  {
-                    userId: ownerId,
-                    type: NotificationType.ORDER,
-                    title: "Order baru masuk",
-                    body: `${customer.name} membuat order ${orderCode}.`,
-                    href: "/owner/dashboard?tab=orders",
-                  },
-                ]
-              : []),
-          ],
+        notificationPayloads.push({
+          userId: customer.id,
+          type: NotificationType.ORDER,
+          title:
+            groupedCheckoutItems.length > 1
+              ? "Pesanan marketplace berhasil dibuat"
+              : "Pesanan berhasil dibuat",
+          body: `${orderCode} sedang diproses oleh ${createdOrder.restaurant.name}.`,
+          href: `/orders/${orderCode}`,
         });
 
+        if (ownerId) {
+          notificationPayloads.push({
+            userId: ownerId,
+            type: NotificationType.ORDER,
+            title: "Order baru masuk",
+            body: `${customer.name} membuat order ${orderCode}.`,
+            href: "/owner/dashboard?tab=orders",
+          });
+        }
+
         createdOrders.push(createdOrder);
+      }
+
+      await tx.menuItem.updateMany({
+        where: {
+          id: { in: requestedIds },
+          status: MenuItemStatus.ACTIVE,
+          stock: { lte: 0 },
+        },
+        data: { status: MenuItemStatus.SOLD_OUT },
+      });
+
+      if (walletTransactions.length > 0) {
+        await tx.walletTransaction.createMany({
+          data: walletTransactions,
+        });
       }
 
       if (appliedVoucherClaimId && voucherRedemptionOrderId) {
@@ -471,18 +499,43 @@ export async function POST(request: Request) {
         });
       }
 
-      await tx.cartItem.deleteMany({
+      return {
+        notifications: notificationPayloads,
+        orders: createdOrders,
+      };
+    }, checkoutTransactionOptions);
+
+    const postCheckoutTasks: Promise<unknown>[] = [
+      prisma.cartItem.deleteMany({
         where: {
           userId: customer.id,
           menuItemId: { in: requestedIds },
         },
-      });
+      }),
+    ];
 
-      return createdOrders;
-    }, checkoutTransactionOptions);
+    if (checkoutResult.notifications.length > 0) {
+      postCheckoutTasks.push(
+        prisma.notification.createMany({
+          data: checkoutResult.notifications,
+        }),
+      );
+    }
+
+    const postCheckoutResults = await Promise.allSettled(postCheckoutTasks);
+
+    for (const result of postCheckoutResults) {
+      if (result.status === "rejected") {
+        console.warn("Post-checkout task failed", result.reason);
+      }
+    }
 
     return NextResponse.json(
-      { ok: true, order: orders[0], orders },
+      {
+        ok: true,
+        order: checkoutResult.orders[0],
+        orders: checkoutResult.orders,
+      },
       { status: 201 },
     );
   } catch (error) {
