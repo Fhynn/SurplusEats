@@ -57,6 +57,11 @@ function formatRupiah(value: number) {
   }).format(value);
 }
 
+const checkoutTransactionOptions = {
+  maxWait: 10_000,
+  timeout: 20_000,
+};
+
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const session = await getCurrentSession();
@@ -474,7 +479,7 @@ export async function POST(request: Request) {
       });
 
       return createdOrders;
-    });
+    }, checkoutTransactionOptions);
 
     return NextResponse.json(
       { ok: true, order: orders[0], orders },
