@@ -89,6 +89,8 @@ export default async function StorePage({ params }: StorePageProps) {
       id: review.id,
       rating: review.rating,
       comment: review.comment,
+      ownerReply: review.ownerReply,
+      ownerRepliedAt: review.ownerRepliedAt?.toISOString() ?? null,
       customerName: review.user.name,
       createdAt: review.createdAt.toISOString(),
     })),

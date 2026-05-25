@@ -54,6 +54,8 @@ export type CustomerStoreDetail = {
     id: string;
     rating: number;
     comment: string | null;
+    ownerReply: string | null;
+    ownerRepliedAt: string | null;
     customerName: string;
     createdAt: string;
   }>;
@@ -382,6 +384,21 @@ export function CustomerStoreScreen({
                     <p className="line-clamp-3 text-xs leading-5 font-medium text-gray-600">
                       {review.comment || "Customer memberi rating tanpa komentar."}
                     </p>
+                    {review.ownerReply ? (
+                      <div className="mt-4 rounded-2xl border border-emerald-100 bg-white p-3">
+                        <p className="text-[11px] font-extrabold text-emerald-700">
+                          Balasan toko
+                        </p>
+                        <p className="mt-1 text-xs leading-5 font-semibold text-emerald-950">
+                          {review.ownerReply}
+                        </p>
+                        {review.ownerRepliedAt ? (
+                          <p className="mt-2 text-[10px] font-bold text-emerald-600">
+                            {formatReviewDate(review.ownerRepliedAt)}
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : null}
                   </article>
                 ))}
               </div>
