@@ -17,7 +17,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useCustomerApp } from "@/components/customer-app-provider";
 import { CustomerLocationControl } from "@/components/customer-location-control";
@@ -82,6 +82,14 @@ const paymentOptions: {
 ];
 
 const serviceFee = 2000;
+
+function createCheckoutIdempotencyKey() {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+
+  return `checkout-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
 
 type CheckoutVoucher = {
   code: string;
@@ -174,6 +182,7 @@ export function CustomerCheckoutScreen() {
   );
   const [voucherNotice, setVoucherNotice] = useState<string | null>(null);
   const [isLoadingVoucher, setIsLoadingVoucher] = useState(false);
+  const checkoutIdempotencyKeyRef = useRef(createCheckoutIdempotencyKey());
 
   const voucherDiscount = activeVoucher
     ? Math.min(activeVoucher.discount, cartTotal)
@@ -315,8 +324,10 @@ export function CustomerCheckoutScreen() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "Idempotency-Key": checkoutIdempotencyKeyRef.current,
         },
         body: JSON.stringify({
+          idempotencyKey: checkoutIdempotencyKeyRef.current,
           items: cart.map((item) => ({
             menuItemId: item.id,
             quantity: item.qty,

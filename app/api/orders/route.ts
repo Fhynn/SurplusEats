@@ -1,4 +1,5 @@
 import {
+  CheckoutAttemptStatus,
   MenuItemStatus,
   NotificationType,
   OrderStatus,
@@ -30,6 +31,7 @@ const checkoutSchema = z.object({
     .min(1),
   note: z.string().optional(),
   voucherCode: z.string().trim().min(1).max(40).optional(),
+  idempotencyKey: z.string().trim().min(12).max(120).optional(),
 });
 
 type CheckoutItem = z.infer<typeof checkoutSchema>["items"][number];
@@ -61,6 +63,28 @@ const checkoutTransactionOptions = {
   maxWait: 5_000,
   timeout: 12_000,
 };
+
+const staleCheckoutAttemptMs = 1000 * 60 * 2;
+
+async function findCheckoutAttempt(userId: string, idempotencyKey: string) {
+  return prisma.checkoutAttempt.findUnique({
+    where: {
+      userId_idempotencyKey: {
+        userId,
+        idempotencyKey,
+      },
+    },
+    include: {
+      orders: {
+        include: {
+          items: true,
+          restaurant: true,
+        },
+        orderBy: { createdAt: "asc" },
+      },
+    },
+  });
+}
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -181,8 +205,73 @@ export async function POST(request: Request) {
 
   const requestedIds = checkoutItems.map((item) => item.menuItemId);
   const voucherCode = data.voucherCode?.trim().toUpperCase();
+  const idempotencyKey =
+    (data.idempotencyKey || request.headers.get("Idempotency-Key") || "").trim() ||
+    undefined;
+  let checkoutAttemptId: string | null = null;
 
   try {
+    if (idempotencyKey) {
+      try {
+        const checkoutAttempt = await prisma.checkoutAttempt.create({
+          data: {
+            userId: customer.id,
+            idempotencyKey,
+          },
+          select: { id: true },
+        });
+
+        checkoutAttemptId = checkoutAttempt.id;
+      } catch (error) {
+        const existingAttempt = await findCheckoutAttempt(customer.id, idempotencyKey);
+
+        if (!existingAttempt) {
+          throw error;
+        }
+
+        if (
+          existingAttempt.status === CheckoutAttemptStatus.COMPLETED &&
+          existingAttempt.orders.length > 0
+        ) {
+          return NextResponse.json(
+            {
+              ok: true,
+              duplicate: true,
+              order: existingAttempt.orders[0],
+              orders: existingAttempt.orders,
+            },
+            { status: 200 },
+          );
+        }
+
+        const isStillProcessing =
+          existingAttempt.status === CheckoutAttemptStatus.PROCESSING &&
+          Date.now() - existingAttempt.updatedAt.getTime() < staleCheckoutAttemptMs;
+
+        if (isStillProcessing) {
+          return NextResponse.json(
+            {
+              ok: false,
+              message:
+                "Checkout sedang diproses. Jangan klik dua kali, tunggu hasilnya sebentar.",
+            },
+            { status: 409 },
+          );
+        }
+
+        const checkoutAttempt = await prisma.checkoutAttempt.update({
+          where: { id: existingAttempt.id },
+          data: {
+            status: CheckoutAttemptStatus.PROCESSING,
+            errorMessage: null,
+          },
+          select: { id: true },
+        });
+
+        checkoutAttemptId = checkoutAttempt.id;
+      }
+    }
+
     const checkoutResult = await prisma.$transaction(async (tx: PrismaTransactionClient) => {
       const menuItems = await tx.menuItem.findMany({
         where: {
@@ -380,6 +469,7 @@ export async function POST(request: Request) {
             orderCode,
             customerId: customer.id,
             restaurantId: group.restaurantId,
+            checkoutAttemptId,
             status: OrderStatus.CONFIRMED,
             paymentStatus: PaymentStatus.PAID,
             subtotal: group.subtotal,
@@ -499,6 +589,16 @@ export async function POST(request: Request) {
         });
       }
 
+      if (checkoutAttemptId) {
+        await tx.checkoutAttempt.update({
+          where: { id: checkoutAttemptId },
+          data: {
+            status: CheckoutAttemptStatus.COMPLETED,
+            errorMessage: null,
+          },
+        });
+      }
+
       return {
         notifications: notificationPayloads,
         orders: createdOrders,
@@ -539,10 +639,26 @@ export async function POST(request: Request) {
       { status: 201 },
     );
   } catch (error) {
+    const message = error instanceof Error ? error.message : "Checkout gagal.";
+
+    if (checkoutAttemptId) {
+      await prisma.checkoutAttempt
+        .update({
+          where: { id: checkoutAttemptId },
+          data: {
+            status: CheckoutAttemptStatus.FAILED,
+            errorMessage: message.slice(0, 500),
+          },
+        })
+        .catch((updateError: unknown) => {
+          console.warn("Checkout attempt status update failed", updateError);
+        });
+    }
+
     return NextResponse.json(
       {
         ok: false,
-        message: error instanceof Error ? error.message : "Checkout gagal.",
+        message,
       },
       { status: 400 },
     );

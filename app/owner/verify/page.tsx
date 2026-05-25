@@ -15,7 +15,8 @@ import {
   XCircle,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { OwnerVerifyActions } from "@/components/owner-verify-actions";
 
@@ -84,6 +85,8 @@ type DocumentCheck = {
   className: string;
 };
 
+const verificationPollIntervalMs = 4000;
+
 const toneClassNameByStepTone = {
   active: {
     dot: "bg-amber-500 text-white",
@@ -110,6 +113,13 @@ const toneClassNameByStepTone = {
     status: "bg-white text-red-600",
   },
 } as const;
+
+function isOwnerApproved(profile: OwnerProfileResponse | null) {
+  return (
+    profile?.restaurant?.status === "APPROVED" ||
+    profile?.latestApplication?.status === "APPROVED"
+  );
+}
 
 const documentMeta: Record<string, { label: string; icon: LucideIcon }> = {
   BUSINESS_PERMIT: {
@@ -287,15 +297,16 @@ function createDocumentChecks(
 }
 
 export default function OwnerVerifyPage() {
+  const router = useRouter();
   const [profile, setProfile] = useState<OwnerProfileResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
 
-  useEffect(() => {
-    let ignore = false;
-
-    async function loadProfile() {
-      setIsLoading(true);
+  const loadProfile = useCallback(
+    async ({ silent = false }: { silent?: boolean } = {}) => {
+      if (!silent) {
+        setIsLoading(true);
+      }
       setNotice(null);
 
       try {
@@ -308,12 +319,15 @@ export default function OwnerVerifyPage() {
           throw new Error(data.message || "Status verifikasi gagal dimuat.");
         }
 
-        if (!ignore) {
-          setProfile(data);
+        setProfile(data);
+
+        if (isOwnerApproved(data)) {
+          setNotice("Pendaftaran disetujui. Mengalihkan ke dashboard owner...");
+          router.replace("/owner/dashboard");
+          router.refresh();
         }
       } catch (error) {
-        if (!ignore) {
-          setProfile(null);
+        if (!silent) {
           setNotice(
             error instanceof Error
               ? error.message
@@ -321,18 +335,42 @@ export default function OwnerVerifyPage() {
           );
         }
       } finally {
-        if (!ignore) {
+        if (!silent) {
           setIsLoading(false);
         }
       }
+    },
+    [router],
+  );
+
+  useEffect(() => {
+    void loadProfile();
+  }, [loadProfile]);
+
+  const ownerApproved = isOwnerApproved(profile);
+
+  useEffect(() => {
+    if (ownerApproved) {
+      return;
     }
 
-    void loadProfile();
+    const interval = window.setInterval(() => {
+      void loadProfile({ silent: true });
+    }, verificationPollIntervalMs);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void loadProfile({ silent: true });
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
-      ignore = true;
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, []);
+  }, [loadProfile, ownerApproved]);
 
   const statusCopy = getStatusCopy(profile);
   const StatusIcon = statusCopy.icon;

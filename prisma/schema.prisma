@@ -58,6 +58,12 @@ enum PaymentStatus {
   REFUNDED
 }
 
+enum CheckoutAttemptStatus {
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
 enum RefundStatus {
   PENDING
   REVIEWING
@@ -124,6 +130,7 @@ model User {
   supportTickets      SupportTicket[]
   uploadedAssets      Asset[]                 @relation("AssetUploader")
   adminLogs           AdminActionLog[]        @relation("AdminActionActor")
+  checkoutAttempts    CheckoutAttempt[]
 
   @@index([role])
   @@index([status])
@@ -288,37 +295,57 @@ model FavoriteRestaurant {
 }
 
 model Order {
-  id            String        @id @default(cuid())
-  orderCode     String        @unique
-  customerId    String
-  restaurantId  String
-  status        OrderStatus   @default(PENDING)
-  paymentStatus PaymentStatus @default(PENDING)
-  subtotal      Int
-  discount      Int           @default(0)
-  serviceFee    Int           @default(0)
-  total         Int
-  pickupCode    String?
-  pickupTime    DateTime?
-  note          String?
-  paidAt        DateTime?
-  completedAt   DateTime?
-  noShowAt      DateTime?
-  cancelledAt   DateTime?
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  id                String        @id @default(cuid())
+  orderCode         String        @unique
+  customerId        String
+  restaurantId      String
+  checkoutAttemptId String?
+  status            OrderStatus   @default(PENDING)
+  paymentStatus     PaymentStatus @default(PENDING)
+  subtotal          Int
+  discount          Int           @default(0)
+  serviceFee        Int           @default(0)
+  total             Int
+  pickupCode        String?
+  pickupTime        DateTime?
+  note              String?
+  paidAt            DateTime?
+  completedAt       DateTime?
+  noShowAt          DateTime?
+  cancelledAt       DateTime?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
 
-  customer       User            @relation("CustomerOrders", fields: [customerId], references: [id], onDelete: Cascade)
-  items          OrderItem[]
-  messages       OrderMessage[]
-  refundRequest  RefundRequest?
-  restaurant     Restaurant      @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
-  review         Review?
-  supportTickets SupportTicket[]
+  customer        User             @relation("CustomerOrders", fields: [customerId], references: [id], onDelete: Cascade)
+  checkoutAttempt CheckoutAttempt? @relation(fields: [checkoutAttemptId], references: [id], onDelete: SetNull)
+  items           OrderItem[]
+  messages        OrderMessage[]
+  refundRequest   RefundRequest?
+  restaurant      Restaurant       @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
+  review          Review?
+  supportTickets  SupportTicket[]
 
   @@index([customerId, status])
+  @@index([checkoutAttemptId])
   @@index([restaurantId, status])
   @@index([createdAt])
+}
+
+model CheckoutAttempt {
+  id             String                @id @default(cuid())
+  userId         String
+  idempotencyKey String
+  status         CheckoutAttemptStatus @default(PROCESSING)
+  errorMessage   String?
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orders Order[]
+
+  @@unique([userId, idempotencyKey])
+  @@index([userId, createdAt])
+  @@index([status, updatedAt])
 }
 
 model OrderItem {
