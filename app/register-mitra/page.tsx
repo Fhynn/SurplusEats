@@ -40,7 +40,6 @@ import {
 import { waitForLoadingScreen } from "@/lib/loading-delay";
 import {
   formatCoordinatesInput,
-  parseCoordinatesFromText,
 } from "@/lib/maps-coordinate";
 
 const inputWrapClassName =
@@ -322,8 +321,6 @@ export default function RegisterMitraPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isWelcomeLoading, setIsWelcomeLoading] = useState(false);
   const [isLocatingStore, setIsLocatingStore] = useState(false);
-  const [storeMapsInput, setStoreMapsInput] = useState("");
-  const [storeMapsError, setStoreMapsError] = useState<string | null>(null);
   const [uploadedDocs, setUploadedDocs] = useState<UploadedDocs>({
     identity: null,
     permit: null,
@@ -456,7 +453,6 @@ export default function RegisterMitraPage() {
       const result = await getBestBrowserLocation();
 
       setStoreCoordinates(result.coordinates);
-      setStoreMapsError(null);
       setNotice(getLocationAccuracyNotice(result.accuracy));
     } catch (error) {
       setNotice(
@@ -467,30 +463,6 @@ export default function RegisterMitraPage() {
     } finally {
       setIsLocatingStore(false);
     }
-  };
-
-  const handleStoreMapsInputChange = (value: string) => {
-    setStoreMapsInput(value);
-
-    const coordinates = parseCoordinatesFromText(value);
-
-    if (!coordinates) {
-      return;
-    }
-
-    setStoreCoordinates(coordinates);
-    setStoreMapsError(null);
-  };
-
-  const handleStoreMapsInputBlur = () => {
-    if (!storeMapsInput.trim() || parseCoordinatesFromText(storeMapsInput)) {
-      setStoreMapsError(null);
-      return;
-    }
-
-    setStoreMapsError(
-      "Tempel link Google Maps yang berisi pin atau format -6.200000,106.816666.",
-    );
   };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -845,8 +817,8 @@ export default function RegisterMitraPage() {
                           </p>
                           <p className="mt-1 text-xs leading-5 font-semibold text-gray-500">
                             {hasStoreCoordinates
-                              ? "Koordinat toko tersimpan sebagai patokan maps untuk rute pickup."
-                              : "Klik Ambil Lokasi di area toko agar customer bisa membuka rute pickup."}
+                              ? "Lokasi ditemukan. Titik ini akan dipakai customer untuk membuka rute pickup."
+                              : "Klik Ambil Lokasi, atau buka peta lalu cari nama jalan/toko dan pilih titik pickup."}
                           </p>
                         </div>
                       </div>
@@ -856,11 +828,17 @@ export default function RegisterMitraPage() {
                           coordinates={storeCoordinates}
                           onCoordinatesChange={(coordinates) => {
                             setStoreCoordinates(coordinates);
-                            setStoreMapsError(null);
-                            setNotice("");
+                            setNotice(
+                              "Lokasi ditemukan. Titik toko sudah tersimpan di form.",
+                            );
                           }}
                           title="Pin Lokasi Toko"
-                          description="Klik peta atau geser pin tepat di lokasi pickup mitra."
+                          description="Cari nama jalan/toko, lalu pastikan pin tepat di lokasi pickup mitra."
+                          buttonLabel={
+                            hasStoreCoordinates
+                              ? "Ubah Titik di Peta"
+                              : "Cari di Peta"
+                          }
                         />
                         {storeMapsHref ? (
                           <a
@@ -875,28 +853,26 @@ export default function RegisterMitraPage() {
                         ) : null}
                       </div>
                     </div>
-                    <label className="mt-4 block">
-                      <span className="mb-2 block text-xs font-extrabold text-gray-700">
-                        Link Google Maps / Koordinat Pin
-                      </span>
-                      <input
-                        type="text"
-                        value={storeMapsInput}
-                        onChange={(event) =>
-                          handleStoreMapsInputChange(event.target.value)
-                        }
-                        onBlur={handleStoreMapsInputBlur}
-                        placeholder="Tempel link Google Maps atau -6.200000,106.816666"
-                        className="h-11 w-full rounded-2xl border border-emerald-100 bg-white px-3 text-xs font-bold text-gray-900 outline-none placeholder:text-gray-400 focus:border-emerald-500"
-                      />
-                    </label>
-                    {storeMapsError ? (
-                      <p className="mt-2 text-xs leading-5 font-bold text-red-600">
-                        {storeMapsError}
+
+                    {hasStoreCoordinates ? (
+                      <p className="mt-4 flex items-start gap-2 rounded-2xl border border-emerald-100 bg-emerald-50 px-3 py-2.5 text-xs leading-5 font-bold text-emerald-700">
+                        <CheckCircle2 size={16} className="mt-0.5 shrink-0" />
+                        Lokasi ditemukan. Titik pickup sudah siap dipakai untuk
+                        rute customer.
                       </p>
                     ) : null}
-                    <input type="hidden" value={form.latitude} readOnly />
-                    <input type="hidden" value={form.longitude} readOnly />
+                    <input
+                      type="hidden"
+                      name="latitude"
+                      value={form.latitude}
+                      readOnly
+                    />
+                    <input
+                      type="hidden"
+                      name="longitude"
+                      value={form.longitude}
+                      readOnly
+                    />
                     <FieldError
                       message={formErrors.latitude || formErrors.longitude}
                     />

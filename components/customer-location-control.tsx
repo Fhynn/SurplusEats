@@ -4,7 +4,10 @@ import { Loader2, MapPin, Navigation } from "lucide-react";
 import { useState } from "react";
 
 import { useCustomerApp } from "@/components/customer-app-provider";
-import { getBestBrowserLocation } from "@/lib/browser-location";
+import {
+  getBestBrowserLocation,
+  getLocationAccuracyNotice,
+} from "@/lib/browser-location";
 import {
   getCustomerLocationFromAddresses,
   type ApiCustomerAddress,
@@ -24,7 +27,10 @@ export function CustomerLocationControl({
 }: Readonly<CustomerLocationControlProps>) {
   const { refreshCustomerLocation } = useCustomerApp();
   const [isLocating, setIsLocating] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{
+    tone: "error" | "success";
+    text: string;
+  } | null>(null);
   const isBusy = isLocating || isLoading;
   const locationStatus = isLocating
     ? "Mencari Lokasi"
@@ -34,7 +40,10 @@ export function CustomerLocationControl({
 
   const handleUseCurrentLocation = async () => {
     if (!navigator.geolocation) {
-      setNotice("Browser belum mendukung lokasi.");
+      setNotice({
+        tone: "error",
+        text: "Browser belum mendukung lokasi.",
+      });
       return;
     }
 
@@ -62,12 +71,18 @@ export function CustomerLocationControl({
 
       onLocationChange(getCustomerLocationFromAddresses([data.address]));
       await refreshCustomerLocation();
+      setNotice({
+        tone: "success",
+        text: getLocationAccuracyNotice(result.accuracy),
+      });
     } catch (error) {
-      setNotice(
-        error instanceof Error
-          ? error.message
-          : "Lokasi otomatis gagal diambil. Pastikan lokasi perangkat aktif.",
-      );
+      setNotice({
+        tone: "error",
+        text:
+          error instanceof Error
+            ? error.message
+            : "Lokasi otomatis gagal diambil. Pastikan lokasi perangkat aktif.",
+      });
     } finally {
       setIsLocating(false);
     }
@@ -101,8 +116,12 @@ export function CustomerLocationControl({
         </span>
       </button>
       {notice ? (
-        <p className="mt-1 text-[10px] leading-4 font-bold text-red-500">
-          {notice}
+        <p
+          className={`mt-1 text-[10px] leading-4 font-bold ${
+            notice.tone === "success" ? "text-emerald-600" : "text-red-500"
+          }`}
+        >
+          {notice.text}
         </p>
       ) : null}
     </div>

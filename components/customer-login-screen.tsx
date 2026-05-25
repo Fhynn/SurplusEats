@@ -294,6 +294,26 @@ export function CustomerLoginScreen() {
               Daftar sekarang
             </Link>
           </p>
+
+          <footer className="border-t border-gray-100 pt-5 pb-2">
+            <div className="flex items-center justify-center gap-3">
+              <Image
+                src="/logo.webp"
+                alt="Logo ResQFood"
+                width={40}
+                height={44}
+                className="h-10 w-9 rounded-xl object-contain"
+              />
+              <div className="text-left">
+                <p className="text-sm leading-tight font-extrabold tracking-tight text-gray-900">
+                  ResQFood
+                </p>
+                <p className="mt-0.5 text-[11px] leading-tight font-bold text-emerald-600">
+                  #Save Food, Serve Good
+                </p>
+              </div>
+            </div>
+          </footer>
         </div>
       </section>
     </main>

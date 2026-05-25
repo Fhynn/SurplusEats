@@ -51,10 +51,10 @@ function getGeolocationErrorMessage(error: GeolocationPositionError) {
 }
 
 export function getBestBrowserLocation({
-  targetAccuracyMeters = 50,
-  maximumAcceptedAccuracyMeters = 150,
-  settleMs = 12_000,
-  timeoutMs = 22_000,
+  targetAccuracyMeters = 80,
+  maximumAcceptedAccuracyMeters = Number.POSITIVE_INFINITY,
+  settleMs = 4_500,
+  timeoutMs = 10_000,
 }: BestBrowserLocationOptions = {}) {
   return new Promise<BestBrowserLocationResult>((resolve, reject) => {
     if (typeof navigator === "undefined" || !navigator.geolocation) {
@@ -100,7 +100,10 @@ export function getBestBrowserLocation({
         return;
       }
 
-      if (getAccuracy(bestPosition) > maximumAcceptedAccuracyMeters) {
+      if (
+        Number.isFinite(maximumAcceptedAccuracyMeters) &&
+        getAccuracy(bestPosition) > maximumAcceptedAccuracyMeters
+      ) {
         reject(
           new Error(
             "Lokasi otomatis belum cukup akurat. Aktifkan GPS atau lokasi presisi lalu coba lagi.",
@@ -158,14 +161,18 @@ export function getBestBrowserLocation({
 
 export function getLocationAccuracyNotice(accuracy: number | null) {
   if (accuracy === null) {
-    return "Lokasi otomatis tersimpan.";
+    return "Lokasi ditemukan dan tersimpan.";
   }
 
   const roundedAccuracy = Math.round(accuracy);
 
-  if (roundedAccuracy <= 150) {
-    return "Lokasi otomatis tersimpan.";
+  if (roundedAccuracy <= 100) {
+    return "Lokasi ditemukan dan tersimpan.";
   }
 
-  return `Lokasi otomatis tersimpan dengan perkiraan akurasi ${roundedAccuracy} m.`;
+  if (roundedAccuracy <= 500) {
+    return `Lokasi ditemukan dan tersimpan. Perkiraan akurasi ${roundedAccuracy} m.`;
+  }
+
+  return `Lokasi ditemukan. Jika titik belum tepat, geser pin di peta. Perkiraan akurasi ${roundedAccuracy} m.`;
 }
