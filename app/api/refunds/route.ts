@@ -9,7 +9,9 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { getCurrentSession } from "@/lib/auth-session";
+import { deliverNotifications } from "@/lib/notification-delivery";
 import { prisma, type PrismaTransactionClient } from "@/lib/prisma";
+import { isValidRefundReason } from "@/lib/refund-policy";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -91,6 +93,14 @@ export async function POST(request: Request) {
   }
 
   const data = parsed.data;
+
+  if (!isValidRefundReason(data.reason)) {
+    return NextResponse.json(
+      { ok: false, message: "Pilih alasan refund resmi yang tersedia." },
+      { status: 400 },
+    );
+  }
+
   const evidenceAssetIds = Array.from(new Set(data.evidenceAssetIds || []));
   const order = await prisma.order.findUnique({
     where: { orderCode: data.orderCode },
@@ -220,6 +230,30 @@ export async function POST(request: Request) {
 
     return createdRefund;
   });
+
+  await deliverNotifications([
+    {
+      userId: order.customerId,
+      type: NotificationType.REFUND,
+      title: "Refund sedang ditinjau",
+      body: `Pengajuan refund ${order.orderCode} masuk ke admin.`,
+      href: `/orders/${order.orderCode}/refund`,
+    },
+    {
+      userId: order.restaurant.ownerId,
+      type: NotificationType.REFUND,
+      title: "Refund baru dari customer",
+      body: `${order.customer.name} mengajukan refund untuk ${order.orderCode}.`,
+      href: `/owner/orders/${order.orderCode}`,
+    },
+    ...admins.map((admin) => ({
+      userId: admin.id,
+      type: NotificationType.REFUND,
+      title: "Pengajuan refund baru",
+      body: `${order.orderCode} dari ${order.restaurant.name} menunggu review admin.`,
+      href: `/admin/refunds/${refund.id}`,
+    })),
+  ]);
 
   return NextResponse.json({ ok: true, refund }, { status: 201 });
 }

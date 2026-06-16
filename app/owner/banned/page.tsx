@@ -140,7 +140,7 @@ export default function OwnerBannedPage() {
 
           <div className="mt-8 space-y-3">
             <a
-              href="mailto:support@resqfood.id?subject=Banding%20Akun%20Owner%20CASE-OWN-2408"
+              href="mailto:support@resqfood.store?subject=Banding%20Akun%20Owner%20CASE-OWN-2408"
               className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gray-900 px-5 py-4 text-sm font-extrabold text-white shadow-[0_12px_28px_rgba(15,23,42,0.16)] transition-colors hover:bg-red-600"
             >
               <Mail size={18} />
@@ -148,7 +148,7 @@ export default function OwnerBannedPage() {
             </a>
             <div className="grid grid-cols-2 gap-3">
               <a
-                href="mailto:support@resqfood.id"
+                href="mailto:support@resqfood.store"
                 className="flex items-center justify-center gap-2 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3.5 text-sm font-extrabold text-blue-700 transition-colors hover:bg-blue-100"
               >
                 <HelpCircle size={17} />

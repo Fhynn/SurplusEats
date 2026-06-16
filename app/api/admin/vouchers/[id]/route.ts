@@ -4,6 +4,10 @@ import { z } from "zod";
 
 import { getCurrentSession } from "@/lib/auth-session";
 import { prisma } from "@/lib/prisma";
+import {
+  getAdminVoucherStatus,
+  getVoucherRuleLabels,
+} from "@/lib/voucher-rules";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,9 +26,14 @@ const updateVoucherSchema = z.object({
     .optional(),
   title: z.string().trim().min(3).max(80).optional(),
   description: z.string().trim().max(240).nullable().optional(),
+  campaignName: z.string().trim().max(100).nullable().optional(),
   discount: z.coerce.number().int().min(1000).max(10_000_000).optional(),
   minSpend: z.coerce.number().int().min(0).max(50_000_000).optional(),
   quota: z.coerce.number().int().min(1).max(100_000).nullable().optional(),
+  perUserLimit: z.coerce.number().int().min(1).max(100).optional(),
+  firstOrderOnly: z.boolean().optional(),
+  restaurantId: z.string().trim().min(1).nullable().optional(),
+  category: z.string().trim().max(80).nullable().optional(),
   active: z.boolean().optional(),
   startsAt: z.string().trim().nullable().optional(),
   endsAt: z.string().trim().nullable().optional(),
@@ -36,6 +45,10 @@ type VoucherWithRedemptions = Awaited<
   redemptions: Array<{
     orderId: string | null;
   }>;
+  restaurant?: {
+    id: string;
+    name: string;
+  } | null;
 };
 
 function parseDateInput(value: string | null | undefined) {
@@ -56,41 +69,29 @@ function parseDateInput(value: string | null | undefined) {
   return date;
 }
 
-function getVoucherStatus(voucher: VoucherWithRedemptions, usedCount: number) {
-  const now = Date.now();
-
-  if (!voucher.active) {
-    return "paused";
-  }
-
-  if (voucher.startsAt && voucher.startsAt.getTime() > now) {
-    return "scheduled";
-  }
-
-  if (voucher.endsAt && voucher.endsAt.getTime() < now) {
-    return "expired";
-  }
-
-  if (voucher.quota !== null && usedCount >= voucher.quota) {
-    return "quota_habis";
-  }
-
-  return "active";
-}
-
 function serializeVoucher(voucher: VoucherWithRedemptions) {
   const usedCount = voucher.redemptions.filter(
     (redemption) => redemption.orderId,
   ).length;
+  const ruleSummary = getVoucherRuleLabels({
+    ...voucher,
+    restaurant: voucher.restaurant ?? null,
+  });
 
   return {
     id: voucher.id,
     code: voucher.code,
     title: voucher.title,
     description: voucher.description,
+    campaignName: voucher.campaignName,
     discount: voucher.discount,
     minSpend: voucher.minSpend,
     quota: voucher.quota,
+    perUserLimit: voucher.perUserLimit,
+    firstOrderOnly: voucher.firstOrderOnly,
+    restaurantId: voucher.restaurantId,
+    restaurantName: voucher.restaurant?.name ?? null,
+    category: voucher.category,
     active: voucher.active,
     startsAt: voucher.startsAt?.toISOString() ?? null,
     endsAt: voucher.endsAt?.toISOString() ?? null,
@@ -99,7 +100,8 @@ function serializeVoucher(voucher: VoucherWithRedemptions) {
     usedCount,
     remainingQuota:
       voucher.quota === null ? null : Math.max(0, voucher.quota - usedCount),
-    status: getVoucherStatus(voucher, usedCount),
+    status: getAdminVoucherStatus(voucher, usedCount),
+    ruleSummary,
   };
 }
 
@@ -117,6 +119,21 @@ async function requireAdmin() {
   }
 
   return { session, response: null };
+}
+
+async function ensureRestaurantExists(restaurantId: string | null | undefined) {
+  if (!restaurantId) {
+    return;
+  }
+
+  const restaurant = await prisma.restaurant.findUnique({
+    where: { id: restaurantId },
+    select: { id: true },
+  });
+
+  if (!restaurant) {
+    throw new Error("Toko untuk voucher tidak ditemukan.");
+  }
 }
 
 export async function PATCH(request: Request, { params }: AdminVoucherRouteProps) {
@@ -151,6 +168,8 @@ export async function PATCH(request: Request, { params }: AdminVoucherRouteProps
       );
     }
 
+    await ensureRestaurantExists(parsed.data.restaurantId);
+
     const data = {
       code: parsed.data.code?.toUpperCase(),
       title: parsed.data.title,
@@ -158,9 +177,21 @@ export async function PATCH(request: Request, { params }: AdminVoucherRouteProps
         parsed.data.description === undefined
           ? undefined
           : parsed.data.description || null,
+      campaignName:
+        parsed.data.campaignName === undefined
+          ? undefined
+          : parsed.data.campaignName || null,
       discount: parsed.data.discount,
       minSpend: parsed.data.minSpend,
       quota: parsed.data.quota,
+      perUserLimit: parsed.data.perUserLimit,
+      firstOrderOnly: parsed.data.firstOrderOnly,
+      restaurantId:
+        parsed.data.restaurantId === undefined
+          ? undefined
+          : parsed.data.restaurantId || null,
+      category:
+        parsed.data.category === undefined ? undefined : parsed.data.category || null,
       active: parsed.data.active,
       startsAt,
       endsAt,
@@ -169,6 +200,12 @@ export async function PATCH(request: Request, { params }: AdminVoucherRouteProps
       where: { id },
       data,
       include: {
+        restaurant: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
         redemptions: {
           select: {
             orderId: true,

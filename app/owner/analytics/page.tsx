@@ -5,17 +5,22 @@ import {
   ArrowUpRight,
   BarChart3,
   Clock3,
+  Download,
   Leaf,
   PackageCheck,
+  Percent,
   PieChart,
-  RefreshCcw,
+  RotateCcw,
   Star,
   TrendingUp,
+  UsersRound,
   UtensilsCrossed,
   WalletCards,
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+
+import { InlineNotice, StateCard } from "@/components/ui-state";
 
 const formatRp = (amount: number) =>
   new Intl.NumberFormat("id-ID", {
@@ -31,7 +36,7 @@ const periodOptions = [
 ] as const;
 
 type PeriodDays = (typeof periodOptions)[number]["days"];
-type KpiTone = "emerald" | "blue" | "amber";
+type KpiTone = "emerald" | "blue" | "amber" | "red" | "purple";
 type ApiAnalytics = {
   kpis: {
     netRevenue: number;
@@ -40,6 +45,16 @@ type ApiAnalytics = {
     orderTrend: string;
     foodSavedKg: number;
     foodSavedTrend: string;
+    conversionRate: number;
+    conversionTrend: string;
+    refundRate: number;
+    refundTrend: string;
+    repeatCustomerRate: number;
+    repeatCustomerTrend: string;
+    repeatCustomers: number;
+    uniqueCustomers: number;
+    totalOperationalOrders: number;
+    refundedOrders: number;
   };
   revenue: {
     day: string;
@@ -59,16 +74,22 @@ type ApiAnalytics = {
     sold: number;
     revenue: number;
     stockRate: number;
+    orderCount: number;
+    avgPrice: number;
+    refundCount: number;
+    contributionRate: number;
   }[];
   pickupWindows: {
     time: string;
     value: number;
     orders: number;
+    revenue: number;
+    share: number;
   }[];
   recommendation: string;
   peakLabel: string;
   insights: {
-    type: "time" | "rating" | "menu";
+    type: "time" | "rating" | "menu" | "conversion" | "refund" | "repeat";
     title: string;
     value: string;
     description: string;
@@ -104,6 +125,16 @@ const toneClassByKpiTone = {
     iconClassName: "text-emerald-600",
     trendClassName: "bg-emerald-50 text-emerald-600",
   },
+  purple: {
+    iconWrapClassName: "bg-purple-50",
+    iconClassName: "text-purple-600",
+    trendClassName: "bg-purple-50 text-purple-600",
+  },
+  red: {
+    iconWrapClassName: "bg-red-50",
+    iconClassName: "text-red-600",
+    trendClassName: "bg-red-50 text-red-600",
+  },
 } as const;
 
 const insightIconByType: Record<ApiAnalytics["insights"][number]["type"], {
@@ -114,9 +145,21 @@ const insightIconByType: Record<ApiAnalytics["insights"][number]["type"], {
     icon: UtensilsCrossed,
     className: "bg-purple-50 text-purple-600",
   },
+  conversion: {
+    icon: Percent,
+    className: "bg-emerald-50 text-emerald-600",
+  },
   rating: {
     icon: Star,
     className: "bg-amber-50 text-amber-600",
+  },
+  refund: {
+    icon: RotateCcw,
+    className: "bg-red-50 text-red-600",
+  },
+  repeat: {
+    icon: UsersRound,
+    className: "bg-blue-50 text-blue-600",
   },
   time: {
     icon: Clock3,
@@ -132,6 +175,12 @@ function formatKgValue(value: number) {
   })} Kg`;
 }
 
+function formatPercentValue(value: number) {
+  return `${value.toLocaleString("id-ID", {
+    maximumFractionDigits: 1,
+  })}%`;
+}
+
 function getTrendIconClass(trend: string) {
   return trend.startsWith("-") ? "rotate-90" : "";
 }
@@ -140,6 +189,7 @@ export default function OwnerAnalyticsPage() {
   const [activePeriod, setActivePeriod] = useState<PeriodDays>(7);
   const [data, setData] = useState<AnalyticsResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isExporting, setIsExporting] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const analytics = data?.analytics ?? null;
   const activePeriodLabel =
@@ -178,6 +228,38 @@ export default function OwnerAnalyticsPage() {
       },
     ];
   }, [activePeriodLabel, analytics]);
+  const operationalKpis = useMemo(() => {
+    if (!analytics) {
+      return [];
+    }
+
+    return [
+      {
+        label: "Conversion Rate",
+        value: formatPercentValue(analytics.kpis.conversionRate),
+        trend: analytics.kpis.conversionTrend,
+        helper: `${analytics.kpis.completedOrders} selesai dari ${analytics.kpis.totalOperationalOrders} order`,
+        icon: Percent,
+        tone: "purple" as KpiTone,
+      },
+      {
+        label: "Refund Rate",
+        value: formatPercentValue(analytics.kpis.refundRate),
+        trend: analytics.kpis.refundTrend,
+        helper: `${analytics.kpis.refundedOrders} order refund`,
+        icon: RotateCcw,
+        tone: "red" as KpiTone,
+      },
+      {
+        label: "Repeat Customer",
+        value: formatPercentValue(analytics.kpis.repeatCustomerRate),
+        trend: analytics.kpis.repeatCustomerTrend,
+        helper: `${analytics.kpis.repeatCustomers}/${analytics.kpis.uniqueCustomers} customer repeat`,
+        icon: UsersRound,
+        tone: "blue" as KpiTone,
+      },
+    ];
+  }, [analytics]);
 
   useEffect(() => {
     let ignore = false;
@@ -220,8 +302,39 @@ export default function OwnerAnalyticsPage() {
     };
   }, [activePeriod]);
 
+  const handleExportCsv = async () => {
+    setIsExporting(true);
+    setNotice(null);
+
+    try {
+      const response = await fetch(
+        `/api/owner/analytics?days=${activePeriod}&format=csv`,
+        { cache: "no-store" },
+      );
+
+      if (!response.ok) {
+        throw new Error("Export laporan gagal.");
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+
+      link.href = url;
+      link.download = `resqfood-owner-analytics-${activePeriod}d.csv`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Export laporan gagal.");
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   return (
-    <div className="mx-auto max-w-5xl space-y-6 text-gray-900">
+    <div className="mx-auto max-w-7xl space-y-6 text-gray-900">
       <header className="flex flex-col gap-5 rounded-[32px] border border-gray-100 bg-white p-6 shadow-[0_10px_40px_rgba(15,23,42,0.05)] lg:flex-row lg:items-center lg:justify-between">
         <div>
           <p className="text-xs font-extrabold tracking-[0.22em] text-emerald-500 uppercase">
@@ -236,61 +349,99 @@ export default function OwnerAnalyticsPage() {
           </p>
         </div>
 
-        <div className="flex w-full rounded-2xl border border-gray-100 bg-gray-50 p-1 lg:w-fit">
-          {periodOptions.map((period) => {
-            const isActive = activePeriod === period.days;
+        <div className="flex w-full flex-col gap-3 sm:flex-row lg:w-fit">
+          <div className="flex rounded-2xl border border-gray-100 bg-gray-50 p-1">
+            {periodOptions.map((period) => {
+              const isActive = activePeriod === period.days;
 
-            return (
-              <button
-                key={period.days}
-                type="button"
-                onClick={() => setActivePeriod(period.days)}
-                className={`flex-1 rounded-xl px-4 py-2.5 text-xs font-extrabold transition-all lg:flex-none ${
-                  isActive
-                    ? "bg-gray-900 text-white shadow-[0_8px_20px_rgba(15,23,42,0.16)]"
-                    : "text-gray-500 hover:text-gray-900"
-                }`}
-              >
-                {period.label}
-              </button>
-            );
-          })}
+              return (
+                <button
+                  key={period.days}
+                  type="button"
+                  onClick={() => setActivePeriod(period.days)}
+                  className={`flex-1 rounded-xl px-4 py-2.5 text-xs font-extrabold transition-all lg:flex-none ${
+                    isActive
+                      ? "bg-gray-900 text-white shadow-[0_8px_20px_rgba(15,23,42,0.16)]"
+                      : "text-gray-500 hover:text-gray-900"
+                  }`}
+                >
+                  {period.label}
+                </button>
+              );
+            })}
+          </div>
+          <button
+            type="button"
+            onClick={() => void handleExportCsv()}
+            disabled={isExporting || !analytics}
+            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-2.5 text-xs font-extrabold text-emerald-700 transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
+          >
+            <Download size={15} />
+            {isExporting ? "Export..." : "Export CSV"}
+          </button>
         </div>
       </header>
 
       {notice ? (
-        <div className="rounded-2xl border border-red-100 bg-red-50 p-4 text-sm font-bold text-red-700">
-          {notice}
-        </div>
+        <InlineNotice variant="error" description={notice} />
       ) : null}
 
       {isLoading ? (
-        <div className="rounded-[32px] border border-gray-100 bg-white p-10 text-center shadow-sm">
-          <RefreshCcw
-            size={34}
-            className="mx-auto mb-4 animate-spin text-emerald-600"
-          />
-          <h2 className="text-xl font-extrabold text-gray-950">
-            Memuat analytics...
-          </h2>
-          <p className="mt-2 text-sm font-medium text-gray-500">
-            Menghitung data toko dari database.
-          </p>
-        </div>
+        <StateCard
+          title="Memuat analytics"
+          description="Menghitung data toko dari database."
+          variant="loading"
+          className="rounded-[32px]"
+        />
       ) : data?.restaurant === null ? (
-        <div className="rounded-[32px] border border-gray-100 bg-white p-10 text-center shadow-sm">
-          <BarChart3 size={38} className="mx-auto mb-4 text-gray-300" />
-          <h2 className="text-xl font-extrabold text-gray-950">
-            Restoran belum aktif
-          </h2>
-          <p className="mt-2 text-sm font-medium text-gray-500">
-            Analytics akan tersedia setelah pendaftaran mitra disetujui admin.
-          </p>
-        </div>
+        <StateCard
+          title="Restoran belum aktif"
+          description="Analytics akan tersedia setelah pendaftaran mitra disetujui admin."
+          variant="empty"
+          className="rounded-[32px]"
+        />
       ) : analytics ? (
         <>
           <section className="grid grid-cols-1 gap-5 md:grid-cols-3">
             {kpis.map((kpi) => {
+              const Icon = kpi.icon;
+              const tone = toneClassByKpiTone[kpi.tone];
+
+              return (
+                <article
+                  key={kpi.label}
+                  className="rounded-[28px] border border-gray-100 bg-white p-6 shadow-sm"
+                >
+                  <div className="mb-5 flex items-center justify-between">
+                    <div
+                      className={`flex h-12 w-12 items-center justify-center rounded-2xl ${tone.iconWrapClassName}`}
+                    >
+                      <Icon size={23} className={tone.iconClassName} />
+                    </div>
+                    <span
+                      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-extrabold ${tone.trendClassName}`}
+                    >
+                      <ArrowUpRight
+                        size={13}
+                        className={getTrendIconClass(kpi.trend)}
+                      />
+                      {kpi.trend}
+                    </span>
+                  </div>
+                  <p className="text-sm font-bold text-gray-500">{kpi.label}</p>
+                  <h2 className="mt-1 text-2xl font-extrabold tracking-tight text-gray-950">
+                    {kpi.value}
+                  </h2>
+                  <p className="mt-2 text-xs font-medium text-gray-400">
+                    {kpi.helper}
+                  </p>
+                </article>
+              );
+            })}
+          </section>
+
+          <section className="grid grid-cols-1 gap-5 md:grid-cols-3">
+            {operationalKpis.map((kpi) => {
               const Icon = kpi.icon;
               const tone = toneClassByKpiTone[kpi.tone];
 
@@ -466,6 +617,9 @@ export default function OwnerAnalyticsPage() {
                             <p className="mt-0.5 text-xs font-medium text-gray-500">
                               {item.category}
                             </p>
+                            <p className="mt-1 text-[10px] font-bold text-gray-400">
+                              {item.orderCount} order • avg {formatRp(item.avgPrice)} • kontribusi {formatPercentValue(item.contributionRate)}
+                            </p>
                           </div>
                         </div>
                         <div className="text-right">
@@ -474,6 +628,9 @@ export default function OwnerAnalyticsPage() {
                           </p>
                           <p className="text-[10px] font-bold text-gray-400">
                             {formatRp(item.revenue)}
+                          </p>
+                          <p className="text-[10px] font-bold text-red-400">
+                            refund {item.refundCount}
                           </p>
                         </div>
                       </div>
@@ -510,7 +667,7 @@ export default function OwnerAnalyticsPage() {
                     <div className="mb-2 flex items-center justify-between text-xs font-bold">
                       <span className="text-gray-500">{window.time}</span>
                       <span className="text-gray-950">
-                        {window.orders} order
+                        {window.orders} order • {formatPercentValue(window.share)}
                       </span>
                     </div>
                     <div className="h-3 overflow-hidden rounded-full bg-gray-100">
@@ -519,6 +676,9 @@ export default function OwnerAnalyticsPage() {
                         style={{ width: `${window.value}%` }}
                       />
                     </div>
+                    <p className="mt-1 text-[10px] font-bold text-gray-400">
+                      Revenue {formatRp(window.revenue)}
+                    </p>
                   </div>
                 ))}
               </div>

@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { getCurrentSession } from "@/lib/auth-session";
+import { getStorePickupCoordinateIssue } from "@/lib/location-quality";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -38,23 +39,19 @@ const updateRestaurantLocationSchema = z
       });
     }
 
-    if (data.latitude !== undefined && (data.latitude < -90 || data.latitude > 90)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["latitude"],
-        message: "Titik lokasi toko tidak valid. Klik Ambil Lokasi lagi.",
+    if (data.latitude !== undefined && data.longitude !== undefined) {
+      const coordinateIssue = getStorePickupCoordinateIssue({
+        latitude: data.latitude,
+        longitude: data.longitude,
       });
-    }
 
-    if (
-      data.longitude !== undefined &&
-      (data.longitude < -180 || data.longitude > 180)
-    ) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["longitude"],
-        message: "Titik lokasi toko tidak valid. Klik Ambil Lokasi lagi.",
-      });
+      if (coordinateIssue) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["latitude"],
+          message: coordinateIssue,
+        });
+      }
     }
   });
 
@@ -73,7 +70,16 @@ export async function GET() {
     include: {
       applications: {
         include: {
-          documents: true,
+          documents: {
+            include: {
+              asset: true,
+              revisions: {
+                include: { asset: true },
+                orderBy: { createdAt: "desc" },
+              },
+            },
+            orderBy: [{ type: "asc" }, { createdAt: "asc" }],
+          },
         },
         orderBy: { submittedAt: "desc" },
         take: 1,

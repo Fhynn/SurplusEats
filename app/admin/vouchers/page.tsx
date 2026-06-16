@@ -7,12 +7,18 @@ import {
   Plus,
   RefreshCcw,
   Save,
+  Store,
+  Tag,
   TicketPercent,
   ToggleLeft,
   ToggleRight,
+  Users,
 } from "lucide-react";
 import type { FormEvent } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+
+import { StateCard } from "@/components/ui-state";
+import { CATEGORIES } from "@/lib/customer-data";
 
 type VoucherStatus = "active" | "scheduled" | "expired" | "paused" | "quota_habis";
 
@@ -21,9 +27,15 @@ type AdminVoucher = {
   code: string;
   title: string;
   description: string | null;
+  campaignName: string | null;
   discount: number;
   minSpend: number;
   quota: number | null;
+  perUserLimit: number;
+  firstOrderOnly: boolean;
+  restaurantId: string | null;
+  restaurantName: string | null;
+  category: string | null;
   active: boolean;
   startsAt: string | null;
   endsAt: string | null;
@@ -32,27 +44,43 @@ type AdminVoucher = {
   usedCount: number;
   remainingQuota: number | null;
   status: VoucherStatus;
+  ruleSummary: string[];
 };
 
 type VoucherFormState = {
   code: string;
   title: string;
   description: string;
+  campaignName: string;
   discount: string;
   minSpend: string;
   quota: string;
+  perUserLimit: string;
+  firstOrderOnly: boolean;
+  restaurantId: string;
+  category: string;
   active: boolean;
   startsAt: string;
   endsAt: string;
+};
+
+type AdminRestaurantOption = {
+  id: string;
+  name: string;
 };
 
 const initialFormState: VoucherFormState = {
   code: "",
   title: "",
   description: "",
+  campaignName: "",
   discount: "",
   minSpend: "0",
   quota: "",
+  perUserLimit: "1",
+  firstOrderOnly: false,
+  restaurantId: "",
+  category: "",
   active: true,
   startsAt: "",
   endsAt: "",
@@ -141,6 +169,7 @@ function statusBadge(status: VoucherStatus) {
 
 export default function AdminVouchersPage() {
   const [vouchers, setVouchers] = useState<AdminVoucher[]>([]);
+  const [restaurants, setRestaurants] = useState<AdminRestaurantOption[]>([]);
   const [formState, setFormState] = useState<VoucherFormState>(initialFormState);
   const [editingVoucherId, setEditingVoucherId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -200,6 +229,34 @@ export default function AdminVouchersPage() {
     void loadVouchers();
   }, [loadVouchers]);
 
+  useEffect(() => {
+    let ignore = false;
+
+    async function loadRestaurants() {
+      try {
+        const response = await fetch("/api/restaurants", { cache: "no-store" });
+        const data = (await response.json()) as {
+          ok: boolean;
+          restaurants?: AdminRestaurantOption[];
+        };
+
+        if (!ignore && response.ok && data.ok) {
+          setRestaurants(data.restaurants ?? []);
+        }
+      } catch {
+        if (!ignore) {
+          setRestaurants([]);
+        }
+      }
+    }
+
+    void loadRestaurants();
+
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
   const resetForm = () => {
     setFormState(initialFormState);
     setEditingVoucherId(null);
@@ -207,13 +264,30 @@ export default function AdminVouchersPage() {
 
   const fillFormForEdit = (voucher: AdminVoucher) => {
     setEditingVoucherId(voucher.id);
+
+    if (
+      voucher.restaurantId &&
+      voucher.restaurantName &&
+      !restaurants.some((restaurant) => restaurant.id === voucher.restaurantId)
+    ) {
+      setRestaurants((current) => [
+        ...current,
+        { id: voucher.restaurantId as string, name: voucher.restaurantName as string },
+      ]);
+    }
+
     setFormState({
       code: voucher.code,
       title: voucher.title,
       description: voucher.description ?? "",
+      campaignName: voucher.campaignName ?? "",
       discount: String(voucher.discount),
       minSpend: String(voucher.minSpend),
       quota: voucher.quota === null ? "" : String(voucher.quota),
+      perUserLimit: String(voucher.perUserLimit || 1),
+      firstOrderOnly: voucher.firstOrderOnly,
+      restaurantId: voucher.restaurantId ?? "",
+      category: voucher.category ?? "",
       active: voucher.active,
       startsAt: toLocalDateTimeInput(voucher.startsAt),
       endsAt: toLocalDateTimeInput(voucher.endsAt),
@@ -230,9 +304,14 @@ export default function AdminVouchersPage() {
         code: formState.code.trim().toUpperCase(),
         title: formState.title.trim(),
         description: formState.description.trim() || null,
+        campaignName: formState.campaignName.trim() || null,
         discount: Number(formState.discount),
         minSpend: Number(formState.minSpend || 0),
         quota: formState.quota.trim() ? Number(formState.quota) : null,
+        perUserLimit: Number(formState.perUserLimit || 1),
+        firstOrderOnly: formState.firstOrderOnly,
+        restaurantId: formState.restaurantId || null,
+        category: formState.category || null,
         active: formState.active,
         startsAt: dateInputToIso(formState.startsAt),
         endsAt: dateInputToIso(formState.endsAt),
@@ -470,6 +549,23 @@ export default function AdminVouchersPage() {
               />
             </label>
 
+            <label className="block">
+              <span className="mb-2 block text-xs font-extrabold text-gray-500">
+                Campaign
+              </span>
+              <input
+                value={formState.campaignName}
+                onChange={(event) =>
+                  setFormState((current) => ({
+                    ...current,
+                    campaignName: event.target.value,
+                  }))
+                }
+                placeholder="Flash Rescue Weekend"
+                className="w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-bold outline-none focus:border-emerald-500 focus:bg-white"
+              />
+            </label>
+
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="block">
                 <span className="mb-2 block text-xs font-extrabold text-gray-500">
@@ -508,6 +604,115 @@ export default function AdminVouchersPage() {
                   className="w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-extrabold outline-none focus:border-emerald-500 focus:bg-white"
                 />
               </label>
+            </div>
+
+            <div className="rounded-[22px] border border-emerald-100 bg-emerald-50 p-4">
+              <div className="mb-4 flex items-center gap-2">
+                <Tag size={17} className="text-emerald-600" />
+                <div>
+                  <p className="text-sm font-extrabold text-emerald-950">
+                    Rules Voucher
+                  </p>
+                  <p className="text-xs font-bold text-emerald-700">
+                    Kosongkan toko/kategori untuk voucher global.
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <label className="block">
+                  <span className="mb-2 flex items-center gap-1.5 text-xs font-extrabold text-emerald-800">
+                    <Store size={13} />
+                    Khusus Toko
+                  </span>
+                  <select
+                    value={formState.restaurantId}
+                    onChange={(event) =>
+                      setFormState((current) => ({
+                        ...current,
+                        restaurantId: event.target.value,
+                      }))
+                    }
+                    className="w-full rounded-2xl border border-emerald-100 bg-white px-4 py-3 text-sm font-extrabold text-gray-900 outline-none focus:border-emerald-500"
+                  >
+                    <option value="">Semua toko</option>
+                    {restaurants.map((restaurant) => (
+                      <option key={restaurant.id} value={restaurant.id}>
+                        {restaurant.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="block">
+                    <span className="mb-2 block text-xs font-extrabold text-emerald-800">
+                      Kategori
+                    </span>
+                    <select
+                      value={formState.category}
+                      onChange={(event) =>
+                        setFormState((current) => ({
+                          ...current,
+                          category: event.target.value,
+                        }))
+                      }
+                      className="w-full rounded-2xl border border-emerald-100 bg-white px-4 py-3 text-sm font-extrabold text-gray-900 outline-none focus:border-emerald-500"
+                    >
+                      <option value="">Semua kategori</option>
+                      {CATEGORIES.filter((category) => category !== "Semua").map(
+                        (category) => (
+                          <option key={category} value={category}>
+                            {category}
+                          </option>
+                        ),
+                      )}
+                    </select>
+                  </label>
+
+                  <label className="block">
+                    <span className="mb-2 flex items-center gap-1.5 text-xs font-extrabold text-emerald-800">
+                      <Users size={13} />
+                      Limit per Akun
+                    </span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={100}
+                      value={formState.perUserLimit}
+                      onChange={(event) =>
+                        setFormState((current) => ({
+                          ...current,
+                          perUserLimit: event.target.value,
+                        }))
+                      }
+                      className="w-full rounded-2xl border border-emerald-100 bg-white px-4 py-3 text-sm font-extrabold outline-none focus:border-emerald-500"
+                    />
+                  </label>
+                </div>
+
+                <label className="flex items-center justify-between gap-3 rounded-2xl border border-emerald-100 bg-white px-4 py-3">
+                  <span>
+                    <span className="block text-xs font-extrabold text-emerald-800">
+                      First Order Only
+                    </span>
+                    <span className="text-xs font-bold text-gray-500">
+                      Customer yang sudah pernah checkout tidak bisa pakai.
+                    </span>
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={formState.firstOrderOnly}
+                    onChange={(event) =>
+                      setFormState((current) => ({
+                        ...current,
+                        firstOrderOnly: event.target.checked,
+                      }))
+                    }
+                    className="h-5 w-5 accent-emerald-500"
+                  />
+                </label>
+              </div>
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2">
@@ -620,13 +825,19 @@ export default function AdminVouchersPage() {
           </div>
 
           {isLoading ? (
-            <div className="rounded-2xl bg-gray-50 p-8 text-center text-sm font-bold text-gray-500">
-              Memuat voucher...
-            </div>
+            <StateCard
+              title="Memuat voucher"
+              description="Mengambil rule voucher, campaign, quota, dan status pemakaian."
+              variant="loading"
+              size="sm"
+            />
           ) : vouchers.length === 0 ? (
-            <div className="rounded-2xl bg-gray-50 p-8 text-center text-sm font-bold text-gray-500">
-              Belum ada voucher di database.
-            </div>
+            <StateCard
+              title="Belum ada voucher"
+              description="Buat voucher baru untuk promo global, toko, kategori, atau first order."
+              variant="empty"
+              size="sm"
+            />
           ) : (
             <div className="space-y-4">
               {vouchers.map((voucher) => (
@@ -648,6 +859,16 @@ export default function AdminVouchersPage() {
                       <p className="mt-1 max-w-2xl text-xs leading-5 font-medium text-gray-500">
                         {voucher.description || "Tidak ada deskripsi."}
                       </p>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {voucher.ruleSummary.map((rule) => (
+                          <span
+                            key={rule}
+                            className="rounded-full border border-emerald-100 bg-white px-3 py-1 text-[10px] font-extrabold text-emerald-700"
+                          >
+                            {rule}
+                          </span>
+                        ))}
+                      </div>
                     </div>
                     <div className="flex shrink-0 gap-2">
                       <button
@@ -676,7 +897,7 @@ export default function AdminVouchersPage() {
                     </div>
                   </div>
 
-                  <div className="mt-4 grid gap-3 text-xs font-bold md:grid-cols-4">
+                  <div className="mt-4 grid gap-3 text-xs font-bold md:grid-cols-3 xl:grid-cols-6">
                     <div className="rounded-2xl bg-white px-4 py-3 text-gray-500">
                       Diskon
                       <span className="mt-1 block text-sm font-extrabold text-gray-950">
@@ -697,11 +918,30 @@ export default function AdminVouchersPage() {
                       </span>
                     </div>
                     <div className="rounded-2xl bg-white px-4 py-3 text-gray-500">
-                      Berlaku
-                      <span className="mt-1 block text-xs font-extrabold text-gray-950">
-                        {formatDate(voucher.startsAt)} - {formatDate(voucher.endsAt)}
+                      Target
+                      <span className="mt-1 block truncate text-xs font-extrabold text-gray-950">
+                        {voucher.restaurantName || "Semua toko"}
                       </span>
                     </div>
+                    <div className="rounded-2xl bg-white px-4 py-3 text-gray-500">
+                      Kategori
+                      <span className="mt-1 block text-sm font-extrabold text-gray-950">
+                        {voucher.category || "Semua"}
+                      </span>
+                    </div>
+                    <div className="rounded-2xl bg-white px-4 py-3 text-gray-500">
+                      Limit
+                      <span className="mt-1 block text-xs font-extrabold text-gray-950">
+                        {voucher.perUserLimit}x per akun
+                        {voucher.firstOrderOnly ? " | order pertama" : ""}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="mt-3 rounded-2xl bg-white px-4 py-3 text-xs font-bold text-gray-500">
+                    Berlaku
+                    <span className="mt-1 block text-xs font-extrabold text-gray-950">
+                      {formatDate(voucher.startsAt)} - {formatDate(voucher.endsAt)}
+                    </span>
                   </div>
                 </article>
               ))}

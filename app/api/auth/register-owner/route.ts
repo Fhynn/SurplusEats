@@ -8,7 +8,10 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { createSessionToken, setSessionCookie } from "@/lib/auth-session";
+import { createPersistedSession } from "@/lib/auth-session-records";
 import { slugify } from "@/lib/backend-utils";
+import { getStorePickupCoordinateIssue } from "@/lib/location-quality";
+import { deliverNotifications } from "@/lib/notification-delivery";
 import { hashPassword } from "@/lib/password";
 import { prisma, type PrismaTransactionClient } from "@/lib/prisma";
 
@@ -41,6 +44,20 @@ const ownerRegisterSchema = z
     city: z.string().trim().min(2, "Kota wajib diisi.").default("Jakarta"),
     latitude: coordinateSchema,
     longitude: coordinateSchema,
+    bankName: z
+      .string()
+      .trim()
+      .min(2, "Nama bank/e-wallet wajib diisi.")
+      .max(40, "Nama bank/e-wallet maksimal 40 karakter."),
+    bankAccountNumber: z
+      .string()
+      .trim()
+      .regex(/^\d{6,20}$/, "Nomor rekening harus 6-20 digit angka."),
+    bankAccountHolder: z
+      .string()
+      .trim()
+      .min(3, "Nama pemilik rekening minimal 3 karakter.")
+      .max(80, "Nama pemilik rekening maksimal 80 karakter."),
     description: z.string().trim().optional(),
   })
   .superRefine((data, ctx) => {
@@ -63,23 +80,19 @@ const ownerRegisterSchema = z
       });
     }
 
-    if (data.latitude !== undefined && (data.latitude < -90 || data.latitude > 90)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["latitude"],
-        message: "Titik lokasi toko tidak valid. Klik Ambil Lokasi lagi.",
+    if (data.latitude !== undefined && data.longitude !== undefined) {
+      const coordinateIssue = getStorePickupCoordinateIssue({
+        latitude: data.latitude,
+        longitude: data.longitude,
       });
-    }
 
-    if (
-      data.longitude !== undefined &&
-      (data.longitude < -180 || data.longitude > 180)
-    ) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["longitude"],
-        message: "Titik lokasi toko tidak valid. Klik Ambil Lokasi lagi.",
-      });
+      if (coordinateIssue) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["latitude"],
+          message: coordinateIssue,
+        });
+      }
     }
   });
 
@@ -171,6 +184,9 @@ async function readRegisterPayload(request: Request) {
       city: getString("city") || "Jakarta",
       latitude: getString("latitude") || undefined,
       longitude: getString("longitude") || undefined,
+      bankName: getString("bankName"),
+      bankAccountNumber: getString("bankAccountNumber").replace(/\D/g, ""),
+      bankAccountHolder: getString("bankAccountHolder"),
       description: getString("description") || undefined,
     },
     documents,
@@ -294,6 +310,9 @@ export async function POST(request: Request) {
         latitude: data.latitude,
         longitude: data.longitude,
         description: data.description,
+        bankName: data.bankName,
+        bankAccountNumber: data.bankAccountNumber,
+        bankAccountHolder: data.bankAccountHolder,
         status: ApplicationStatus.PENDING,
       },
     });
@@ -312,13 +331,24 @@ export async function POST(request: Request) {
         },
       });
 
-      await tx.verificationDocument.create({
+      const verificationDocument = await tx.verificationDocument.create({
         data: {
           applicationId: application.id,
           assetId: asset.id,
           type: document.type,
           label: document.label,
           status: "submitted",
+        },
+      });
+
+      await tx.verificationDocumentRevision.create({
+        data: {
+          verificationDocumentId: verificationDocument.id,
+          assetId: asset.id,
+          revision: 1,
+          status: "submitted",
+          event: "SUBMITTED",
+          createdById: user.id,
         },
       });
     }
@@ -335,7 +365,22 @@ export async function POST(request: Request) {
 
     return { user, application };
   });
+  await deliverNotifications([
+    {
+      userId: result.user.id,
+      type: "SYSTEM",
+      title: "Pendaftaran mitra diterima",
+      body: "Admin akan meninjau data usaha sebelum dashboard owner aktif.",
+      href: "/owner/verify",
+    },
+  ]);
+  const persistedSession = await createPersistedSession({
+    userId: result.user.id,
+    request,
+    kind: "REGISTER",
+  });
   const token = await createSessionToken({
+    sessionId: persistedSession.tokenId,
     userId: result.user.id,
     email: result.user.email,
     name: result.user.name,
@@ -359,7 +404,7 @@ export async function POST(request: Request) {
     { status: 201 },
   );
 
-  setSessionCookie(response, token);
+  setSessionCookie(response, token, persistedSession.maxAgeSeconds);
 
   return response;
 }

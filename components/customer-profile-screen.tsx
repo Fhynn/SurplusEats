@@ -344,7 +344,7 @@ export function CustomerProfileScreen() {
             <button
               type="button"
               onClick={() => router.push("/profile/edit")}
-              className="motion-press flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gray-50 text-gray-600 transition-colors hover:bg-emerald-50 hover:text-emerald-600"
+              className="motion-press flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gray-50 text-gray-600 transition-colors hover:bg-emerald-50 hover:text-emerald-600"
               aria-label="Edit profil"
             >
               <PencilLine size={18} />

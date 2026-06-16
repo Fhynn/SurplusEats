@@ -17,6 +17,8 @@ export type ApiOrder = {
   subtotal: number;
   discount: number;
   serviceFee: number;
+  taxFee: number;
+  platformFee: number;
   total: number;
   pickupTime: string | null;
   pickupCode: string | null;
@@ -31,6 +33,22 @@ export type ApiOrder = {
   review: {
     rating: number;
     comment: string | null;
+    images?: Array<{
+      asset: {
+        id: string;
+        url: string;
+      };
+    }>;
+  } | null;
+  refundRequest?: {
+    id: string;
+    status: "PENDING" | "REVIEWING" | "APPROVED" | "REJECTED" | "PAID";
+    reason: string;
+    description: string;
+    adminNote: string | null;
+    reviewedAt: string | null;
+    paidAt: string | null;
+    createdAt: string;
   } | null;
   items: Array<{
     menuNameSnapshot: string;
@@ -61,6 +79,10 @@ export type CustomerOrderCard = {
   pickupRouteLabel: string;
   reviewRating?: number;
   reviewComment?: string | null;
+  reviewImages?: Array<{
+    id: string;
+    url: string;
+  }>;
 };
 
 export function mapOrderStatus(status: string): UiOrderStatus {
@@ -132,5 +154,10 @@ export function apiOrderToCard(
     pickupRouteLabel: pickupRoute.label,
     reviewRating: order.review?.rating,
     reviewComment: order.review?.comment,
+    reviewImages:
+      order.review?.images?.map((image) => ({
+        id: image.asset.id,
+        url: image.asset.url,
+      })) ?? [],
   };
 }

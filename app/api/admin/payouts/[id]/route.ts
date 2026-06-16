@@ -8,6 +8,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { getCurrentSession } from "@/lib/auth-session";
+import { createNotificationAndDeliver } from "@/lib/notification-delivery";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -20,6 +21,8 @@ interface AdminPayoutRouteProps {
 const updatePayoutSchema = z.object({
   action: z.enum(["APPROVE", "REJECT"]),
   adminNote: z.string().trim().max(500).optional(),
+  transferReference: z.string().trim().max(120).optional(),
+  transferProofUrl: z.string().trim().url().max(500).optional(),
 });
 
 export async function PATCH(
@@ -44,6 +47,19 @@ export async function PATCH(
         ok: false,
         message: "Aksi payout tidak valid.",
         issues: parsed.error.flatten(),
+      },
+      { status: 400 },
+    );
+  }
+
+  if (
+    parsed.data.action === "APPROVE" &&
+    (!parsed.data.transferReference || parsed.data.transferReference.length < 4)
+  ) {
+    return NextResponse.json(
+      {
+        ok: false,
+        message: "Nomor referensi transfer wajib diisi saat menyetujui payout.",
       },
       { status: 400 },
     );
@@ -81,14 +97,24 @@ export async function PATCH(
     parsed.data.action === "APPROVE"
       ? WalletTransactionStatus.COMPLETED
       : WalletTransactionStatus.FAILED;
-  const nextDescription = parsed.data.adminNote
-    ? `${payout.description || "Pencairan saldo"} - Admin: ${parsed.data.adminNote}`
-    : payout.description;
   const updatedPayout = await prisma.walletTransaction.update({
     where: { id: payout.id },
     data: {
       status: nextStatus,
-      description: nextDescription,
+      processedAt: new Date(),
+      processedBy: session.name,
+      adminNote: parsed.data.adminNote,
+      transferReference:
+        nextStatus === WalletTransactionStatus.COMPLETED
+          ? parsed.data.transferReference
+          : undefined,
+      transferProofUrl:
+        nextStatus === WalletTransactionStatus.COMPLETED
+          ? parsed.data.transferProofUrl
+          : undefined,
+      description: parsed.data.adminNote
+        ? `${payout.description || "Pencairan saldo"} - Admin: ${parsed.data.adminNote}`
+        : payout.description,
     },
     include: {
       restaurant: {
@@ -99,22 +125,20 @@ export async function PATCH(
     },
   });
 
-  await prisma.notification.create({
-    data: {
-      userId: payout.restaurant.ownerId,
-      type: NotificationType.SYSTEM,
-      title:
-        nextStatus === WalletTransactionStatus.COMPLETED
-          ? "Pencairan saldo disetujui"
-          : "Pencairan saldo ditolak",
-      body:
-        nextStatus === WalletTransactionStatus.COMPLETED
-          ? `${payout.reference || "Request payout"} sudah disetujui admin.`
-          : `${payout.reference || "Request payout"} ditolak admin.${
-              parsed.data.adminNote ? ` Catatan: ${parsed.data.adminNote}` : ""
-            }`,
-      href: "/owner/wallet",
-    },
+  await createNotificationAndDeliver({
+    userId: payout.restaurant.ownerId,
+    type: NotificationType.SYSTEM,
+    title:
+      nextStatus === WalletTransactionStatus.COMPLETED
+        ? "Pencairan saldo disetujui"
+        : "Pencairan saldo ditolak",
+    body:
+      nextStatus === WalletTransactionStatus.COMPLETED
+        ? `${payout.reference || "Request payout"} disetujui. Referensi transfer: ${parsed.data.transferReference}.`
+        : `${payout.reference || "Request payout"} ditolak admin.${
+            parsed.data.adminNote ? ` Catatan: ${parsed.data.adminNote}` : ""
+          }`,
+    href: "/owner/wallet",
   });
 
   await prisma.adminActionLog.create({
@@ -130,6 +154,8 @@ export async function PATCH(
         reference: payout.reference,
         amount: Math.abs(payout.amount),
         adminNote: parsed.data.adminNote,
+        transferReference: parsed.data.transferReference,
+        transferProofUrl: parsed.data.transferProofUrl,
       },
     },
   });

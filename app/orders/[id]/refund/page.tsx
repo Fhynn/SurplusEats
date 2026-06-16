@@ -24,13 +24,13 @@ import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import { MobileDeviceFrame } from "@/components/mobile-device-frame";
 import { formatRp } from "@/lib/customer-data";
 import type { ApiOrder } from "@/lib/order-mapper";
-
-const refundReasons = [
-  "Makanan tidak sesuai deskripsi",
-  "Kualitas makanan tidak layak",
-  "Restoran membatalkan pickup",
-  "Item pesanan kurang",
-] as const;
+import {
+  getRefundSlaState,
+  getRefundStatusLabel,
+  refundReasonOptions,
+  refundReviewSlaHours,
+  type RefundStatusValue,
+} from "@/lib/refund-policy";
 
 const refundMethods = [
   {
@@ -67,6 +67,15 @@ const allowedEvidenceTypes = new Set([
   "image/gif",
 ]);
 
+function formatRefundTime(value: string | Date) {
+  return new Intl.DateTimeFormat("id-ID", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
 type UploadResponse = {
   ok: boolean;
   message?: string;
@@ -102,8 +111,11 @@ export default function CustomerRefundRequestPage() {
   const selectedRefundMethod = refundMethods.find(
     (method) => method.id === selectedMethod,
   );
+  const selectedReasonOption =
+    refundReasonOptions.find((reason) => reason.label === selectedReason) ?? null;
   const refundAmount = order?.total ?? 0;
   const restaurantName = order?.restaurant.name ?? "Restoran";
+  const supportHref = `/support?category=REFUND&order=${encodeURIComponent(orderId)}`;
   const completionItems = useMemo(
     () => [
       { label: "Alasan dipilih", done: Boolean(selectedReason) },
@@ -134,6 +146,14 @@ export default function CustomerRefundRequestPage() {
     requiredCompletion.every((item) => item.done) &&
     evidenceReady &&
     !isUploadingEvidence;
+  const existingRefund = order?.refundRequest ?? null;
+  const existingRefundSlaState = existingRefund
+    ? getRefundSlaState({
+        createdAt: existingRefund.createdAt,
+        reviewedAt: existingRefund.reviewedAt,
+        status: existingRefund.status as RefundStatusValue,
+      })
+    : null;
 
   useEffect(() => {
     let ignore = false;
@@ -358,7 +378,7 @@ export default function CustomerRefundRequestPage() {
             </h1>
             <p className="mt-3 max-w-xs text-sm leading-6 font-medium text-emerald-50">
               Tim ResQFood akan meninjau bukti dan memberi keputusan melalui
-              notifikasi dalam 1x24 jam.
+              notifikasi dalam {refundReviewSlaHours} jam.
             </p>
 
             <div className="mt-8 w-full max-w-xs rounded-[24px] border border-white/20 bg-white/10 p-4 text-left backdrop-blur-md">
@@ -389,10 +409,171 @@ export default function CustomerRefundRequestPage() {
               Cek Notifikasi
             </Link>
             <Link
+              href={supportHref}
+              className="block w-full rounded-2xl border border-white/40 bg-white/10 py-4 text-center text-sm font-extrabold text-white transition-colors hover:bg-white/15"
+            >
+              Buka Chat Support Refund
+            </Link>
+            <Link
               href="/orders"
               className="block w-full rounded-2xl border border-white/30 py-4 text-center text-sm font-extrabold text-white transition-colors hover:bg-white/10"
             >
               Kembali ke Riwayat
+            </Link>
+          </div>
+        </div>
+      </MobileDeviceFrame>
+    );
+  }
+
+  if (existingRefund) {
+    return (
+      <MobileDeviceFrame backgroundClassName="bg-[#f8fafc]">
+        <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-[#f8fafc]">
+          <header className="sticky top-0 z-20 flex items-center bg-white px-5 pt-10 pb-4 shadow-sm sm:px-6 md:mx-auto md:w-full md:max-w-5xl md:px-8">
+            <Link
+              href="/orders"
+              className="-ml-2 rounded-full p-2 transition-colors hover:bg-gray-100"
+              aria-label="Kembali ke riwayat pesanan"
+            >
+              <ChevronLeft size={24} className="text-gray-800" />
+            </Link>
+            <div className="ml-2">
+              <h1 className="text-lg font-extrabold text-gray-900">
+                Status Refund
+              </h1>
+              <p className="font-mono text-[11px] font-bold text-gray-400">
+                Order {orderId}
+              </p>
+            </div>
+          </header>
+
+          <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-6 [scrollbar-width:none] sm:px-6 md:mx-auto md:w-full md:max-w-5xl md:px-8 [&::-webkit-scrollbar]:hidden">
+            <section className="rounded-[28px] border border-gray-100 bg-white p-6 shadow-sm">
+              <div className="flex items-start gap-4">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
+                  <RefreshCcw size={24} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-extrabold tracking-[0.18em] text-emerald-600 uppercase">
+                    {getRefundStatusLabel(existingRefund.status)}
+                  </p>
+                  <h2 className="mt-1 text-xl font-extrabold text-gray-950">
+                    Refund sudah diajukan
+                  </h2>
+                  <p className="mt-2 text-sm leading-6 font-medium text-gray-500">
+                    {existingRefund.reason}
+                  </p>
+                </div>
+              </div>
+            </section>
+
+            <section className="rounded-[28px] border border-gray-100 bg-white p-6 shadow-sm">
+              <h2 className="mb-4 text-base font-extrabold text-gray-950">
+                Timeline Refund
+              </h2>
+              {[
+                {
+                  label: "Pengajuan diterima",
+                  done: true,
+                  time: formatRefundTime(existingRefund.createdAt),
+                },
+                {
+                  label: "Admin meninjau bukti",
+                  done: ["REVIEWING", "APPROVED", "REJECTED", "PAID"].includes(
+                    existingRefund.status,
+                  ),
+                  time: existingRefund.reviewedAt
+                    ? formatRefundTime(existingRefund.reviewedAt)
+                    : "Menunggu",
+                },
+                {
+                  label: "Keputusan dikirim",
+                  done: ["APPROVED", "REJECTED", "PAID"].includes(
+                    existingRefund.status,
+                  ),
+                  time: existingRefund.reviewedAt
+                    ? formatRefundTime(existingRefund.reviewedAt)
+                    : "Menunggu",
+                },
+                {
+                  label: "Refund dibayarkan",
+                  done: existingRefund.status === "PAID",
+                  time: existingRefund.paidAt
+                    ? formatRefundTime(existingRefund.paidAt)
+                    : "Menunggu approval",
+                },
+              ].map((item, index, timeline) => (
+                <div key={item.label} className="flex gap-3">
+                  <div className="flex flex-col items-center">
+                    <div
+                      className={`flex h-9 w-9 items-center justify-center rounded-full ${
+                        item.done
+                          ? "bg-emerald-500 text-white"
+                          : "bg-gray-100 text-gray-400"
+                      }`}
+                    >
+                      <CheckCircle2 size={17} />
+                    </div>
+                    {index < timeline.length - 1 ? (
+                      <div className="my-2 h-8 w-px bg-gray-200" />
+                    ) : null}
+                  </div>
+                  <div className="min-w-0 pt-1">
+                    <p className="text-sm font-extrabold text-gray-950">
+                      {item.label}
+                    </p>
+                    <p className="mt-1 text-xs font-bold text-gray-500">
+                      {item.time}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </section>
+
+            <section
+              className={`rounded-[28px] border p-5 shadow-sm ${
+                existingRefundSlaState?.isBreached
+                  ? "border-red-100 bg-red-50"
+                  : "border-emerald-100 bg-emerald-50"
+              }`}
+            >
+              <p
+                className={`text-sm font-extrabold ${
+                  existingRefundSlaState?.isBreached
+                    ? "text-red-700"
+                    : "text-emerald-800"
+                }`}
+              >
+                {existingRefundSlaState?.isBreached
+                  ? "SLA review terlewati"
+                  : "SLA refund aktif"}
+              </p>
+              <p className="mt-2 text-xs leading-5 font-semibold text-gray-600">
+                {existingRefundSlaState?.label}
+                {existingRefundSlaState?.dueAt
+                  ? ` - batas ${formatRefundTime(existingRefundSlaState.dueAt)}`
+                  : ""}
+              </p>
+            </section>
+
+            {existingRefund.adminNote ? (
+              <section className="rounded-[28px] border border-gray-100 bg-white p-5 shadow-sm">
+                <h2 className="text-sm font-extrabold text-gray-950">
+                  Catatan Admin
+                </h2>
+                <p className="mt-2 text-sm leading-6 font-medium text-gray-600">
+                  {existingRefund.adminNote}
+                </p>
+              </section>
+            ) : null}
+
+            <Link
+              href={supportHref}
+              className="flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-500 py-4 text-sm font-extrabold text-white shadow-[0_8px_20px_rgba(16,185,129,0.22)]"
+            >
+              <MessageSquareText size={18} />
+              Chat Support Refund
             </Link>
           </div>
         </div>
@@ -503,22 +684,29 @@ export default function CustomerRefundRequestPage() {
               Alasan Refund
             </h2>
             <div className="space-y-2">
-              {refundReasons.map((reason) => {
-                const isActive = selectedReason === reason;
+              {refundReasonOptions.map((reason) => {
+                const isActive = selectedReason === reason.label;
 
                 return (
                   <button
-                    key={reason}
+                    key={reason.id}
                     type="button"
-                    onClick={() => setSelectedReason(reason)}
-                    className={`w-full rounded-2xl border p-3 text-left text-xs font-bold transition-all ${
+                    onClick={() => setSelectedReason(reason.label)}
+                    className={`w-full rounded-2xl border p-3 text-left transition-all ${
                       isActive
                         ? "border-emerald-500 bg-emerald-50 text-emerald-700 ring-4 ring-emerald-50"
                         : "border-gray-100 bg-gray-50 text-gray-600 hover:bg-gray-100"
                     }`}
                   >
-                    <span className="flex items-center justify-between gap-3">
-                      <span>{reason}</span>
+                    <span className="flex items-start justify-between gap-3">
+                      <span>
+                        <span className="block text-xs font-extrabold">
+                          {reason.label}
+                        </span>
+                        <span className="mt-1 block text-[11px] leading-5 font-semibold text-gray-500">
+                          {reason.description}
+                        </span>
+                      </span>
                       {isActive ? <CheckCircle2 size={16} /> : null}
                     </span>
                   </button>
@@ -613,7 +801,12 @@ export default function CustomerRefundRequestPage() {
               />
             ) : null}
             <div className="mt-4 space-y-2">
-              {evidenceGuidelines.map((guideline) => (
+              {[
+                ...(selectedReasonOption
+                  ? [selectedReasonOption.evidenceHint]
+                  : []),
+                ...evidenceGuidelines,
+              ].map((guideline) => (
                 <div
                   key={guideline}
                   className="flex items-start gap-2 text-xs leading-5 font-medium text-gray-500"
@@ -736,7 +929,7 @@ export default function CustomerRefundRequestPage() {
                       <p className="mt-0.5 text-xs font-medium text-gray-500">
                         {isFirst
                           ? "Langsung aktif setelah pengajuan dikirim"
-                          : "Estimasi maksimal 1x24 jam"}
+                          : `SLA maksimal ${refundReviewSlaHours} jam untuk keputusan awal`}
                       </p>
                     </div>
                   </div>
@@ -748,18 +941,18 @@ export default function CustomerRefundRequestPage() {
 
         <div className="absolute right-0 bottom-0 left-0 border-t border-gray-100 bg-white/95 p-5 shadow-[0_-15px_40px_rgba(0,0,0,0.08)] backdrop-blur-md sm:p-6">
           <div className="mx-auto w-full max-w-5xl">
-          <button
-            type="button"
-            onClick={handleSubmitRefund}
-            disabled={!canSubmit}
-            className="w-full rounded-2xl bg-gray-900 py-4 text-sm font-extrabold text-white shadow-[0_12px_26px_rgba(15,23,42,0.14)] transition-all hover:bg-emerald-500 active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-gray-300 disabled:shadow-none"
-          >
-            {isUploadingEvidence
-              ? "Mengupload Bukti..."
-              : canSubmit
-                ? "Kirim Pengajuan Refund"
-                : "Lengkapi Data Wajib"}
-          </button>
+            <button
+              type="button"
+              onClick={handleSubmitRefund}
+              disabled={!canSubmit}
+              className="w-full rounded-2xl bg-gray-900 py-4 text-sm font-extrabold text-white shadow-[0_12px_26px_rgba(15,23,42,0.14)] transition-all hover:bg-emerald-500 active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-gray-300 disabled:shadow-none"
+            >
+              {isUploadingEvidence
+                ? "Mengupload Bukti..."
+                : canSubmit
+                  ? "Kirim Pengajuan Refund"
+                  : "Lengkapi Data Wajib"}
+            </button>
           </div>
         </div>
       </div>

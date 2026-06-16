@@ -11,6 +11,9 @@ export const dynamic = "force-dynamic";
 const activeLocationSchema = z.object({
   latitude: z.coerce.number().finite().min(-90).max(90),
   longitude: z.coerce.number().finite().min(-180).max(180),
+  label: z.string().trim().min(2).max(80).optional(),
+  addressLine: z.string().trim().min(2).max(240).optional(),
+  accuracy: z.coerce.number().finite().nonnegative().max(50_000).optional(),
 });
 
 export async function POST(request: Request) {
@@ -36,6 +39,13 @@ export async function POST(request: Request) {
     );
   }
 
+  const locationLabel = parsed.data.label || "Lokasi aktif";
+  const addressLine = parsed.data.addressLine || "Lokasi aktif customer";
+  const notes =
+    parsed.data.accuracy !== undefined
+      ? `Dipakai untuk estimasi jarak dan rute pickup. Akurasi sekitar ${Math.round(parsed.data.accuracy)} m.`
+      : "Dipakai untuk estimasi jarak dan rute pickup.";
+
   const address = await prisma.$transaction(async (tx: PrismaTransactionClient) => {
     await tx.address.updateMany({
       where: { userId: session.userId },
@@ -45,7 +55,14 @@ export async function POST(request: Request) {
     const existingActiveLocation = await tx.address.findFirst({
       where: {
         userId: session.userId,
-        label: "Lokasi aktif",
+        OR: [
+          { label: "Lokasi aktif" },
+          {
+            notes: {
+              startsWith: "Dipakai untuk estimasi jarak dan rute pickup",
+            },
+          },
+        ],
       },
       orderBy: { updatedAt: "desc" },
     });
@@ -54,11 +71,12 @@ export async function POST(request: Request) {
       return tx.address.update({
         where: { id: existingActiveLocation.id },
         data: {
+          label: locationLabel,
           latitude: parsed.data.latitude,
           longitude: parsed.data.longitude,
-          addressLine: "Lokasi aktif customer",
+          addressLine,
           city: "-",
-          notes: "Dipakai untuk estimasi jarak dan rute pickup.",
+          notes,
           isPrimary: true,
         },
       });
@@ -67,14 +85,14 @@ export async function POST(request: Request) {
     return tx.address.create({
       data: {
         userId: session.userId,
-        label: "Lokasi aktif",
+        label: locationLabel,
         recipient: session.name,
         phone: "-",
-        addressLine: "Lokasi aktif customer",
+        addressLine,
         city: "-",
         latitude: parsed.data.latitude,
         longitude: parsed.data.longitude,
-        notes: "Dipakai untuk estimasi jarak dan rute pickup.",
+        notes,
         isPrimary: true,
       },
     });

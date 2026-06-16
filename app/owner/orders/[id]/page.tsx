@@ -12,6 +12,7 @@ import {
   MessageSquareText,
   PackageCheck,
   Phone,
+  Printer,
   QrCode,
   ReceiptText,
   Send,
@@ -23,6 +24,7 @@ import {
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
+import { useRealtimePolling } from "@/components/use-realtime-polling";
 import {
   showPickupCodeScanner,
   showSweetError,
@@ -78,7 +80,12 @@ type ApiOwnerOrderDetail = {
   pickupTime: string | null;
   note: string | null;
   serviceFee: number;
+  taxFee: number;
+  platformFee: number;
   total: number;
+  pickupVerifiedAt: string | null;
+  pickupVerifiedBy: string | null;
+  pickupVerificationMethod: string | null;
   customer: {
     name: string;
     phone: string | null;
@@ -113,7 +120,12 @@ type OwnerOrderDetail = {
   note?: string;
   payment: string;
   serviceFee: number;
+  taxFee: number;
+  platformFee: number;
   total: number;
+  pickupVerifiedAt: string | null;
+  pickupVerifiedBy: string | null;
+  pickupVerificationMethod: string | null;
 };
 
 const formatRp = (amount: number) =>
@@ -125,6 +137,16 @@ const formatRp = (amount: number) =>
 
 function formatOrderTime(value: string) {
   return new Intl.DateTimeFormat("id-ID", {
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
+function formatOrderDateTime(value: string) {
+  return new Intl.DateTimeFormat("id-ID", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(value));
@@ -200,8 +222,13 @@ function mapApiOrderDetail(order: ApiOwnerOrderDetail): OwnerOrderDetail {
     })),
     note: order.note ?? undefined,
     payment: order.paymentStatus,
-    serviceFee: order.serviceFee,
+    serviceFee: order.serviceFee ?? 0,
+    taxFee: order.taxFee ?? 0,
+    platformFee: order.platformFee ?? 0,
     total: order.total,
+    pickupVerifiedAt: order.pickupVerifiedAt,
+    pickupVerifiedBy: order.pickupVerifiedBy,
+    pickupVerificationMethod: order.pickupVerificationMethod,
   };
 }
 
@@ -282,78 +309,114 @@ export default function OwnerOrderDetailPage() {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [isSendingChat, setIsSendingChat] = useState(false);
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const [rejectNote, setRejectNote] = useState("");
 
-  const loadOrder = useCallback(async () => {
-    setIsLoadingOrder(true);
-
-    try {
-      const response = await fetch(`/api/orders/${params.id}`, {
-        cache: "no-store",
-      });
-      const data = (await response.json()) as {
-        ok: boolean;
-        message?: string;
-        order?: ApiOwnerOrderDetail;
-      };
-
-      if (!response.ok || !data.ok || !data.order) {
-        throw new Error(data.message || "Order tidak ditemukan.");
+  const loadOrder = useCallback(
+    async ({ silent = false }: { silent?: boolean } = {}) => {
+      if (!silent) {
+        setIsLoadingOrder(true);
       }
 
-      const nextOrder = mapApiOrderDetail(data.order);
-      setOrder(nextOrder);
-      setStatus(nextOrder.status);
-      setOrderNotice(null);
-    } catch (error) {
-      setOrder(null);
-      setOrderNotice(
-        error instanceof Error ? error.message : "Order tidak ditemukan.",
-      );
-    } finally {
-      setIsLoadingOrder(false);
-    }
-  }, [params.id]);
+      try {
+        const response = await fetch(`/api/orders/${params.id}`, {
+          cache: "no-store",
+        });
+        const data = (await response.json()) as {
+          ok: boolean;
+          message?: string;
+          order?: ApiOwnerOrderDetail;
+        };
+
+        if (!response.ok || !data.ok || !data.order) {
+          throw new Error(data.message || "Order tidak ditemukan.");
+        }
+
+        const nextOrder = mapApiOrderDetail(data.order);
+        setOrder(nextOrder);
+        setStatus(nextOrder.status);
+        setOrderNotice(null);
+      } catch (error) {
+        if (!silent) {
+          setOrder(null);
+          setOrderNotice(
+            error instanceof Error ? error.message : "Order tidak ditemukan.",
+          );
+        }
+      } finally {
+        if (!silent) {
+          setIsLoadingOrder(false);
+        }
+      }
+    },
+    [params.id],
+  );
 
   useEffect(() => {
     void loadOrder();
   }, [loadOrder]);
 
-  const loadMessages = useCallback(async (orderCode: string) => {
-    setIsLoadingMessages(true);
+  useRealtimePolling({
+    intervalMs: 8000,
+    onPoll: () => loadOrder({ silent: true }),
+  });
 
-    try {
-      const response = await fetch(`/api/orders/${orderCode}/messages`, {
-        cache: "no-store",
-      });
-      const data = (await response.json()) as {
-        ok: boolean;
-        message?: string;
-        messages?: ApiOrderMessage[];
-      };
-
-      if (!response.ok || !data.ok) {
-        throw new Error(data.message || "Pesan order gagal dimuat.");
+  const loadMessages = useCallback(
+    async (
+      orderCode: string,
+      { silent = false }: { silent?: boolean } = {},
+    ) => {
+      if (!silent) {
+        setIsLoadingMessages(true);
       }
 
-      setChatMessages((data.messages ?? []).map(mapApiOrderMessage));
-    } catch (error) {
-      setOrderNotice(
-        error instanceof Error ? error.message : "Pesan order gagal dimuat.",
-      );
-    } finally {
-      setIsLoadingMessages(false);
-    }
-  }, []);
+      try {
+        const response = await fetch(`/api/orders/${orderCode}/messages`, {
+          cache: "no-store",
+        });
+        const data = (await response.json()) as {
+          ok: boolean;
+          message?: string;
+          messages?: ApiOrderMessage[];
+        };
+
+        if (!response.ok || !data.ok) {
+          throw new Error(data.message || "Pesan order gagal dimuat.");
+        }
+
+        setChatMessages((data.messages ?? []).map(mapApiOrderMessage));
+      } catch (error) {
+        if (!silent) {
+          setOrderNotice(
+            error instanceof Error ? error.message : "Pesan order gagal dimuat.",
+          );
+        }
+      } finally {
+        if (!silent) {
+          setIsLoadingMessages(false);
+        }
+      }
+    },
+    [],
+  );
+
+  const orderCode = order?.id ?? null;
 
   useEffect(() => {
-    if (!order) {
+    if (!orderCode) {
       return;
     }
 
-    void loadMessages(order.id);
-  }, [loadMessages, order]);
+    void loadMessages(orderCode);
+  }, [loadMessages, orderCode]);
+
+  useRealtimePolling({
+    enabled: Boolean(orderCode && activeModal === "chat"),
+    intervalMs: 7000,
+    onPoll: () =>
+      orderCode ? loadMessages(orderCode, { silent: true }) : undefined,
+  });
 
   if (isLoadingOrder) {
     return (
@@ -389,6 +452,10 @@ export default function OwnerOrderDetailPage() {
   }
 
   const total = order.total;
+  const customerPlatformFee = order.serviceFee + order.taxFee;
+  const merchantGrossAmount = Math.max(0, total - customerPlatformFee);
+  const merchantCommission = Math.min(merchantGrossAmount, order.platformFee);
+  const ownerNetAmount = Math.max(0, merchantGrossAmount - merchantCommission);
   const currentStatusIndex =
     status === "rejected" || status === "noShow"
       ? -1
@@ -400,30 +467,44 @@ export default function OwnerOrderDetailPage() {
     pickupCode?: string,
   ) => {
     setOrderNotice(null);
+    setIsUpdatingStatus(true);
 
-    const response = await fetch(`/api/orders/${order.id}`, {
-      method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ status: nextStatus, pickupCode }),
-    });
-    const data = (await response.json()) as {
-      ok: boolean;
-      message?: string;
-      order?: ApiOwnerOrderDetail;
-    };
+    try {
+      const response = await fetch(`/api/orders/${order.id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          status: nextStatus,
+          pickupCode,
+          pickupVerificationMethod:
+            nextStatus === "COMPLETED" ? "SCANNER_OR_MANUAL" : undefined,
+        }),
+      });
+      const data = (await response.json()) as {
+        ok: boolean;
+        message?: string;
+        order?: ApiOwnerOrderDetail;
+      };
 
-    if (!response.ok || !data.ok || !data.order) {
-      throw new Error(data.message || "Status order gagal diperbarui.");
+      if (!response.ok || !data.ok || !data.order) {
+        throw new Error(data.message || "Status order gagal diperbarui.");
+      }
+
+      const nextOrder = mapApiOrderDetail(data.order);
+      setOrder(nextOrder);
+      setStatus(nextOrder.status);
+    } finally {
+      setIsUpdatingStatus(false);
     }
-
-    const nextOrder = mapApiOrderDetail(data.order);
-    setOrder(nextOrder);
-    setStatus(nextOrder.status);
   };
 
   const advanceStatus = async () => {
+    if (isUpdatingStatus) {
+      return;
+    }
+
     if (status === "rejected" || status === "noShow") {
       return;
     }
@@ -544,6 +625,10 @@ export default function OwnerOrderDetailPage() {
     }
   };
 
+  const handlePrintReceipt = () => {
+    window.print();
+  };
+
   return (
     <div className="mx-auto max-w-6xl space-y-6 text-gray-900">
       <header className="flex flex-col gap-4 rounded-[32px] border border-gray-100 bg-white p-6 shadow-[0_10px_40px_rgba(15,23,42,0.05)] lg:flex-row lg:items-center lg:justify-between">
@@ -568,12 +653,22 @@ export default function OwnerOrderDetailPage() {
           </div>
         </div>
 
-        <span
-          className={`inline-flex w-fit items-center gap-2 rounded-full border px-4 py-2 text-sm font-extrabold ${statusMeta[status].className}`}
-        >
-          <StatusIcon size={16} />
-          {statusMeta[status].label}
-        </span>
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={handlePrintReceipt}
+            className="inline-flex items-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-extrabold text-gray-700 shadow-sm transition-colors hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700"
+          >
+            <Printer size={17} />
+            Cetak Struk
+          </button>
+          <span
+            className={`inline-flex w-fit items-center gap-2 rounded-full border px-4 py-2 text-sm font-extrabold ${statusMeta[status].className}`}
+          >
+            <StatusIcon size={16} />
+            {statusMeta[status].label}
+          </span>
+        </div>
       </header>
 
       {orderNotice ? (
@@ -618,6 +713,21 @@ export default function OwnerOrderDetailPage() {
                         ? "Pickup melewati batas waktu"
                       : "Verifikasi kode pickup dari customer"}
                   </span>
+                </div>
+                <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
+                  <p className="text-xs font-extrabold tracking-wider text-emerald-500 uppercase">
+                    Status Staf Pickup
+                  </p>
+                  <p className="mt-1 text-sm font-bold text-emerald-900">
+                    {order.pickupVerifiedBy
+                      ? `Diverifikasi oleh ${order.pickupVerifiedBy}`
+                      : "Belum diverifikasi staf"}
+                  </p>
+                  {order.pickupVerifiedAt ? (
+                    <p className="mt-1 text-xs font-semibold text-emerald-700">
+                      {formatOrderDateTime(order.pickupVerifiedAt)}
+                    </p>
+                  ) : null}
                 </div>
               </div>
             </article>
@@ -715,9 +825,9 @@ export default function OwnerOrderDetailPage() {
           <section className="rounded-[32px] border border-gray-100 bg-gray-900 p-6 text-white shadow-xl">
             <div className="mb-6 flex items-start justify-between">
               <div>
-                <p className="text-sm font-bold text-gray-400">Pembayaran</p>
+                <p className="text-sm font-bold text-gray-400">Masuk Saldo</p>
                 <h2 className="mt-1 text-2xl font-extrabold">
-                  {formatRp(total)}
+                  {formatRp(ownerNetAmount)}
                 </h2>
               </div>
               <div className="rounded-2xl bg-white/10 p-3 text-emerald-300">
@@ -730,14 +840,91 @@ export default function OwnerOrderDetailPage() {
                 <span>{order.payment}</span>
               </div>
               <div className="flex justify-between text-sm font-bold">
-                <span className="text-gray-400">Masuk Saldo</span>
-                <span className="text-emerald-300">
-                  {formatRp(total - order.serviceFee)}
-                </span>
+                <span className="text-gray-400">Pendapatan Menu</span>
+                <span className="text-emerald-300">{formatRp(merchantGrossAmount)}</span>
               </div>
               <div className="flex justify-between text-sm font-bold">
-                <span className="text-gray-400">Fee Platform</span>
-                <span>{formatRp(order.serviceFee)}</span>
+                <span className="text-gray-400">Komisi Platform</span>
+                <span>{formatRp(merchantCommission)}</span>
+              </div>
+              <div className="flex justify-between text-sm font-bold">
+                <span className="text-gray-400">Total Customer</span>
+                <span>{formatRp(total)}</span>
+              </div>
+            </div>
+          </section>
+
+          <section className="owner-order-print-area rounded-[32px] border border-gray-100 bg-white p-6 shadow-sm">
+            <div className="mb-5 flex items-start justify-between gap-4 border-b border-dashed border-gray-200 pb-5">
+              <div>
+                <p className="text-xs font-extrabold tracking-[0.2em] text-emerald-600 uppercase">
+                  ResQFood Receipt
+                </p>
+                <h2 className="mt-1 text-xl font-extrabold text-gray-950">
+                  {order.id}
+                </h2>
+                <p className="mt-1 text-xs font-semibold text-gray-500">
+                  Dibuat {order.time} • {statusMeta[status].label}
+                </p>
+              </div>
+              <ReceiptText size={26} className="text-emerald-500" />
+            </div>
+
+            <div className="space-y-4 text-sm">
+              <div>
+                <p className="text-xs font-extrabold tracking-wider text-gray-400 uppercase">
+                  Customer
+                </p>
+                <p className="mt-1 font-extrabold text-gray-950">
+                  {order.customer}
+                </p>
+                <p className="text-xs font-semibold text-gray-500">
+                  {order.phone}
+                </p>
+              </div>
+
+              <div className="rounded-2xl bg-gray-50 p-4">
+                {order.items.map((item) => (
+                  <div
+                    key={`${item.name}-${item.qty}`}
+                    className="flex justify-between gap-4 py-2 text-sm font-bold text-gray-700"
+                  >
+                    <span>
+                      {item.qty}x {item.name}
+                    </span>
+                    <span>{formatRp(item.qty * item.price)}</span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="space-y-2 border-t border-dashed border-gray-200 pt-4">
+                <div className="flex justify-between font-bold text-gray-500">
+                  <span>Pendapatan Menu</span>
+                  <span>{formatRp(merchantGrossAmount)}</span>
+                </div>
+                <div className="flex justify-between font-bold text-gray-500">
+                  <span>Komisi Platform</span>
+                  <span>{formatRp(merchantCommission)}</span>
+                </div>
+                <div className="flex justify-between text-base font-extrabold text-gray-950">
+                  <span>Masuk Saldo</span>
+                  <span>{formatRp(ownerNetAmount)}</span>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
+                <p className="text-xs font-extrabold tracking-wider text-emerald-500 uppercase">
+                  Pickup Verification
+                </p>
+                <p className="mt-1 text-sm font-bold text-emerald-900">
+                  {order.pickupVerifiedBy
+                    ? `${order.pickupVerifiedBy} • ${
+                        order.pickupVerifiedAt
+                          ? formatOrderDateTime(order.pickupVerifiedAt)
+                          : "waktu tidak tercatat"
+                      }`
+                    : "Belum diverifikasi staf pickup"}
+                </p>
               </div>
             </div>
           </section>
@@ -797,10 +984,17 @@ export default function OwnerOrderDetailPage() {
                 <button
                   type="button"
                   onClick={advanceStatus}
+                  disabled={isUpdatingStatus}
                   className="flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-500 py-3.5 text-sm font-extrabold text-white shadow-[0_8px_20px_rgba(16,185,129,0.22)] transition-colors hover:bg-emerald-600"
                 >
-                  <PackageCheck size={18} />
-                  {status === "new"
+                  {isUpdatingStatus ? (
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                  ) : (
+                    <PackageCheck size={18} />
+                  )}
+                  {isUpdatingStatus
+                    ? "Memproses..."
+                    : status === "new"
                     ? "Terima Order"
                     : status === "preparing"
                       ? "Tandai Siap Diambil"
@@ -819,6 +1013,7 @@ export default function OwnerOrderDetailPage() {
                 <button
                   type="button"
                   onClick={() => setActiveModal("reject")}
+                  disabled={isUpdatingStatus}
                   className="flex w-full items-center justify-center gap-2 rounded-2xl border border-red-100 bg-red-50 py-3.5 text-sm font-extrabold text-red-600 transition-colors hover:bg-red-100"
                 >
                   <X size={18} />
@@ -1006,7 +1201,7 @@ export default function OwnerOrderDetailPage() {
               <button
                 type="button"
                 onClick={handleRejectOrder}
-                disabled={!rejectReason}
+                disabled={!rejectReason || isUpdatingStatus}
                 className="rounded-2xl bg-red-500 px-5 py-3 text-sm font-extrabold text-white transition-colors hover:bg-red-600 disabled:cursor-not-allowed disabled:bg-red-200"
               >
                 Konfirmasi Tolak

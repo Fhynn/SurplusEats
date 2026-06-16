@@ -8,6 +8,8 @@ import { z } from "zod";
 
 import { getCurrentSession } from "@/lib/auth-session";
 import { slugify } from "@/lib/backend-utils";
+import { getStorePickupCoordinateIssue } from "@/lib/location-quality";
+import { deliverNotifications } from "@/lib/notification-delivery";
 import { prisma, type PrismaTransactionClient } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -16,9 +18,22 @@ export const dynamic = "force-dynamic";
 const reviewSchema = z.object({
   applicationId: z.string(),
   status: z.enum([ApplicationStatus.APPROVED, ApplicationStatus.REJECTED]),
-  adminNote: z.string().optional(),
+  adminNote: z.string().trim().max(1000).optional(),
+  checklist: z
+    .object({
+      identityMatches: z.boolean(),
+      businessPermitValid: z.boolean(),
+      storefrontMatches: z.boolean(),
+      pickupLocationValid: z.boolean(),
+    })
+    .optional(),
 });
 const validApplicationStatuses = new Set<string>(Object.values(ApplicationStatus));
+const requiredDocumentTypes = [
+  "IDENTITY",
+  "BUSINESS_PERMIT",
+  "STOREFRONT_PHOTO",
+] as const;
 
 async function createUniqueRestaurantSlug(
   tx: PrismaTransactionClient,
@@ -111,7 +126,10 @@ export async function PATCH(request: Request) {
 
   const data = parsed.data;
 
-  let result: { application: object; restaurant: object | null } | null = null;
+  let result: {
+    application: { userId: string | null };
+    restaurant: object | null;
+  } | null = null;
 
   try {
     result = await prisma.$transaction(async (tx: PrismaTransactionClient) => {
@@ -126,7 +144,11 @@ export async function PATCH(request: Request) {
 
       const existingApplicationData = await tx.restaurantApplication.findUnique({
         where: { id: existingApplication.id },
-        include: { restaurant: true, user: true },
+        include: {
+          documents: true,
+          restaurant: true,
+          user: true,
+        },
       });
 
       if (!existingApplicationData) {
@@ -134,13 +156,58 @@ export async function PATCH(request: Request) {
       }
 
       if (
-        data.status === ApplicationStatus.APPROVED &&
-        (existingApplicationData.latitude === null ||
-          existingApplicationData.longitude === null)
+        data.status === ApplicationStatus.APPROVED
       ) {
-        throw new Error(
-          "Pengajuan belum punya titik lokasi toko. Mitra wajib melengkapi lokasi sebelum disetujui.",
+        const missingChecklist = !data.checklist;
+        const incompleteChecklist =
+          !data.checklist ||
+          Object.values(data.checklist).some((checked) => !checked);
+        const documentsByType = new Map(
+          existingApplicationData.documents.map((document) => [
+            document.type,
+            document,
+          ]),
         );
+        const incompleteDocuments = requiredDocumentTypes.filter((type) => {
+          const document = documentsByType.get(type);
+
+          return !document?.assetId || document.status !== "accepted";
+        });
+
+        if (missingChecklist || incompleteChecklist) {
+          throw new Error(
+            "Lengkapi seluruh checklist verifikasi sebelum menyetujui mitra.",
+          );
+        }
+
+        if (incompleteDocuments.length > 0) {
+          throw new Error(
+            "Semua dokumen wajib harus berstatus diterima sebelum mitra disetujui.",
+          );
+        }
+
+        const coordinateIssue = getStorePickupCoordinateIssue(
+          existingApplicationData.latitude !== null &&
+            existingApplicationData.longitude !== null
+            ? {
+                latitude: existingApplicationData.latitude,
+                longitude: existingApplicationData.longitude,
+              }
+            : null,
+        );
+
+        if (coordinateIssue) {
+          throw new Error(
+            `${coordinateIssue} Mitra wajib melengkapi lokasi sebelum disetujui.`,
+          );
+        }
+      }
+
+      if (
+        data.status === ApplicationStatus.REJECTED &&
+        (data.adminNote?.length ?? 0) < 10
+      ) {
+        throw new Error("Alasan penolakan minimal 10 karakter.");
       }
 
       const application = await tx.restaurantApplication.update({
@@ -166,6 +233,9 @@ export async function PATCH(request: Request) {
           latitude: application.latitude,
           longitude: application.longitude,
           phone: application.phone,
+          bankName: application.bankName,
+          bankAccountNumber: application.bankAccountNumber,
+          bankAccountHolder: application.bankAccountHolder,
           status: RestaurantStatus.APPROVED,
         };
 
@@ -226,6 +296,13 @@ export async function PATCH(request: Request) {
           targetId: application.id,
           metadata: {
             adminNote: data.adminNote,
+            checklist: data.checklist,
+            documents: existingApplicationData.documents.map((document) => ({
+              id: document.id,
+              type: document.type,
+              status: document.status,
+              revision: document.revision,
+            })),
           },
         },
       });
@@ -248,6 +325,27 @@ export async function PATCH(request: Request) {
       { ok: false, message: "Pendaftaran mitra tidak ditemukan." },
       { status: 404 },
     );
+  }
+
+  if (result.application.userId) {
+    await deliverNotifications([
+      {
+        userId: result.application.userId,
+        type: "SYSTEM",
+        title:
+          data.status === ApplicationStatus.APPROVED
+            ? "Pendaftaran mitra disetujui"
+            : "Pendaftaran mitra ditolak",
+        body:
+          data.status === ApplicationStatus.APPROVED
+            ? "Dashboard owner sudah bisa digunakan untuk mulai berjualan."
+            : data.adminNote || "Admin belum bisa menyetujui data usaha.",
+        href:
+          data.status === ApplicationStatus.APPROVED
+            ? "/owner/dashboard"
+            : "/owner/verify",
+      },
+    ]);
   }
 
   return NextResponse.json({ ok: true, ...result });

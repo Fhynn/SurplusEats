@@ -3,12 +3,16 @@ import { NextRequest, NextResponse } from "next/server";
 const sessionCookieName = "resqfood_session";
 
 type AuthSession = {
+  sessionId?: string;
   userId: string;
   email: string;
   name: string;
   role: "CUSTOMER" | "OWNER" | "ADMIN";
   status: "ACTIVE" | "SUSPENDED" | "DELETED";
   ownerStatus: "NONE" | "PENDING" | "APPROVED" | "REJECTED";
+  impersonatedById?: string | null;
+  impersonatedByEmail?: string | null;
+  impersonatedByName?: string | null;
   exp: number;
 };
 
@@ -17,6 +21,17 @@ const publicPaths = new Set([
   "/register",
   "/register-mitra",
   "/forgot-password",
+  "/tentang-kami",
+  "/kebijakan-privasi",
+  "/syarat-ketentuan",
+  "/kontak",
+]);
+
+const publicInformationPaths = new Set([
+  "/tentang-kami",
+  "/kebijakan-privasi",
+  "/syarat-ketentuan",
+  "/kontak",
 ]);
 
 function getSecret() {
@@ -204,7 +219,11 @@ export async function proxy(request: NextRequest) {
       return redirectToLoginAndClearSession(request);
     }
 
-    if (session && !isRegistrationPath) {
+    if (
+      session &&
+      !isRegistrationPath &&
+      !publicInformationPaths.has(pathname)
+    ) {
       return redirectByRole(request, session);
     }
 

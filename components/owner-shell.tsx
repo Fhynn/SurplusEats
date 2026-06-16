@@ -3,7 +3,6 @@
 import Link from "next/link";
 import {
   BarChart3,
-  Bell,
   LayoutDashboard,
   LogOut,
   Search,
@@ -18,6 +17,8 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { FormEvent, ReactNode } from "react";
 import { useState } from "react";
 
+import { ImpersonationBanner } from "@/components/impersonation-banner";
+import { NotificationBellLink } from "@/components/notification-bell-link";
 import { useUnreadNotificationCount } from "@/components/use-unread-notification-count";
 
 const shellRoutes = new Set([
@@ -115,6 +116,7 @@ export function OwnerShell({
 
   return (
     <div className="min-h-screen bg-slate-50 font-[family-name:var(--font-plus-jakarta-sans)] selection:bg-emerald-200">
+      <ImpersonationBanner />
       <div className="flex min-h-screen">
         <aside className="hidden w-64 shrink-0 flex-col border-r border-gray-100 bg-white shadow-[4px_0_24px_rgba(0,0,0,0.02)] md:flex">
           <div className="border-b border-gray-50 p-6">
@@ -227,30 +229,24 @@ export function OwnerShell({
             </form>
 
             <div className="ml-auto flex items-center gap-4">
-              <Link
+              <NotificationBellLink
                 href="/owner/notifications"
-                className={`relative rounded-xl p-2.5 transition-colors ${
-                  pathname === "/owner/notifications"
-                    ? "bg-emerald-50 text-emerald-600"
-                    : "text-gray-500 hover:bg-gray-50"
-                }`}
-              >
-                <Bell size={20} />
-                {unreadNotificationCount > 0 ? (
-                  <span className="absolute -top-1 -right-1 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-white bg-red-500 px-1 text-[9px] font-extrabold text-white">
-                    {unreadNotificationCount > 9 ? "9+" : unreadNotificationCount}
-                  </span>
-                ) : null}
-              </Link>
+                unreadCount={unreadNotificationCount}
+                active={pathname === "/owner/notifications"}
+                ariaLabel="Buka notifikasi owner"
+              />
               <div className="h-8 w-px bg-gray-200" />
-              <Link href="/owner/settings" className="group flex items-center gap-3">
+              <Link
+                href="/owner/settings"
+                className="group flex min-h-11 min-w-11 items-center gap-3"
+              >
                 <div className="hidden text-right md:block">
                   <p className="text-sm leading-tight font-extrabold text-gray-900">
                     Owner Dashboard
                   </p>
                   <p className="text-xs font-medium text-gray-500">Owner</p>
                 </div>
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl border-2 border-transparent bg-emerald-50 text-emerald-600 transition-all group-hover:border-emerald-500">
+                <div className="flex h-11 w-11 items-center justify-center rounded-xl border-2 border-transparent bg-emerald-50 text-emerald-600 transition-all group-hover:border-emerald-500">
                   <Store size={20} />
                 </div>
               </Link>
@@ -258,7 +254,7 @@ export function OwnerShell({
                 type="button"
                 onClick={handleLogout}
                 disabled={isLoggingOut}
-                className="flex h-10 w-10 items-center justify-center rounded-xl border border-red-100 bg-red-50 text-red-600 transition-colors hover:bg-red-100 disabled:cursor-not-allowed disabled:text-red-300"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-red-100 bg-red-50 text-red-600 transition-colors hover:bg-red-100 disabled:cursor-not-allowed disabled:text-red-300"
                 aria-label="Keluar akun owner"
               >
                 <LogOut size={18} />
@@ -284,7 +280,7 @@ export function OwnerShell({
                 <Link
                   key={label}
                   href={href}
-                  className={`motion-press flex shrink-0 items-center gap-2 rounded-2xl px-3 py-2 text-xs font-extrabold ${
+                  className={`motion-press flex min-h-11 shrink-0 items-center gap-2 rounded-2xl px-3 py-2 text-xs font-extrabold ${
                     isActive
                       ? "bg-emerald-500 text-white"
                       : "bg-gray-100 text-gray-600"

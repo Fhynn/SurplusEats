@@ -207,7 +207,7 @@ export function CustomerLoginScreen() {
                 <button
                   type="button"
                   onClick={() => setShowPassword((value) => !value)}
-                  className="absolute inset-y-0 right-0 flex items-center pr-4 text-gray-400 transition-colors hover:text-emerald-600"
+                  className="absolute inset-y-0 right-0 flex w-11 items-center justify-center rounded-r-2xl text-gray-400 transition-colors hover:bg-gray-100 hover:text-emerald-600"
                   aria-label={showPassword ? "Sembunyikan password" : "Lihat password"}
                 >
                   {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
@@ -216,7 +216,7 @@ export function CustomerLoginScreen() {
             </div>
 
             <div className="mt-2 flex items-center justify-between">
-              <label className="group flex cursor-pointer items-center">
+              <label className="group flex min-h-11 cursor-pointer items-center">
                 <span className="relative flex items-center">
                   <input
                     type="checkbox"
@@ -244,7 +244,7 @@ export function CustomerLoginScreen() {
 
               <Link
                 href="/forgot-password"
-                className="text-sm font-bold text-emerald-600 transition-colors hover:text-emerald-700 hover:underline"
+                className="inline-flex min-h-11 items-center text-sm font-bold text-emerald-600 transition-colors hover:text-emerald-700 hover:underline"
               >
                 Lupa password?
               </Link>
@@ -289,7 +289,7 @@ export function CustomerLoginScreen() {
             Belum punya akun?{" "}
             <Link
               href="/register"
-              className="font-bold text-emerald-600 transition-colors hover:text-emerald-700 hover:underline"
+              className="inline-flex min-h-11 items-center font-bold text-emerald-600 transition-colors hover:text-emerald-700 hover:underline"
             >
               Daftar sekarang
             </Link>
@@ -313,6 +313,35 @@ export function CustomerLoginScreen() {
                 </p>
               </div>
             </div>
+            <nav
+              aria-label="Informasi ResQFood"
+              className="mt-4 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-[11px] font-bold text-gray-500"
+            >
+              <Link
+                href="/tentang-kami"
+                className="inline-flex min-h-11 items-center hover:text-emerald-700"
+              >
+                Tentang Kami
+              </Link>
+              <Link
+                href="/kebijakan-privasi"
+                className="inline-flex min-h-11 items-center hover:text-emerald-700"
+              >
+                Kebijakan Privasi
+              </Link>
+              <Link
+                href="/syarat-ketentuan"
+                className="inline-flex min-h-11 items-center hover:text-emerald-700"
+              >
+                Syarat & Ketentuan
+              </Link>
+              <Link
+                href="/kontak"
+                className="inline-flex min-h-11 items-center hover:text-emerald-700"
+              >
+                Kontak
+              </Link>
+            </nav>
           </footer>
         </div>
       </section>

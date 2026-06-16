@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   ArrowLeft,
   Clock3,
@@ -13,6 +13,8 @@ import {
   UserRound,
   WalletCards,
 } from "lucide-react";
+
+import { useRealtimePolling } from "@/components/use-realtime-polling";
 
 type AdminOrderDetail = {
   id: string;
@@ -82,11 +84,11 @@ export default function AdminTransactionDetailPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
 
-  useEffect(() => {
-    let ignore = false;
-
-    async function loadOrder() {
-      setIsLoading(true);
+  const loadOrder = useCallback(
+    async ({ silent = false }: { silent?: boolean } = {}) => {
+      if (!silent) {
+        setIsLoading(true);
+      }
 
       try {
         const response = await fetch(`/api/orders/${params.id}`, {
@@ -102,30 +104,32 @@ export default function AdminTransactionDetailPage() {
           throw new Error(data.message || "Transaksi tidak ditemukan.");
         }
 
-        if (!ignore) {
-          setOrder(data.order);
-          setNotice(null);
-        }
+        setOrder(data.order);
+        setNotice(null);
       } catch (error) {
-        if (!ignore) {
+        if (!silent) {
           setNotice(
             error instanceof Error ? error.message : "Transaksi gagal dimuat.",
           );
           setOrder(null);
         }
       } finally {
-        if (!ignore) {
+        if (!silent) {
           setIsLoading(false);
         }
       }
-    }
+    },
+    [params.id],
+  );
 
+  useEffect(() => {
     void loadOrder();
+  }, [loadOrder]);
 
-    return () => {
-      ignore = true;
-    };
-  }, [params.id]);
+  useRealtimePolling({
+    intervalMs: 10000,
+    onPoll: () => loadOrder({ silent: true }),
+  });
 
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 p-5 md:p-8">

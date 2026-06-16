@@ -6,6 +6,7 @@ import {
   getCurrentSession,
   type OwnerAccessStatus,
 } from "@/lib/auth-session";
+import { validatePersistedSession } from "@/lib/auth-session-records";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -60,6 +61,12 @@ export async function GET() {
     return invalidSessionResponse();
   }
 
+  const persistedSession = await validatePersistedSession(session);
+
+  if (!persistedSession) {
+    return invalidSessionResponse();
+  }
+
   const user = await prisma.user.findUnique({
     where: { id: session.userId },
     select: {
@@ -81,12 +88,16 @@ export async function GET() {
   return NextResponse.json({
     ok: true,
     session: {
+      sessionId: session.sessionId,
       userId: user.id,
       email: user.email,
       name: user.name,
       role: user.role,
       status: user.status,
       ownerStatus,
+      impersonatedById: persistedSession.impersonatedById,
+      impersonatedByEmail: persistedSession.impersonatedBy?.email ?? null,
+      impersonatedByName: persistedSession.impersonatedBy?.name ?? null,
     },
   });
 }

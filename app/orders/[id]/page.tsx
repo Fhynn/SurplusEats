@@ -24,6 +24,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useCustomerApp } from "@/components/customer-app-provider";
 import { MobileDeviceFrame } from "@/components/mobile-device-frame";
 import { PickupQrCode } from "@/components/pickup-qr-code";
+import { useRealtimePolling } from "@/components/use-realtime-polling";
 import {
   getPickupRouteUrl,
   type Coordinates,
@@ -227,11 +228,11 @@ export default function CustomerOrderTrackingPage() {
     ? apiOrderToTracking(apiOrder, customerLocation.coordinates)
     : null;
 
-  useEffect(() => {
-    let ignore = false;
-
-    async function loadOrder() {
-      setIsLoadingOrder(true);
+  const loadOrder = useCallback(
+    async ({ silent = false }: { silent?: boolean } = {}) => {
+      if (!silent) {
+        setIsLoadingOrder(true);
+      }
 
       try {
         const response = await fetch(`/api/orders/${orderId}`, {
@@ -239,57 +240,89 @@ export default function CustomerOrderTrackingPage() {
         });
         const result = (await response.json()) as {
           ok: boolean;
+          message?: string;
           order?: ApiOrder;
         };
 
-        if (!ignore) {
-          setApiOrder(result.order ?? null);
+        if (!response.ok || !result.ok || !result.order) {
+          throw new Error(result.message || "Pesanan tidak ditemukan.");
         }
+
+        setApiOrder(result.order);
       } catch {
-        if (!ignore) {
+        if (!silent) {
           setApiOrder(null);
         }
       } finally {
-        if (!ignore) {
+        if (!silent) {
           setIsLoadingOrder(false);
         }
       }
-    }
+    },
+    [orderId],
+  );
 
-    loadOrder();
+  useEffect(() => {
+    void loadOrder();
+  }, [loadOrder]);
 
-    return () => {
-      ignore = true;
-    };
-  }, [orderId]);
+  useRealtimePolling({
+    intervalMs: 10000,
+    onPoll: () => loadOrder({ silent: true }),
+  });
 
-  const loadMessages = useCallback(async (currentOrderId: string) => {
-    setIsLoadingMessages(true);
-    setChatNotice(null);
-
-    try {
-      const response = await fetch(`/api/orders/${currentOrderId}/messages`, {
-        cache: "no-store",
-      });
-      const data = (await response.json()) as {
-        ok: boolean;
-        message?: string;
-        messages?: ApiOrderMessage[];
-      };
-
-      if (!response.ok || !data.ok) {
-        throw new Error(data.message || "Pesan restoran gagal dimuat.");
+  const loadMessages = useCallback(
+    async (
+      currentOrderId: string,
+      { silent = false }: { silent?: boolean } = {},
+    ) => {
+      if (!silent) {
+        setIsLoadingMessages(true);
+        setChatNotice(null);
       }
 
-      setChatMessages((data.messages ?? []).map(mapApiOrderMessage));
-    } catch (error) {
-      setChatNotice(
-        error instanceof Error ? error.message : "Pesan restoran gagal dimuat.",
-      );
-    } finally {
-      setIsLoadingMessages(false);
-    }
-  }, []);
+      try {
+        const response = await fetch(`/api/orders/${currentOrderId}/messages`, {
+          cache: "no-store",
+        });
+        const data = (await response.json()) as {
+          ok: boolean;
+          message?: string;
+          messages?: ApiOrderMessage[];
+        };
+
+        if (!response.ok || !data.ok) {
+          throw new Error(data.message || "Pesan restoran gagal dimuat.");
+        }
+
+        setChatMessages((data.messages ?? []).map(mapApiOrderMessage));
+      } catch (error) {
+        if (!silent) {
+          setChatNotice(
+            error instanceof Error
+              ? error.message
+              : "Pesan restoran gagal dimuat.",
+          );
+        }
+      } finally {
+        if (!silent) {
+          setIsLoadingMessages(false);
+        }
+      }
+    },
+    [],
+  );
+
+  const currentOrderCode = order?.id ?? null;
+
+  useRealtimePolling({
+    enabled: Boolean(currentOrderCode && isChatOpen),
+    intervalMs: 7000,
+    onPoll: () =>
+      currentOrderCode
+        ? loadMessages(currentOrderCode, { silent: true })
+        : undefined,
+  });
 
   if (isLoadingOrder || !order) {
     return (

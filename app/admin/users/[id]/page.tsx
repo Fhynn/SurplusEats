@@ -8,12 +8,19 @@ import {
   ArrowLeft,
   Ban,
   CheckCircle2,
+  Copy,
+  KeyRound,
   Mail,
+  MonitorSmartphone,
   Phone,
+  RefreshCw,
   ShieldCheck,
   Store,
+  UserCog,
   UserRound,
 } from "lucide-react";
+
+import { InlineNotice, StateCard } from "@/components/ui-state";
 
 type AccountActivity = {
   id: string;
@@ -45,6 +52,29 @@ type AdminUserDetail = {
   linkedStore?: string;
 };
 
+type AdminUserSession = {
+  id: string;
+  kind: string;
+  deviceLabel: string;
+  ipAddress: string;
+  userAgent: string;
+  startedAt: string;
+  lastSeenAt: string;
+  expiresAt: string;
+  revokedAt: string | null;
+  revokeReason?: string | null;
+  impersonatedBy?: {
+    id: string;
+    name: string;
+    email: string;
+  } | null;
+  revokedBy?: {
+    id: string;
+    name: string;
+    email: string;
+  } | null;
+};
+
 const toneClassName: Record<AccountActivity["tone"], string> = {
   emerald: "bg-emerald-50 text-emerald-600",
   blue: "bg-blue-50 text-blue-600",
@@ -57,8 +87,14 @@ export default function AdminUserDetailPage() {
   const params = useParams<{ id: string }>();
   const [user, setUser] = useState<AdminUserDetail | null>(null);
   const [activities, setActivities] = useState<AccountActivity[]>([]);
+  const [sessions, setSessions] = useState<AdminUserSession[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
+  const [newPassword, setNewPassword] = useState("");
+  const [resetResult, setResetResult] = useState<string | null>(null);
+  const [revokeSessions, setRevokeSessions] = useState(true);
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
+  const [isImpersonating, setIsImpersonating] = useState(false);
 
   const loadUser = useCallback(async () => {
     setIsLoading(true);
@@ -72,6 +108,7 @@ export default function AdminUserDetailPage() {
         message?: string;
         user?: AdminUserDetail;
         activities?: AccountActivity[];
+        sessions?: AdminUserSession[];
       };
 
       if (!response.ok || !data.ok || !data.user) {
@@ -80,11 +117,13 @@ export default function AdminUserDetailPage() {
 
       setUser(data.user);
       setActivities(data.activities ?? []);
+      setSessions(data.sessions ?? []);
       setNotice(null);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "User gagal dimuat.");
       setUser(null);
       setActivities([]);
+      setSessions([]);
     } finally {
       setIsLoading(false);
     }
@@ -108,6 +147,80 @@ export default function AdminUserDetailPage() {
     }
 
     await loadUser();
+  };
+
+  const resetPassword = async () => {
+    setIsResettingPassword(true);
+    setResetResult(null);
+
+    try {
+      const response = await fetch(
+        `/api/admin/users/${params.id}/reset-password`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            password: newPassword.trim() || undefined,
+            revokeSessions,
+          }),
+        },
+      );
+      const data = (await response.json()) as {
+        ok: boolean;
+        temporaryPassword?: string;
+        message?: string;
+      };
+
+      if (!response.ok || !data.ok || !data.temporaryPassword) {
+        throw new Error(data.message || "Reset password gagal.");
+      }
+
+      setResetResult(data.temporaryPassword);
+      setNewPassword("");
+      setNotice("Password user berhasil direset.");
+      await loadUser();
+    } catch (error) {
+      setNotice(
+        error instanceof Error ? error.message : "Reset password gagal.",
+      );
+    } finally {
+      setIsResettingPassword(false);
+    }
+  };
+
+  const copyResetPassword = async () => {
+    if (!resetResult) {
+      return;
+    }
+
+    await navigator.clipboard.writeText(resetResult);
+    setNotice("Password baru disalin.");
+  };
+
+  const startImpersonation = async () => {
+    setIsImpersonating(true);
+
+    try {
+      const response = await fetch(`/api/admin/users/${params.id}/impersonate`, {
+        method: "POST",
+      });
+      const data = (await response.json()) as {
+        ok: boolean;
+        redirectTo?: string;
+        message?: string;
+      };
+
+      if (!response.ok || !data.ok) {
+        throw new Error(data.message || "Impersonation gagal.");
+      }
+
+      window.location.href = data.redirectTo || "/home";
+    } catch (error) {
+      setNotice(
+        error instanceof Error ? error.message : "Impersonation gagal.",
+      );
+      setIsImpersonating(false);
+    }
   };
 
   return (
@@ -135,6 +248,15 @@ export default function AdminUserDetailPage() {
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
+              onClick={startImpersonation}
+              disabled={user.status === "banned" || isImpersonating}
+              className="inline-flex items-center gap-2 rounded-2xl bg-gray-950 px-4 py-3 text-sm font-extrabold text-white transition-colors hover:bg-gray-800 disabled:bg-gray-300"
+            >
+              <UserCog size={17} />
+              {isImpersonating ? "Masuk..." : "Impersonate"}
+            </button>
+            <button
+              type="button"
               onClick={() => updateStatus("ACTIVE")}
               disabled={user.status === "active"}
               className="inline-flex items-center gap-2 rounded-2xl bg-emerald-500 px-4 py-3 text-sm font-extrabold text-white disabled:bg-gray-300"
@@ -156,15 +278,15 @@ export default function AdminUserDetailPage() {
       </header>
 
       {notice ? (
-        <div className="rounded-2xl border border-red-100 bg-red-50 p-4 text-sm font-bold text-red-700">
-          {notice}
-        </div>
+        <InlineNotice variant="error" description={notice} />
       ) : null}
 
       {isLoading ? (
-        <div className="rounded-[28px] border border-gray-100 bg-white p-10 text-center text-sm font-bold text-gray-500 shadow-sm">
-          Memuat data user...
-        </div>
+        <StateCard
+          title="Memuat data user"
+          description="Mengambil profil, aktivitas, dan session akun."
+          variant="loading"
+        />
       ) : user ? (
         <>
           <section className="grid gap-4 md:grid-cols-4">
@@ -235,9 +357,12 @@ export default function AdminUserDetailPage() {
               </div>
 
               {activities.length === 0 ? (
-                <p className="rounded-2xl bg-gray-50 p-5 text-sm font-bold text-gray-500">
-                  Belum ada order atau aktivitas yang tersimpan untuk akun ini.
-                </p>
+                <StateCard
+                  title="Belum ada aktivitas"
+                  description="Belum ada order atau aktivitas yang tersimpan untuk akun ini."
+                  variant="empty"
+                  size="sm"
+                />
               ) : (
                 <div className="space-y-3">
                   {activities.map((activity) => (
@@ -264,8 +389,166 @@ export default function AdminUserDetailPage() {
               )}
             </div>
           </section>
+
+          <section className="grid gap-6 lg:grid-cols-[0.9fr_1.4fr]">
+            <div className="rounded-[28px] border border-gray-100 bg-white p-6 shadow-sm">
+              <div className="mb-5 flex items-center gap-2">
+                <KeyRound size={20} className="text-emerald-600" />
+                <h2 className="text-lg font-extrabold text-gray-950">
+                  Reset Password
+                </h2>
+              </div>
+
+              <div className="space-y-4">
+                <label className="block">
+                  <span className="mb-2 block text-xs font-extrabold tracking-wider text-gray-400 uppercase">
+                    Password baru opsional
+                  </span>
+                  <input
+                    type="text"
+                    value={newPassword}
+                    onChange={(event) => setNewPassword(event.target.value)}
+                    placeholder="Kosongkan untuk generate otomatis"
+                    className="w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-bold text-gray-900 outline-none transition-all focus:border-emerald-400 focus:bg-white focus:ring-4 focus:ring-emerald-500/10"
+                  />
+                </label>
+
+                <label className="flex items-start gap-3 rounded-2xl bg-gray-50 p-4 text-sm font-bold text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={revokeSessions}
+                    onChange={(event) =>
+                      setRevokeSessions(event.target.checked)
+                    }
+                    className="mt-1 h-4 w-4 rounded border-gray-300 text-emerald-600"
+                  />
+                  Cabut semua session aktif setelah reset
+                </label>
+
+                <button
+                  type="button"
+                  onClick={resetPassword}
+                  disabled={isResettingPassword}
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-4 py-3 text-sm font-extrabold text-white transition-colors hover:bg-emerald-600 disabled:bg-gray-300"
+                >
+                  <RefreshCw
+                    size={17}
+                    className={isResettingPassword ? "animate-spin" : undefined}
+                  />
+                  {isResettingPassword ? "Mereset..." : "Reset Password"}
+                </button>
+
+                {resetResult ? (
+                  <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
+                    <p className="text-xs font-extrabold tracking-wider text-emerald-700 uppercase">
+                      Password baru
+                    </p>
+                    <div className="mt-2 flex items-center gap-2">
+                      <code className="min-w-0 flex-1 break-all rounded-xl bg-white px-3 py-2 text-sm font-extrabold text-gray-950">
+                        {resetResult}
+                      </code>
+                      <button
+                        type="button"
+                        onClick={copyResetPassword}
+                        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white transition-colors hover:bg-emerald-700"
+                        aria-label="Salin password baru"
+                      >
+                        <Copy size={16} />
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="rounded-[28px] border border-gray-100 bg-white p-6 shadow-sm">
+              <div className="mb-5 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <MonitorSmartphone size={20} className="text-emerald-600" />
+                  <h2 className="text-lg font-extrabold text-gray-950">
+                    Device & Session
+                  </h2>
+                </div>
+                <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-extrabold text-gray-500">
+                  {sessions.length} sesi
+                </span>
+              </div>
+
+              {sessions.length === 0 ? (
+                <StateCard
+                  title="Belum ada session"
+                  description="Belum ada session baru yang tercatat setelah fitur ini aktif."
+                  variant="empty"
+                  size="sm"
+                />
+              ) : (
+                <div className="space-y-3">
+                  {sessions.map((sessionItem) => (
+                    <article
+                      key={sessionItem.id}
+                      className="rounded-2xl border border-gray-100 bg-gray-50 p-4"
+                    >
+                      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h3 className="text-sm font-extrabold text-gray-950">
+                              {sessionItem.deviceLabel}
+                            </h3>
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-[10px] font-extrabold ${
+                                sessionItem.revokedAt
+                                  ? "bg-red-100 text-red-600"
+                                  : sessionItem.kind === "IMPERSONATION"
+                                    ? "bg-amber-100 text-amber-700"
+                                    : "bg-emerald-100 text-emerald-700"
+                              }`}
+                            >
+                              {sessionItem.revokedAt
+                                ? "Revoked"
+                                : sessionItem.kind}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-xs font-semibold text-gray-500">
+                            IP {sessionItem.ipAddress} - terakhir{" "}
+                            {sessionItem.lastSeenAt}
+                          </p>
+                          {sessionItem.impersonatedBy ? (
+                            <p className="mt-2 text-xs font-bold text-amber-700">
+                              Impersonated by {sessionItem.impersonatedBy.name}
+                            </p>
+                          ) : null}
+                          {sessionItem.revokedAt ? (
+                            <p className="mt-2 text-xs font-bold text-red-600">
+                              Dicabut {sessionItem.revokedAt}
+                              {sessionItem.revokeReason
+                                ? ` - ${sessionItem.revokeReason}`
+                                : ""}
+                            </p>
+                          ) : null}
+                        </div>
+                        <div className="shrink-0 rounded-xl bg-white px-3 py-2 text-right text-[11px] font-bold text-gray-500">
+                          <p>Mulai {sessionItem.startedAt}</p>
+                          <p>Expired {sessionItem.expiresAt}</p>
+                        </div>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
         </>
-      ) : null}
+      ) : (
+        <StateCard
+          title="User tidak ditemukan"
+          description="Data user tidak tersedia atau sudah dihapus."
+          variant="empty"
+          action={{
+            label: "Kembali ke Dashboard",
+            href: "/admin/dashboard?tab=users",
+          }}
+        />
+      )}
     </div>
   );
 }

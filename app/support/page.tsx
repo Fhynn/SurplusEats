@@ -9,21 +9,51 @@ import {
   Mail,
   MessageCircle,
   PackageCheck,
+  Paperclip,
   ReceiptText,
   RefreshCcw,
   Send,
   ShieldCheck,
   TicketCheck,
+  X,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import type { FormEvent } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { MobileDeviceFrame } from "@/components/mobile-device-frame";
+import { StateCard } from "@/components/ui-state";
+import { useRealtimePolling } from "@/components/use-realtime-polling";
 
 type SupportMode = "ticket" | "form";
 type SupportCategory = "ORDER" | "REFUND" | "PAYMENT" | "ACCOUNT" | "OTHER";
 type SupportTicketStatus = "OPEN" | "IN_REVIEW" | "RESOLVED" | "CLOSED";
+type SupportPriority = "LOW" | "NORMAL" | "HIGH" | "URGENT";
+
+type SupportAttachment = {
+  id: string;
+  label: string | null;
+  asset: {
+    id: string;
+    url: string;
+    pathname: string;
+    contentType: string | null;
+    size: number | null;
+  };
+};
+
+type SupportThreadMessage = {
+  id: string;
+  senderRole: "CUSTOMER" | "OWNER" | "ADMIN";
+  body: string;
+  createdAt: string;
+  sender: {
+    name: string;
+    email: string;
+    role: string;
+  } | null;
+  attachments: SupportAttachment[];
+};
 
 type SupportTicket = {
   id: string;
@@ -31,9 +61,21 @@ type SupportTicket = {
   subject: string;
   message: string;
   status: SupportTicketStatus;
+  priority: SupportPriority;
   adminNote: string | null;
   orderCode: string | null;
+  slaState: string;
+  firstResponseDueAt: string | null;
+  resolutionDueAt: string | null;
   createdAt: string;
+  updatedAt: string;
+  assignee: {
+    id: string;
+    name: string;
+    email: string;
+  } | null;
+  messages: SupportThreadMessage[];
+  attachments: SupportAttachment[];
   order: {
     orderCode: string;
     status: string;
@@ -81,6 +123,28 @@ const statusClassName: Record<SupportTicketStatus, string> = {
   RESOLVED: "bg-emerald-50 text-emerald-700",
 };
 
+const priorityLabel: Record<SupportPriority, string> = {
+  HIGH: "Tinggi",
+  LOW: "Rendah",
+  NORMAL: "Normal",
+  URGENT: "Urgent",
+};
+
+const priorityClassName: Record<SupportPriority, string> = {
+  HIGH: "bg-orange-50 text-orange-700",
+  LOW: "bg-gray-100 text-gray-600",
+  NORMAL: "bg-blue-50 text-blue-700",
+  URGENT: "bg-red-50 text-red-700",
+};
+
+const slaLabel: Record<string, string> = {
+  DONE: "Selesai",
+  FIRST_RESPONSE_OVERDUE: "Respons terlambat",
+  IN_SLA: "Dalam SLA",
+  RESOLUTION_OVERDUE: "Penyelesaian terlambat",
+  WAITING_FIRST_RESPONSE: "Menunggu respons",
+};
+
 const quickTopics: Array<{
   title: string;
   category: SupportCategory;
@@ -122,19 +186,29 @@ export default function CustomerSupportPage() {
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState(initialMessages);
   const [category, setCategory] = useState<SupportCategory>("ORDER");
+  const [priority, setPriority] = useState<SupportPriority>("NORMAL");
   const [subject, setSubject] = useState("");
   const [orderCode, setOrderCode] = useState("");
   const [ticketMessage, setTicketMessage] = useState("");
+  const [ticketFiles, setTicketFiles] = useState<File[]>([]);
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
+  const [selectedTicketId, setSelectedTicketId] = useState("");
+  const [replyMessage, setReplyMessage] = useState("");
+  const [replyFiles, setReplyFiles] = useState<File[]>([]);
   const [createdTicketId, setCreatedTicketId] = useState("");
   const [isLoadingTickets, setIsLoadingTickets] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isReplying, setIsReplying] = useState(false);
   const [notice, setNotice] = useState<{
     type: "success" | "error";
     message: string;
   } | null>(null);
   const hasValidForm = subject.trim().length >= 4 && ticketMessage.trim().length >= 12;
   const latestTickets = useMemo(() => tickets.slice(0, 4), [tickets]);
+  const selectedTicket =
+    tickets.find((ticket) => ticket.id === selectedTicketId) ??
+    latestTickets[0] ??
+    null;
 
   const loadTickets = useCallback(async () => {
     setIsLoadingTickets(true);
@@ -169,16 +243,102 @@ export default function CustomerSupportPage() {
     void loadTickets();
   }, [loadTickets]);
 
+  useRealtimePolling({
+    enabled: true,
+    intervalMs: 10000,
+    onPoll: loadTickets,
+  });
+
+  useEffect(() => {
+    if (!selectedTicketId && tickets.length > 0) {
+      setSelectedTicketId(tickets[0].id);
+    }
+  }, [selectedTicketId, tickets]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const categoryParam = params.get("category");
+    const orderParam = params.get("order");
+
+    if (
+      categoryParam === "ORDER" ||
+      categoryParam === "REFUND" ||
+      categoryParam === "PAYMENT" ||
+      categoryParam === "ACCOUNT" ||
+      categoryParam === "OTHER"
+    ) {
+      setCategory(categoryParam);
+      setMode("form");
+    }
+
+    if (orderParam) {
+      const normalizedOrderCode = orderParam.trim().toUpperCase();
+      setOrderCode(normalizedOrderCode);
+
+      if (categoryParam === "REFUND") {
+        setSubject(`Konsultasi refund ${normalizedOrderCode}`);
+        setTicketMessage(
+          `Saya ingin menanyakan proses refund untuk order ${normalizedOrderCode}.`,
+        );
+      }
+    }
+  }, []);
+
+  const uploadSupportFiles = async (files: File[], ticketId?: string) => {
+    const uploadedAssetIds: string[] = [];
+
+    for (const file of files) {
+      const formData = new FormData();
+      formData.set("file", file);
+      formData.set("folder", "support");
+      formData.set("entityType", "support_ticket");
+
+      if (ticketId) {
+        formData.set("entityId", ticketId);
+      }
+
+      const response = await fetch("/api/uploads", {
+        method: "POST",
+        body: formData,
+      });
+      const data = (await response.json()) as {
+        ok: boolean;
+        message?: string;
+        asset?: { id: string };
+      };
+
+      if (!response.ok || !data.ok || !data.asset) {
+        throw new Error(data.message || "Upload lampiran gagal.");
+      }
+
+      uploadedAssetIds.push(data.asset.id);
+    }
+
+    return uploadedAssetIds;
+  };
+
   const createTicket = async (payload: {
     category: SupportCategory;
     subject: string;
     message: string;
+    priority?: SupportPriority;
     orderCode?: string;
+    files?: File[];
   }) => {
+    const attachmentAssetIds = payload.files?.length
+      ? await uploadSupportFiles(payload.files)
+      : [];
     const response = await fetch("/api/support", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({
+        category: payload.category,
+        subject: payload.subject,
+        message: payload.message,
+        priority: payload.priority,
+        orderCode: payload.orderCode,
+        attachmentAssetIds,
+      }),
     });
     const data = (await response.json()) as {
       ok: boolean;
@@ -192,6 +352,7 @@ export default function CustomerSupportPage() {
 
     setTickets((currentTickets) => [data.ticket as SupportTicket, ...currentTickets]);
     setCreatedTicketId(data.ticket.id);
+    setSelectedTicketId(data.ticket.id);
 
     return data.ticket;
   };
@@ -270,11 +431,15 @@ export default function CustomerSupportPage() {
         category,
         subject: subject.trim(),
         message: ticketMessage.trim(),
+        priority,
         orderCode: orderCode.trim() || undefined,
+        files: ticketFiles,
       });
       setSubject("");
       setOrderCode("");
       setTicketMessage("");
+      setTicketFiles([]);
+      setPriority("NORMAL");
       setNotice({
         type: "success",
         message: "Tiket support berhasil dikirim ke admin.",
@@ -292,6 +457,69 @@ export default function CustomerSupportPage() {
     }
   };
 
+  const handleReplySubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!selectedTicket || replyMessage.trim().length < 2 || isReplying) {
+      setNotice({
+        type: "error",
+        message: "Balasan minimal 2 karakter.",
+      });
+      return;
+    }
+
+    setIsReplying(true);
+    setNotice(null);
+
+    try {
+      const attachmentAssetIds = replyFiles.length
+        ? await uploadSupportFiles(replyFiles, selectedTicket.id)
+        : [];
+      const response = await fetch(
+        `/api/support/${selectedTicket.id}/messages`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            body: replyMessage.trim(),
+            attachmentAssetIds,
+          }),
+        },
+      );
+      const data = (await response.json()) as {
+        ok: boolean;
+        message?: string;
+        ticket?: SupportTicket;
+      };
+
+      if (!response.ok || !data.ok || !data.ticket) {
+        throw new Error(data.message || "Balasan support gagal dikirim.");
+      }
+
+      setTickets((currentTickets) =>
+        currentTickets.map((ticket) =>
+          ticket.id === data.ticket!.id ? data.ticket! : ticket,
+        ),
+      );
+      setReplyMessage("");
+      setReplyFiles([]);
+      setNotice({
+        type: "success",
+        message: "Balasan support terkirim.",
+      });
+    } catch (error) {
+      setNotice({
+        type: "error",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Balasan support gagal dikirim.",
+      });
+    } finally {
+      setIsReplying(false);
+    }
+  };
+
   return (
     <MobileDeviceFrame backgroundClassName="bg-[#f8fafc]">
       <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-[#f8fafc]">
@@ -300,7 +528,7 @@ export default function CustomerSupportPage() {
             <button
               type="button"
               onClick={() => router.back()}
-              className="-ml-2 rounded-full p-2 transition-colors hover:bg-gray-100"
+              className="-ml-2 flex h-11 w-11 items-center justify-center rounded-full transition-colors hover:bg-gray-100"
               aria-label="Kembali"
             >
               <ChevronLeft size={24} className="text-gray-800" />
@@ -308,7 +536,7 @@ export default function CustomerSupportPage() {
             <button
               type="button"
               onClick={() => void loadTickets()}
-              className="rounded-full bg-emerald-50 px-3 py-1 text-[10px] font-extrabold tracking-wider text-emerald-600 uppercase"
+              className="min-h-11 rounded-full bg-emerald-50 px-4 py-2 text-[10px] font-extrabold tracking-wider text-emerald-600 uppercase"
             >
               Refresh
             </button>
@@ -395,6 +623,7 @@ export default function CustomerSupportPage() {
                   setMode("form");
                   setCategory(topic);
                   setSubject(title);
+                  setPriority(topic === "REFUND" || topic === "PAYMENT" ? "HIGH" : "NORMAL");
                 }}
                 className="flex items-center gap-4 rounded-[24px] border border-gray-100 bg-white p-4 text-left shadow-sm transition-colors hover:bg-emerald-50"
               >
@@ -519,6 +748,28 @@ export default function CustomerSupportPage() {
 
                 <div>
                   <label
+                    htmlFor="support-priority"
+                    className="mb-2 block text-sm font-extrabold text-gray-800"
+                  >
+                    Prioritas
+                  </label>
+                  <select
+                    id="support-priority"
+                    value={priority}
+                    onChange={(event) =>
+                      setPriority(event.target.value as SupportPriority)
+                    }
+                    className="h-12 w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 text-sm font-bold text-gray-900 outline-none focus:border-emerald-500 focus:bg-white"
+                  >
+                    <option value="LOW">Rendah</option>
+                    <option value="NORMAL">Normal</option>
+                    <option value="HIGH">Tinggi</option>
+                    <option value="URGENT">Urgent</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label
                     htmlFor="support-subject"
                     className="mb-2 block text-sm font-extrabold text-gray-800"
                   >
@@ -549,6 +800,60 @@ export default function CustomerSupportPage() {
                   />
                 </div>
 
+                <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-4">
+                  <label
+                    htmlFor="support-attachments"
+                    className="flex cursor-pointer items-center justify-between gap-3 text-sm font-extrabold text-gray-800"
+                  >
+                    <span className="flex items-center gap-2">
+                      <Paperclip size={17} className="text-emerald-600" />
+                      Lampiran bukti
+                    </span>
+                    <span className="text-xs font-bold text-gray-400">
+                      Maks 5 file
+                    </span>
+                  </label>
+                  <input
+                    id="support-attachments"
+                    type="file"
+                    multiple
+                    accept="image/jpeg,image/png,image/webp,image/gif,application/pdf"
+                    onChange={(event) =>
+                      setTicketFiles(
+                        Array.from(event.target.files ?? []).slice(0, 5),
+                      )
+                    }
+                    className="mt-3 w-full text-xs font-semibold text-gray-500 file:mr-3 file:rounded-xl file:border-0 file:bg-white file:px-3 file:py-2 file:text-xs file:font-extrabold file:text-gray-700"
+                  />
+                  {ticketFiles.length > 0 ? (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {ticketFiles.map((file) => (
+                        <span
+                          key={`${file.name}-${file.size}`}
+                          className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1 text-xs font-bold text-gray-600"
+                        >
+                          {file.name}
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setTicketFiles((currentFiles) =>
+                                currentFiles.filter(
+                                  (item) =>
+                                    item.name !== file.name ||
+                                    item.size !== file.size,
+                                ),
+                              )
+                            }
+                            aria-label={`Hapus ${file.name}`}
+                          >
+                            <X size={13} />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+
                 <button
                   type="submit"
                   disabled={!hasValidForm || isSubmitting}
@@ -577,25 +882,31 @@ export default function CustomerSupportPage() {
             </div>
 
             {isLoadingTickets ? (
-              <div className="rounded-2xl bg-gray-50 p-5 text-center text-sm font-bold text-gray-500">
-                Memuat tiket...
-              </div>
+              <StateCard
+                title="Memuat tiket"
+                description="Mengambil tiket support dan percakapan terbaru."
+                variant="loading"
+                size="sm"
+              />
             ) : latestTickets.length === 0 ? (
-              <div className="rounded-2xl bg-gray-50 p-5 text-center">
-                <LifeBuoy size={28} className="mx-auto mb-3 text-gray-400" />
-                <p className="text-sm font-extrabold text-gray-900">
-                  Belum ada tiket support
-                </p>
-                <p className="mt-1 text-xs font-medium text-gray-500">
-                  Tiket akan muncul setelah kamu mengirim laporan.
-                </p>
-              </div>
+              <StateCard
+                title="Belum ada tiket support"
+                description="Tiket akan muncul setelah kamu mengirim laporan."
+                variant="empty"
+                size="sm"
+              />
             ) : (
               <div className="space-y-3">
                 {latestTickets.map((ticket) => (
-                  <article
+                  <button
                     key={ticket.id}
-                    className="rounded-2xl border border-gray-100 bg-gray-50 p-4"
+                    type="button"
+                    onClick={() => setSelectedTicketId(ticket.id)}
+                    className={`w-full rounded-2xl border p-4 text-left transition-all ${
+                      selectedTicket?.id === ticket.id
+                        ? "border-emerald-300 bg-emerald-50 ring-4 ring-emerald-50"
+                        : "border-gray-100 bg-gray-50 hover:bg-gray-100"
+                    }`}
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
@@ -613,6 +924,16 @@ export default function CustomerSupportPage() {
                         {statusLabel[ticket.status]}
                       </span>
                     </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <span
+                        className={`rounded-full px-2.5 py-1 text-[10px] font-extrabold ${priorityClassName[ticket.priority]}`}
+                      >
+                        {priorityLabel[ticket.priority]}
+                      </span>
+                      <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-extrabold text-gray-500">
+                        {slaLabel[ticket.slaState] ?? ticket.slaState}
+                      </span>
+                    </div>
                     {ticket.orderCode || ticket.order?.orderCode ? (
                       <p className="mt-2 text-xs font-bold text-emerald-700">
                         Order {ticket.orderCode || ticket.order?.orderCode}
@@ -623,11 +944,146 @@ export default function CustomerSupportPage() {
                         Admin: {ticket.adminNote}
                       </p>
                     ) : null}
-                  </article>
+                  </button>
                 ))}
               </div>
             )}
           </section>
+
+          {selectedTicket ? (
+            <section className="mt-6 rounded-[28px] border border-gray-100 bg-white p-5 shadow-sm">
+              <div className="mb-4 flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+                <div>
+                  <div className="flex flex-wrap gap-2">
+                    <span
+                      className={`rounded-full px-2.5 py-1 text-[10px] font-extrabold ${statusClassName[selectedTicket.status]}`}
+                    >
+                      {statusLabel[selectedTicket.status]}
+                    </span>
+                    <span
+                      className={`rounded-full px-2.5 py-1 text-[10px] font-extrabold ${priorityClassName[selectedTicket.priority]}`}
+                    >
+                      {priorityLabel[selectedTicket.priority]}
+                    </span>
+                  </div>
+                  <h2 className="mt-3 text-base font-extrabold text-gray-950">
+                    {selectedTicket.subject}
+                  </h2>
+                  <p className="mt-1 text-xs font-semibold text-gray-500">
+                    SLA: {slaLabel[selectedTicket.slaState] ?? selectedTicket.slaState}
+                    {selectedTicket.firstResponseDueAt
+                      ? ` - respons ${formatTime(selectedTicket.firstResponseDueAt)}`
+                      : ""}
+                  </p>
+                </div>
+                <div className="rounded-2xl bg-gray-50 px-4 py-3 text-xs font-bold text-gray-500">
+                  {selectedTicket.assignee
+                    ? `Admin: ${selectedTicket.assignee.name}`
+                    : "Belum ditugaskan"}
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                {selectedTicket.messages.map((threadMessage) => {
+                  const isCustomer = threadMessage.senderRole === "CUSTOMER";
+
+                  return (
+                    <article
+                      key={threadMessage.id}
+                      className={`flex ${isCustomer ? "justify-end" : "justify-start"}`}
+                    >
+                      <div
+                        className={`max-w-[88%] rounded-[24px] p-4 ${
+                          isCustomer
+                            ? "rounded-br-md bg-emerald-500 text-white"
+                            : "rounded-bl-md bg-gray-50 text-gray-900"
+                        }`}
+                      >
+                        <div className="mb-2 flex items-center justify-between gap-3">
+                          <p className="text-xs font-extrabold">
+                            {isCustomer
+                              ? "Kamu"
+                              : threadMessage.sender?.name ?? "Admin Support"}
+                          </p>
+                          <p
+                            className={`text-[10px] font-bold ${
+                              isCustomer ? "text-emerald-50" : "text-gray-400"
+                            }`}
+                          >
+                            {formatTime(threadMessage.createdAt)}
+                          </p>
+                        </div>
+                        <p className="whitespace-pre-wrap text-sm leading-6 font-medium">
+                          {threadMessage.body}
+                        </p>
+                        {threadMessage.attachments.length > 0 ? (
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {threadMessage.attachments.map((attachment) => (
+                              <a
+                                key={attachment.id}
+                                href={attachment.asset.url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-extrabold ${
+                                  isCustomer
+                                    ? "bg-white/15 text-white"
+                                    : "bg-white text-gray-600"
+                                }`}
+                              >
+                                <Paperclip size={12} />
+                                Lampiran
+                              </a>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+
+              {selectedTicket.status === "CLOSED" ? (
+                <div className="mt-4 rounded-2xl bg-gray-50 p-4 text-sm font-bold text-gray-500">
+                  Tiket ini sudah ditutup. Buat tiket baru jika masih butuh bantuan.
+                </div>
+              ) : (
+                <form className="mt-5 space-y-3" onSubmit={handleReplySubmit}>
+                  <textarea
+                    value={replyMessage}
+                    onChange={(event) => setReplyMessage(event.target.value)}
+                    placeholder="Balas thread support..."
+                    className="min-h-28 w-full resize-none rounded-[24px] border border-gray-200 bg-gray-50 p-4 text-sm leading-6 font-medium text-gray-900 outline-none focus:border-emerald-500 focus:bg-white"
+                  />
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <input
+                      type="file"
+                      multiple
+                      accept="image/jpeg,image/png,image/webp,image/gif,application/pdf"
+                      onChange={(event) =>
+                        setReplyFiles(
+                          Array.from(event.target.files ?? []).slice(0, 5),
+                        )
+                      }
+                      className="text-xs font-semibold text-gray-500 file:mr-3 file:rounded-xl file:border-0 file:bg-gray-100 file:px-3 file:py-2 file:text-xs file:font-extrabold file:text-gray-700"
+                    />
+                    <button
+                      type="submit"
+                      disabled={replyMessage.trim().length < 2 || isReplying}
+                      className="inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-5 py-3 text-sm font-extrabold text-white transition-colors hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-gray-300"
+                    >
+                      <Send size={17} />
+                      {isReplying ? "Mengirim..." : "Balas"}
+                    </button>
+                  </div>
+                  {replyFiles.length > 0 ? (
+                    <p className="text-xs font-bold text-gray-500">
+                      {replyFiles.length} lampiran siap dikirim.
+                    </p>
+                  ) : null}
+                </form>
+              )}
+            </section>
+          ) : null}
 
           <section className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Link
@@ -657,12 +1113,12 @@ export default function CustomerSupportPage() {
                 value={message}
                 onChange={(event) => setMessage(event.target.value)}
                 placeholder="Tulis masalah singkat..."
-                className="min-w-0 flex-1 bg-transparent px-3 py-2 text-sm font-medium text-gray-900 outline-none placeholder:text-gray-400"
+                className="min-h-11 min-w-0 flex-1 bg-transparent px-3 py-2 text-sm font-medium text-gray-900 outline-none placeholder:text-gray-400"
               />
               <button
                 type="submit"
                 disabled={message.trim().length < 12 || isSubmitting}
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500 text-white transition-colors hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-gray-300"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-500 text-white transition-colors hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-gray-300"
                 aria-label="Kirim tiket cepat"
               >
                 <Send size={18} />

@@ -23,6 +23,10 @@ type BestSeller = {
   sold: number;
   revenue: number;
   stockRate: number;
+  orderCount: number;
+  avgPrice: number;
+  refundCount: number;
+  contributionRate: number;
 };
 
 function getPeriodDays(request: Request) {
@@ -74,6 +78,12 @@ function formatCo2e(value: number) {
   return `${Math.round(value).toLocaleString("id-ID")} Kg`;
 }
 
+function formatRate(value: number) {
+  return `${value.toLocaleString("id-ID", {
+    maximumFractionDigits: 1,
+  })}%`;
+}
+
 async function getOrdersForPeriod(restaurantId: string, from: Date, to: Date) {
   return prisma.order.findMany({
     where: {
@@ -84,6 +94,7 @@ async function getOrdersForPeriod(restaurantId: string, from: Date, to: Date) {
       },
     },
     include: {
+      refundRequest: true,
       items: {
         include: {
           menuItem: {
@@ -98,6 +109,26 @@ async function getOrdersForPeriod(restaurantId: string, from: Date, to: Date) {
   });
 }
 
+async function getHistoricalCompletedCustomerCounts(restaurantId: string, to: Date) {
+  const orders = await prisma.order.findMany({
+    where: {
+      restaurantId,
+      status: OrderStatus.COMPLETED,
+      createdAt: {
+        lt: to,
+      },
+    },
+    select: {
+      customerId: true,
+    },
+  });
+
+  return orders.reduce((counts, order) => {
+    counts.set(order.customerId, (counts.get(order.customerId) ?? 0) + 1);
+    return counts;
+  }, new Map<string, number>());
+}
+
 function getCompletedOrders(orders: AnalyticsOrder[]) {
   return orders.filter((order) => order.status === OrderStatus.COMPLETED);
 }
@@ -109,6 +140,55 @@ function getPortionCount(orders: AnalyticsOrder[]) {
       order.items.reduce((itemTotal, item) => itemTotal + item.quantity, 0),
     0,
   );
+}
+
+function getOperationalOrders(orders: AnalyticsOrder[]) {
+  return orders.filter(
+    (order) =>
+      order.status !== OrderStatus.PENDING &&
+      order.status !== OrderStatus.PAYMENT_FAILED,
+  );
+}
+
+function getRefundedOrders(orders: AnalyticsOrder[]) {
+  return orders.filter(
+    (order) => order.status === OrderStatus.REFUNDED || Boolean(order.refundRequest),
+  );
+}
+
+function getRate(numerator: number, denominator: number) {
+  if (denominator === 0) {
+    return 0;
+  }
+
+  return Math.round((numerator / denominator) * 1000) / 10;
+}
+
+function getRepeatCustomerRate(
+  completedOrders: AnalyticsOrder[],
+  historicalCompletedCustomerCounts: Map<string, number>,
+) {
+  const uniqueCustomerIds = Array.from(
+    new Set(completedOrders.map((order) => order.customerId)),
+  );
+
+  if (uniqueCustomerIds.length === 0) {
+    return {
+      rate: 0,
+      repeatCustomers: 0,
+      uniqueCustomers: 0,
+    };
+  }
+
+  const repeatCustomers = uniqueCustomerIds.filter(
+    (customerId) => (historicalCompletedCustomerCounts.get(customerId) ?? 0) > 1,
+  ).length;
+
+  return {
+    rate: getRate(repeatCustomers, uniqueCustomerIds.length),
+    repeatCustomers,
+    uniqueCustomers: uniqueCustomerIds.length,
+  };
 }
 
 function createRevenueBuckets(
@@ -145,19 +225,36 @@ function createRevenueBuckets(
 function createBestSellers(orders: AnalyticsOrder[]): BestSeller[] {
   const sellerMap = new Map<
     string,
-    { category: string; sold: number; revenue: number }
+    {
+      category: string;
+      sold: number;
+      revenue: number;
+      orderCodes: Set<string>;
+      refundCount: number;
+    }
   >();
+  const completedOrders = getCompletedOrders(orders);
+  const totalSellerRevenue = Math.max(
+    1,
+    completedOrders.reduce((total, order) => total + getNetRevenue(order), 0),
+  );
 
-  for (const order of getCompletedOrders(orders)) {
+  for (const order of completedOrders) {
     for (const item of order.items) {
       const existing = sellerMap.get(item.menuNameSnapshot) ?? {
         category: item.menuItem?.category ?? "Menu",
         sold: 0,
         revenue: 0,
+        orderCodes: new Set<string>(),
+        refundCount: 0,
       };
 
       existing.sold += item.quantity;
       existing.revenue += item.priceSnapshot * item.quantity;
+      existing.orderCodes.add(order.orderCode);
+      if (order.refundRequest || order.status === OrderStatus.REFUNDED) {
+        existing.refundCount += 1;
+      }
       sellerMap.set(item.menuNameSnapshot, existing);
     }
   }
@@ -168,6 +265,10 @@ function createBestSellers(orders: AnalyticsOrder[]): BestSeller[] {
       category: value.category,
       sold: value.sold,
       revenue: value.revenue,
+      orderCount: value.orderCodes.size,
+      avgPrice: value.sold > 0 ? Math.round(value.revenue / value.sold) : 0,
+      refundCount: value.refundCount,
+      contributionRate: Math.round((value.revenue / totalSellerRevenue) * 1000) / 10,
       stockRate: 0,
     }))
     .sort((first, second) => second.sold - first.sold)
@@ -181,18 +282,21 @@ function createBestSellers(orders: AnalyticsOrder[]): BestSeller[] {
 }
 
 function createPickupWindows(orders: AnalyticsOrder[]) {
-  const hourCounts = new Map<string, number>();
+  const hourCounts = new Map<string, { orders: number; revenue: number }>();
   const completedOrders = getCompletedOrders(orders);
 
   for (const order of completedOrders) {
     const pickupDate = order.pickupTime ?? order.createdAt;
     const hour = `${pickupDate.getHours().toString().padStart(2, "0")}:00`;
-    hourCounts.set(hour, (hourCounts.get(hour) ?? 0) + 1);
+    const existing = hourCounts.get(hour) ?? { orders: 0, revenue: 0 };
+    existing.orders += 1;
+    existing.revenue += getNetRevenue(order);
+    hourCounts.set(hour, existing);
   }
 
   const entries = Array.from(hourCounts.entries()).sort(
-    ([firstHour, firstCount], [secondHour, secondCount]) =>
-      secondCount - firstCount || firstHour.localeCompare(secondHour),
+    ([firstHour, firstValue], [secondHour, secondValue]) =>
+      secondValue.orders - firstValue.orders || firstHour.localeCompare(secondHour),
   );
   const selectedEntries =
     entries.length > 0
@@ -200,14 +304,26 @@ function createPickupWindows(orders: AnalyticsOrder[]) {
           firstHour.localeCompare(secondHour),
         )
       : ["17:00", "18:00", "19:00", "20:00", "21:00"].map(
-          (hour) => [hour, 0] as [string, number],
+          (hour) => [hour, { orders: 0, revenue: 0 }] as [
+            string,
+            { orders: number; revenue: number },
+          ],
         );
-  const maxCount = Math.max(1, ...selectedEntries.map(([, count]) => count));
+  const totalOrders = Math.max(
+    1,
+    completedOrders.length,
+  );
+  const maxCount = Math.max(
+    1,
+    ...selectedEntries.map(([, value]) => value.orders),
+  );
 
-  return selectedEntries.map(([time, count]) => ({
+  return selectedEntries.map(([time, value]) => ({
     time,
-    orders: count,
-    value: Math.round((count / maxCount) * 100),
+    orders: value.orders,
+    revenue: value.revenue,
+    share: getRate(value.orders, totalOrders),
+    value: Math.round((value.orders / maxCount) * 100),
   }));
 }
 
@@ -231,11 +347,34 @@ function createAnalytics(
     rating: number;
     reviewCount: number;
   },
+  historicalCompletedCustomerCounts: Map<string, number>,
 ) {
   const now = new Date();
   const from = subtractDays(periodDays);
   const completedOrders = getCompletedOrders(orders);
   const previousCompletedOrders = getCompletedOrders(previousOrders);
+  const operationalOrders = getOperationalOrders(orders);
+  const previousOperationalOrders = getOperationalOrders(previousOrders);
+  const refundedOrders = getRefundedOrders(orders);
+  const previousRefundedOrders = getRefundedOrders(previousOrders);
+  const conversionRate = getRate(completedOrders.length, operationalOrders.length);
+  const previousConversionRate = getRate(
+    previousCompletedOrders.length,
+    previousOperationalOrders.length,
+  );
+  const refundRate = getRate(refundedOrders.length, operationalOrders.length);
+  const previousRefundRate = getRate(
+    previousRefundedOrders.length,
+    previousOperationalOrders.length,
+  );
+  const repeatCustomer = getRepeatCustomerRate(
+    completedOrders,
+    historicalCompletedCustomerCounts,
+  );
+  const previousRepeatCustomer = getRepeatCustomerRate(
+    previousCompletedOrders,
+    historicalCompletedCustomerCounts,
+  );
   const netRevenue = completedOrders.reduce(
     (total, order) => total + getNetRevenue(order),
     0,
@@ -271,6 +410,20 @@ function createAnalytics(
       foodSavedTrend: formatTrend(
         getTrendPercent(foodSavedKg, previousFoodSavedKg),
       ),
+      conversionRate,
+      conversionTrend: formatTrend(
+        getTrendPercent(conversionRate, previousConversionRate),
+      ),
+      refundRate,
+      refundTrend: formatTrend(getTrendPercent(refundRate, previousRefundRate)),
+      repeatCustomerRate: repeatCustomer.rate,
+      repeatCustomerTrend: formatTrend(
+        getTrendPercent(repeatCustomer.rate, previousRepeatCustomer.rate),
+      ),
+      repeatCustomers: repeatCustomer.repeatCustomers,
+      uniqueCustomers: repeatCustomer.uniqueCustomers,
+      totalOperationalOrders: operationalOrders.length,
+      refundedOrders: refundedOrders.length,
     },
     revenue,
     impact: {
@@ -319,8 +472,82 @@ function createAnalytics(
           ? `${topSeller.sold} porsi terjual pada periode ini.`
           : "Menu terlaris akan muncul setelah ada order selesai.",
       },
+      {
+        type: "conversion",
+        title: "Conversion rate",
+        value: formatRate(conversionRate),
+        description: `${completedOrders.length} dari ${operationalOrders.length} order operasional selesai.`,
+      },
+      {
+        type: "refund",
+        title: "Refund rate",
+        value: formatRate(refundRate),
+        description: `${refundedOrders.length} order punya refund pada periode ini.`,
+      },
+      {
+        type: "repeat",
+        title: "Repeat customer",
+        value: formatRate(repeatCustomer.rate),
+        description: `${repeatCustomer.repeatCustomers} dari ${repeatCustomer.uniqueCustomers} customer pernah repeat order.`,
+      },
     ],
   };
+}
+
+function escapeCsvCell(value: string | number | null | undefined) {
+  const normalizedValue = String(value ?? "");
+
+  if (
+    normalizedValue.includes(",") ||
+    normalizedValue.includes('"') ||
+    normalizedValue.includes("\n")
+  ) {
+    return `"${normalizedValue.replaceAll('"', '""')}"`;
+  }
+
+  return normalizedValue;
+}
+
+function createAnalyticsCsv({
+  restaurantName,
+  periodDays,
+  analytics,
+}: {
+  restaurantName: string;
+  periodDays: number;
+  analytics: ReturnType<typeof createAnalytics>;
+}) {
+  const rows: Array<Array<string | number>> = [
+    ["section", "metric", "value", "extra"],
+    ["summary", "restaurant", restaurantName, `${periodDays} hari`],
+    ["kpi", "net_revenue", analytics.kpis.netRevenue, analytics.kpis.revenueTrend],
+    ["kpi", "completed_orders", analytics.kpis.completedOrders, analytics.kpis.orderTrend],
+    ["kpi", "food_saved_kg", analytics.kpis.foodSavedKg, analytics.kpis.foodSavedTrend],
+    ["kpi", "conversion_rate", analytics.kpis.conversionRate, analytics.kpis.conversionTrend],
+    ["kpi", "refund_rate", analytics.kpis.refundRate, analytics.kpis.refundTrend],
+    [
+      "kpi",
+      "repeat_customer_rate",
+      analytics.kpis.repeatCustomerRate,
+      analytics.kpis.repeatCustomerTrend,
+    ],
+    ...analytics.bestSellers.map((seller) => [
+      "best_seller",
+      seller.name,
+      seller.sold,
+      `revenue=${seller.revenue};orders=${seller.orderCount};refund=${seller.refundCount};contribution=${seller.contributionRate}%`,
+    ]),
+    ...analytics.pickupWindows.map((window) => [
+      "pickup_window",
+      window.time,
+      window.orders,
+      `share=${window.share}%;revenue=${window.revenue}`,
+    ]),
+  ];
+
+  return rows
+    .map((row) => row.map((cell) => escapeCsvCell(cell)).join(","))
+    .join("\n");
 }
 
 export async function GET(request: Request) {
@@ -334,6 +561,8 @@ export async function GET(request: Request) {
   }
 
   const periodDays = getPeriodDays(request);
+  const url = new URL(request.url);
+  const exportFormat = url.searchParams.get("format");
   const now = new Date();
   const from = subtractDays(periodDays);
   const previousFrom = subtractDays(periodDays * 2);
@@ -357,15 +586,43 @@ export async function GET(request: Request) {
     });
   }
 
-  const [orders, previousOrders] = await Promise.all([
+  const [
+    orders,
+    previousOrders,
+    historicalCompletedCustomerCounts,
+  ] = await Promise.all([
     getOrdersForPeriod(restaurant.id, from, now),
     getOrdersForPeriod(restaurant.id, previousFrom, from),
+    getHistoricalCompletedCustomerCounts(restaurant.id, now),
   ]);
+  const analytics = createAnalytics(
+    orders,
+    previousOrders,
+    periodDays,
+    restaurant,
+    historicalCompletedCustomerCounts,
+  );
+
+  if (exportFormat === "csv") {
+    return new NextResponse(
+      createAnalyticsCsv({
+        restaurantName: restaurant.name,
+        periodDays,
+        analytics,
+      }),
+      {
+        headers: {
+          "Content-Type": "text/csv; charset=utf-8",
+          "Content-Disposition": `attachment; filename="resqfood-owner-analytics-${periodDays}d.csv"`,
+        },
+      },
+    );
+  }
 
   return NextResponse.json({
     ok: true,
     restaurant,
     periodDays,
-    analytics: createAnalytics(orders, previousOrders, periodDays, restaurant),
+    analytics,
   });
 }

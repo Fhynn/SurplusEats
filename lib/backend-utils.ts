@@ -27,3 +27,9 @@ export const createPayoutReference = () =>
     codeAlphabet,
     6,
   )}`;
+
+export const createPayoutBatchReference = () =>
+  `BATCH-${Date.now().toString(36).toUpperCase()}-${createRandomCode(
+    codeAlphabet,
+    6,
+  )}`;

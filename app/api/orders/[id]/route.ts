@@ -2,7 +2,15 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { getCurrentSession } from "@/lib/auth-session";
+import { notifyFavoriteMenuItemsAvailableByIds } from "@/lib/favorite-menu-notifications";
+import { createNotificationAndDeliver } from "@/lib/notification-delivery";
 import { expireNoShowOrders } from "@/lib/order-no-show";
+import {
+  getOrderStatusLabel,
+  isValidOrderStatusTransition,
+  normalizePickupCode,
+  type PickupVerificationMethod,
+} from "@/lib/order-status-flow";
 import { prisma, type PrismaTransactionClient } from "@/lib/prisma";
 import {
   MenuItemStatus,
@@ -30,48 +38,15 @@ const updateOrderStatusSchema = z.object({
     OrderStatus.CANCELLED,
   ]),
   pickupCode: z.string().trim().max(20).optional(),
+  pickupVerificationMethod: z.literal("SCANNER_OR_MANUAL").optional(),
 });
-
-function normalizePickupCode(value: string | null | undefined) {
-  return (value ?? "").replace(/\D/g, "");
-}
-
-function isValidOrderStatusTransition(
-  currentStatus: OrderStatus,
-  nextStatus: OrderStatus,
-) {
-  if (currentStatus === nextStatus) {
-    return true;
-  }
-
-  const allowedNextStatuses: Record<OrderStatus, OrderStatus[]> = {
-    [OrderStatus.PENDING]: [
-      OrderStatus.CONFIRMED,
-      OrderStatus.PREPARING,
-      OrderStatus.CANCELLED,
-    ],
-    [OrderStatus.PAID]: [
-      OrderStatus.CONFIRMED,
-      OrderStatus.PREPARING,
-      OrderStatus.CANCELLED,
-    ],
-    [OrderStatus.CONFIRMED]: [OrderStatus.PREPARING, OrderStatus.CANCELLED],
-    [OrderStatus.PREPARING]: [OrderStatus.READY, OrderStatus.CANCELLED],
-    [OrderStatus.READY]: [OrderStatus.COMPLETED, OrderStatus.CANCELLED],
-    [OrderStatus.COMPLETED]: [],
-    [OrderStatus.NO_SHOW]: [],
-    [OrderStatus.CANCELLED]: [],
-    [OrderStatus.REFUNDED]: [],
-    [OrderStatus.PAYMENT_FAILED]: [],
-  };
-
-  return allowedNextStatuses[currentStatus]?.includes(nextStatus) ?? false;
-}
 
 async function restoreOrderStock(
   tx: PrismaTransactionClient,
   items: Array<{ menuItemId: string | null; quantity: number }>,
 ) {
+  const restoredAvailableMenuItemIds: string[] = [];
+
   for (const item of items) {
     if (!item.menuItemId) {
       continue;
@@ -89,6 +64,10 @@ async function restoreOrderStock(
       continue;
     }
 
+    if (menuItem.status === MenuItemStatus.SOLD_OUT) {
+      restoredAvailableMenuItemIds.push(item.menuItemId);
+    }
+
     await tx.menuItem.update({
       where: { id: item.menuItemId },
       data: {
@@ -101,6 +80,8 @@ async function restoreOrderStock(
       },
     });
   }
+
+  return restoredAvailableMenuItemIds;
 }
 
 export async function GET(_request: Request, { params }: OrderDetailRouteProps) {
@@ -136,7 +117,15 @@ export async function GET(_request: Request, { params }: OrderDetailRouteProps) 
           owner: true,
         },
       },
-      review: true,
+      review: {
+        include: {
+          images: {
+            include: {
+              asset: true,
+            },
+          },
+        },
+      },
     },
   });
 
@@ -198,6 +187,17 @@ export async function PATCH(request: Request, { params }: OrderDetailRouteProps)
 
   const nextStatus = parsed.data.status;
 
+  if (order.paymentStatus !== PaymentStatus.PAID) {
+    return NextResponse.json(
+      {
+        ok: false,
+        message:
+          "Order belum dibayar melalui Tripay dan belum boleh diproses.",
+      },
+      { status: 400 },
+    );
+  }
+
   if (!isValidOrderStatusTransition(order.status, nextStatus)) {
     return NextResponse.json(
       {
@@ -244,13 +244,18 @@ export async function PATCH(request: Request, { params }: OrderDetailRouteProps)
     }
   }
 
+  let restoredAvailableMenuItemIds: string[] = [];
   const updatedOrder = await prisma.$transaction(
     async (tx: PrismaTransactionClient) => {
+      const now = new Date();
+      const pickupVerificationMethod: PickupVerificationMethod =
+        parsed.data.pickupVerificationMethod ?? "SCANNER_OR_MANUAL";
+
       if (
         nextStatus === OrderStatus.CANCELLED &&
         order.status !== OrderStatus.CANCELLED
       ) {
-        await restoreOrderStock(tx, order.items);
+        restoredAvailableMenuItemIds = await restoreOrderStock(tx, order.items);
       }
 
       const nextOrder = await tx.order.update({
@@ -261,10 +266,26 @@ export async function PATCH(request: Request, { params }: OrderDetailRouteProps)
             nextStatus === OrderStatus.CANCELLED
               ? PaymentStatus.REFUNDED
               : order.paymentStatus,
+          acceptedAt:
+            (nextStatus === OrderStatus.CONFIRMED ||
+              nextStatus === OrderStatus.PREPARING) &&
+            !order.acceptedAt
+              ? now
+              : undefined,
+          preparingAt: nextStatus === OrderStatus.PREPARING ? now : undefined,
+          readyAt: nextStatus === OrderStatus.READY ? now : undefined,
+          pickupVerifiedAt:
+            nextStatus === OrderStatus.COMPLETED ? now : undefined,
+          pickupVerifiedBy:
+            nextStatus === OrderStatus.COMPLETED ? session.name : undefined,
+          pickupVerificationMethod:
+            nextStatus === OrderStatus.COMPLETED
+              ? pickupVerificationMethod
+              : undefined,
           completedAt:
-            nextStatus === OrderStatus.COMPLETED ? new Date() : undefined,
+            nextStatus === OrderStatus.COMPLETED ? now : undefined,
           cancelledAt:
-            nextStatus === OrderStatus.CANCELLED ? new Date() : undefined,
+            nextStatus === OrderStatus.CANCELLED ? now : undefined,
         },
         include: {
           customer: true,
@@ -279,7 +300,15 @@ export async function PATCH(request: Request, { params }: OrderDetailRouteProps)
               owner: true,
             },
           },
-          review: true,
+          review: {
+            include: {
+              images: {
+                include: {
+                  asset: true,
+                },
+              },
+            },
+          },
         },
       });
 
@@ -292,6 +321,7 @@ export async function PATCH(request: Request, { params }: OrderDetailRouteProps)
           },
           data: {
             status: WalletTransactionStatus.COMPLETED,
+            processedAt: now,
             description: `Order ${order.orderCode} selesai`,
           },
         });
@@ -306,6 +336,7 @@ export async function PATCH(request: Request, { params }: OrderDetailRouteProps)
           },
           data: {
             status: WalletTransactionStatus.FAILED,
+            processedAt: now,
             description: `Order ${order.orderCode} dibatalkan`,
           },
         });
@@ -315,21 +346,27 @@ export async function PATCH(request: Request, { params }: OrderDetailRouteProps)
     },
   );
 
-  await prisma.notification.create({
-    data: {
-      userId: order.customerId,
-      type: NotificationType.ORDER,
-      title:
-        nextStatus === OrderStatus.CANCELLED
-          ? "Pesanan dibatalkan"
-          : "Status pesanan diperbarui",
-      body:
-        nextStatus === OrderStatus.CANCELLED
-          ? `${order.orderCode} tidak bisa diproses oleh ${order.restaurant.name}.`
-          : `${order.orderCode} sekarang berstatus ${nextStatus.toLowerCase()}.`,
-      href: `/orders/${order.orderCode}`,
-    },
+  await createNotificationAndDeliver({
+    userId: order.customerId,
+    type: NotificationType.ORDER,
+    title:
+      nextStatus === OrderStatus.CANCELLED
+        ? "Pesanan dibatalkan"
+        : "Status pesanan diperbarui",
+    body:
+      nextStatus === OrderStatus.CANCELLED
+        ? `${order.orderCode} tidak bisa diproses oleh ${order.restaurant.name}.`
+        : `${order.orderCode} sekarang berstatus ${getOrderStatusLabel(nextStatus)}.`,
+    href: `/orders/${order.orderCode}`,
   });
+
+  if (restoredAvailableMenuItemIds.length > 0) {
+    await notifyFavoriteMenuItemsAvailableByIds(
+      restoredAvailableMenuItemIds,
+    ).catch((error: unknown) => {
+      console.warn("Cancelled order favorite restock notification failed", error);
+    });
+  }
 
   return NextResponse.json({ ok: true, order: updatedOrder });
 }

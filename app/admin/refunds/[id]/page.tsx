@@ -4,16 +4,27 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import {
+  AlertTriangle,
   ArrowLeft,
   CheckCircle2,
   Clock3,
   FileText,
+  MessageSquareText,
   RefreshCcw,
+  ShieldCheck,
   Store,
   UserRound,
   WalletCards,
   XCircle,
 } from "lucide-react";
+
+import {
+  getRefundReasonOption,
+  getRefundSlaState,
+  getRefundStatusLabel,
+  refundAdminDecisionTemplates,
+  type RefundStatusValue,
+} from "@/lib/refund-policy";
 
 type RefundDetail = {
   id: string;
@@ -21,8 +32,10 @@ type RefundDetail = {
   description: string;
   amount: number;
   method: string;
-  status: "PENDING" | "REVIEWING" | "APPROVED" | "REJECTED" | "PAID";
+  status: RefundStatusValue;
   adminNote: string | null;
+  reviewedAt: string | null;
+  paidAt: string | null;
   createdAt: string;
   evidence: Array<{
     id: string;
@@ -61,7 +74,7 @@ const formatRp = (amount: number) =>
     maximumFractionDigits: 0,
   }).format(amount);
 
-function formatTime(value: string) {
+function formatTime(value: string | Date) {
   return new Intl.DateTimeFormat("id-ID", {
     day: "2-digit",
     month: "short",
@@ -69,6 +82,37 @@ function formatTime(value: string) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(value));
+}
+
+function getTimelineItems(refund: RefundDetail) {
+  return [
+    {
+      label: "Pengajuan masuk",
+      description: "Customer mengirim alasan, kronologi, dan bukti pendukung.",
+      done: true,
+      time: formatTime(refund.createdAt),
+    },
+    {
+      label: "Admin meninjau",
+      description: "Admin memeriksa bukti, order, dan catatan restoran.",
+      done: ["REVIEWING", "APPROVED", "REJECTED", "PAID"].includes(
+        refund.status,
+      ),
+      time: refund.reviewedAt ? formatTime(refund.reviewedAt) : "Menunggu",
+    },
+    {
+      label: "Keputusan dikirim",
+      description: "Customer menerima hasil review refund.",
+      done: ["APPROVED", "REJECTED", "PAID"].includes(refund.status),
+      time: refund.reviewedAt ? formatTime(refund.reviewedAt) : "Menunggu",
+    },
+    {
+      label: "Refund dibayarkan",
+      description: "Saldo/order/wallet disesuaikan setelah admin menandai paid.",
+      done: refund.status === "PAID",
+      time: refund.paidAt ? formatTime(refund.paidAt) : "Menunggu approval",
+    },
+  ];
 }
 
 export default function AdminRefundDetailPage() {
@@ -153,6 +197,15 @@ export default function AdminRefundDetailPage() {
       setIsSubmitting(false);
     }
   };
+  const refundReasonOption = refund ? getRefundReasonOption(refund.reason) : null;
+  const refundSlaState = refund
+    ? getRefundSlaState({
+        createdAt: refund.createdAt,
+        reviewedAt: refund.reviewedAt,
+        status: refund.status,
+      })
+    : null;
+  const refundTimelineItems = refund ? getTimelineItems(refund) : [];
 
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 p-5 md:p-8">
@@ -193,7 +246,7 @@ export default function AdminRefundDetailPage() {
             ) : (
               <Clock3 size={16} />
             )}
-            {refund.status}
+            {getRefundStatusLabel(refund.status)}
           </span>
         ) : null}
       </header>
@@ -217,11 +270,20 @@ export default function AdminRefundDetailPage() {
       ) : refund ? (
         <section className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
           <div className="space-y-6">
-            <div className="grid gap-4 md:grid-cols-3">
+            <div className="grid gap-4 md:grid-cols-4">
               {[
                 { label: "Nominal", value: formatRp(refund.amount), icon: WalletCards },
                 { label: "Metode", value: refund.method, icon: RefreshCcw },
                 { label: "Diajukan", value: formatTime(refund.createdAt), icon: Clock3 },
+                {
+                  label: "SLA",
+                  value: refundSlaState?.dueAt
+                    ? refundSlaState.isBreached
+                      ? "Lewat SLA"
+                      : formatTime(refundSlaState.dueAt)
+                    : "Selesai",
+                  icon: refundSlaState?.isBreached ? AlertTriangle : ShieldCheck,
+                },
               ].map(({ label, value, icon: Icon }) => (
                 <div
                   key={label}
@@ -234,6 +296,17 @@ export default function AdminRefundDetailPage() {
                   <p className="mt-2 text-sm font-extrabold text-gray-950">
                     {value}
                   </p>
+                  {label === "SLA" && refundSlaState ? (
+                    <p
+                      className={`mt-1 text-xs font-bold ${
+                        refundSlaState.isBreached
+                          ? "text-red-600"
+                          : "text-gray-500"
+                      }`}
+                    >
+                      {refundSlaState.label}
+                    </p>
+                  ) : null}
                 </div>
               ))}
             </div>
@@ -269,9 +342,54 @@ export default function AdminRefundDetailPage() {
                 <p className="mt-2 text-sm font-extrabold text-gray-950">
                   {refund.reason}
                 </p>
+                {refundReasonOption ? (
+                  <div className="mt-3 rounded-2xl border border-emerald-100 bg-emerald-50 p-3 text-xs leading-5 font-semibold text-emerald-800">
+                    <p>{refundReasonOption.description}</p>
+                    <p className="mt-1">Bukti ideal: {refundReasonOption.evidenceHint}</p>
+                  </div>
+                ) : null}
                 <p className="mt-2 text-sm leading-6 font-medium text-gray-600">
                   {refund.description}
                 </p>
+              </div>
+            </div>
+
+            <div className="rounded-[28px] border border-gray-100 bg-white p-6 shadow-sm">
+              <h2 className="mb-5 text-lg font-extrabold text-gray-950">
+                Timeline Refund
+              </h2>
+              <div className="space-y-4">
+                {refundTimelineItems.map((item, index) => (
+                  <div key={item.label} className="flex gap-3">
+                    <div className="flex flex-col items-center">
+                      <div
+                        className={`flex h-9 w-9 items-center justify-center rounded-full ${
+                          item.done
+                            ? "bg-emerald-500 text-white"
+                            : "bg-gray-100 text-gray-400"
+                        }`}
+                      >
+                        <CheckCircle2 size={17} />
+                      </div>
+                      {index < refundTimelineItems.length - 1 ? (
+                        <div className="mt-2 h-8 w-px bg-gray-200" />
+                      ) : null}
+                    </div>
+                    <div className="min-w-0 pt-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-sm font-extrabold text-gray-950">
+                          {item.label}
+                        </p>
+                        <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-extrabold text-gray-500">
+                          {item.time}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs leading-5 font-medium text-gray-500">
+                        {item.description}
+                      </p>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
 
@@ -319,6 +437,33 @@ export default function AdminRefundDetailPage() {
                 placeholder="Tulis catatan keputusan..."
               />
             </label>
+            <div className="mt-3 space-y-2">
+              {refundAdminDecisionTemplates.map((template) => (
+                <button
+                  key={template}
+                  type="button"
+                  onClick={() => setAdminNote(template)}
+                  className="w-full rounded-2xl border border-gray-100 bg-gray-50 px-3 py-2 text-left text-xs leading-5 font-bold text-gray-600 transition-colors hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700"
+                >
+                  {template}
+                </button>
+              ))}
+            </div>
+            <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <a
+                href={`mailto:${refund.customer.email}?subject=Refund ${refund.order.orderCode}`}
+                className="flex items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm font-extrabold text-gray-700 transition-colors hover:bg-gray-50"
+              >
+                <MessageSquareText size={17} />
+                Email Customer
+              </a>
+              <Link
+                href="/admin/support"
+                className="flex items-center justify-center gap-2 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm font-extrabold text-emerald-700 transition-colors hover:bg-emerald-100"
+              >
+                Support Refund
+              </Link>
+            </div>
             <div className="mt-5 grid gap-3">
               <button
                 type="button"

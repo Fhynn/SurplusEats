@@ -12,11 +12,18 @@ import {
   RefreshCcw,
   ShieldCheck,
   Store,
+  UploadCloud,
   XCircle,
   type LucideIcon,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  type ChangeEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 
 import { OwnerVerifyActions } from "@/components/owner-verify-actions";
 
@@ -34,6 +41,22 @@ type VerificationDocument = {
   type: string;
   label: string;
   status: string;
+  reviewNote: string | null;
+  revision: number;
+  asset?: {
+    url: string;
+    pathname: string;
+    contentType: string | null;
+    size: number | null;
+  } | null;
+  revisions?: Array<{
+    id: string;
+    revision: number;
+    status: string;
+    event: string;
+    note: string | null;
+    createdAt: string;
+  }>;
 };
 
 type OwnerProfileResponse = {
@@ -78,10 +101,14 @@ type VerificationStep = {
 };
 
 type DocumentCheck = {
+  id: string;
   label: string;
   detail: string;
   icon: LucideIcon;
   status: string;
+  rawStatus: string;
+  reviewNote: string | null;
+  revision: number;
   className: string;
 };
 
@@ -258,14 +285,25 @@ function createDocumentChecks(
     };
 
     return {
+      id: document.id,
       label: meta.label,
       detail: document.label,
       icon: meta.icon,
-      status: document.status === "pending" ? "Review" : document.status,
+      status:
+        document.status === "accepted"
+          ? "Diterima"
+          : document.status === "rejected"
+            ? "Perlu revisi"
+            : "Review",
+      rawStatus: document.status,
+      reviewNote: document.reviewNote,
+      revision: document.revision,
       className:
-        document.status === "pending"
-          ? "bg-amber-50 text-amber-600"
-          : "bg-emerald-50 text-emerald-600",
+        document.status === "rejected"
+          ? "bg-red-50 text-red-600"
+          : document.status === "accepted"
+            ? "bg-emerald-50 text-emerald-600"
+            : "bg-amber-50 text-amber-600",
     };
   });
   const application = profile?.latestApplication ?? null;
@@ -276,21 +314,29 @@ function createDocumentChecks(
   return [
     ...documentChecks,
     {
+      id: "pickup-location",
       label: "Lokasi pickup",
       detail: application
         ? `${application.address}, ${application.city}`
         : "Belum ada alamat usaha.",
       icon: MapPin,
       status: hasLocation ? "Siap" : "Kosong",
+      rawStatus: hasLocation ? "accepted" : "rejected",
+      reviewNote: null,
+      revision: 1,
       className: hasLocation
         ? "bg-blue-50 text-blue-600"
         : "bg-red-50 text-red-600",
     },
     {
+      id: "payout-account",
       label: "Rekening pencairan",
       detail: "Rekening diverifikasi saat payout pertama diajukan.",
       icon: Banknote,
       status: "Nanti",
+      rawStatus: "pending",
+      reviewNote: null,
+      revision: 1,
       className: "bg-gray-100 text-gray-600",
     },
   ];
@@ -301,6 +347,9 @@ export default function OwnerVerifyPage() {
   const [profile, setProfile] = useState<OwnerProfileResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
+  const [uploadingDocumentId, setUploadingDocumentId] = useState<string | null>(
+    null,
+  );
 
   const loadProfile = useCallback(
     async ({ silent = false }: { silent?: boolean } = {}) => {
@@ -371,6 +420,54 @@ export default function OwnerVerifyPage() {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [loadProfile, ownerApproved]);
+
+  const handleDocumentRevision =
+    (documentId: string) => async (event: ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      const applicationId = profile?.latestApplication?.id;
+
+      event.target.value = "";
+
+      if (!file || !applicationId || uploadingDocumentId) {
+        return;
+      }
+
+      setUploadingDocumentId(documentId);
+      setNotice(null);
+
+      try {
+        const formData = new FormData();
+        formData.set("documentId", documentId);
+        formData.set("file", file);
+
+        const response = await fetch(
+          `/api/restaurant-applications/${applicationId}/documents`,
+          {
+            method: "POST",
+            body: formData,
+          },
+        );
+        const data = (await response.json()) as {
+          ok: boolean;
+          message?: string;
+        };
+
+        if (!response.ok || !data.ok) {
+          throw new Error(data.message || "Revisi dokumen gagal dikirim.");
+        }
+
+        await loadProfile();
+        setNotice("Revisi dokumen berhasil dikirim dan menunggu review admin.");
+      } catch (error) {
+        setNotice(
+          error instanceof Error
+            ? error.message
+            : "Revisi dokumen gagal dikirim.",
+        );
+      } finally {
+        setUploadingDocumentId(null);
+      }
+    };
 
   const statusCopy = getStatusCopy(profile);
   const StatusIcon = statusCopy.icon;
@@ -556,6 +653,42 @@ export default function OwnerVerifyPage() {
                       <p className="mt-1 text-xs leading-5 font-medium text-gray-500">
                         {item.detail}
                       </p>
+                      {!["pickup-location", "payout-account"].includes(item.id) ? (
+                        <p className="mt-2 text-[10px] font-extrabold tracking-wider text-gray-400 uppercase">
+                          Versi {item.revision}
+                        </p>
+                      ) : null}
+                      {item.reviewNote ? (
+                        <div className="mt-3 rounded-2xl border border-red-100 bg-red-50 p-3">
+                          <p className="text-[10px] font-extrabold tracking-wider text-red-500 uppercase">
+                            Catatan admin
+                          </p>
+                          <p className="mt-1 text-xs leading-5 font-semibold text-red-700">
+                            {item.reviewNote}
+                          </p>
+                        </div>
+                      ) : null}
+                      {item.rawStatus === "rejected" &&
+                      profile?.latestApplication?.status !== "APPROVED" &&
+                      !["pickup-location", "payout-account"].includes(item.id) ? (
+                        <label className="mt-3 inline-flex cursor-pointer items-center justify-center gap-2 rounded-2xl bg-gray-950 px-4 py-2.5 text-xs font-extrabold text-white transition-colors hover:bg-emerald-600">
+                          <input
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp,application/pdf"
+                            className="sr-only"
+                            disabled={Boolean(uploadingDocumentId)}
+                            onChange={handleDocumentRevision(item.id)}
+                          />
+                          {uploadingDocumentId === item.id ? (
+                            <RefreshCcw size={15} className="animate-spin" />
+                          ) : (
+                            <UploadCloud size={15} />
+                          )}
+                          {uploadingDocumentId === item.id
+                            ? "Mengunggah..."
+                            : "Upload revisi"}
+                        </label>
+                      ) : null}
                     </article>
                   );
                 })}

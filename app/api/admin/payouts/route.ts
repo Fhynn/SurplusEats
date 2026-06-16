@@ -7,6 +7,7 @@ import { NextResponse } from "next/server";
 
 import { getCurrentSession } from "@/lib/auth-session";
 import { prisma } from "@/lib/prisma";
+import { settleCompletedWalletTransactions } from "@/lib/wallet-settlement";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,6 +32,18 @@ function serializePayout(
     rawAmount: payout.amount,
     status: payout.status,
     reference: payout.reference,
+    payoutBatchReference: payout.payoutBatchReference,
+    transferReference: payout.transferReference,
+    transferProofUrl: payout.transferProofUrl,
+    bankName: payout.bankName,
+    bankAccountNumber: payout.bankAccountNumber,
+    bankAccountHolder: payout.bankAccountHolder,
+    bankValidationStatus: payout.bankValidationStatus,
+    payoutFee: payout.payoutFee,
+    payoutNetAmount: payout.payoutNetAmount,
+    processedAt: payout.processedAt?.toISOString() ?? null,
+    processedBy: payout.processedBy,
+    adminNote: payout.adminNote,
     description: payout.description,
     createdAt: payout.createdAt.toISOString(),
     updatedAt: payout.updatedAt.toISOString(),
@@ -47,6 +60,8 @@ export async function GET() {
       { status: session ? 403 : 401 },
     );
   }
+
+  await settleCompletedWalletTransactions();
 
   const payouts = await prisma.walletTransaction.findMany({
     where: {

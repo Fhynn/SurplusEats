@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 
 import { LocationMapPicker } from "@/components/location-map-picker";
+import { InlineNotice, StateCard } from "@/components/ui-state";
 import {
   getBestBrowserLocation,
   getLocationAccuracyNotice,
@@ -21,6 +22,12 @@ import {
   formatCoordinatesInput,
   parseCoordinatesFromText,
 } from "@/lib/maps-coordinate";
+import { getStorePickupCoordinateIssue } from "@/lib/location-quality";
+import { saveRecentLocation } from "@/lib/recent-locations";
+import {
+  formatCoordinateLabel,
+  reverseGeocodeCoordinates,
+} from "@/lib/reverse-geocode";
 
 type OwnerProfile = {
   owner: {
@@ -75,19 +82,12 @@ function getCoordinateError(draft: LocationDraft) {
   const latitudeNumber = Number(latitude);
   const longitudeNumber = Number(longitude);
 
-  if (!Number.isFinite(latitudeNumber) || latitudeNumber < -90 || latitudeNumber > 90) {
-    return "Titik lokasi toko tidak valid. Klik Ambil Lokasi lagi.";
-  }
-
-  if (
-    !Number.isFinite(longitudeNumber) ||
-    longitudeNumber < -180 ||
-    longitudeNumber > 180
-  ) {
-    return "Titik lokasi toko tidak valid. Klik Ambil Lokasi lagi.";
-  }
-
-  return "";
+  return (
+    getStorePickupCoordinateIssue({
+      latitude: latitudeNumber,
+      longitude: longitudeNumber,
+    }) ?? ""
+  );
 }
 
 export default function OwnerSettingsPage() {
@@ -181,6 +181,18 @@ export default function OwnerSettingsPage() {
       setLocationDraft(formatCoordinatesInput(result.coordinates));
       setMapsInputError(null);
       setNotice(getLocationAccuracyNotice(result.accuracy));
+      void reverseGeocodeCoordinates(result.coordinates).then((geocodedLocation) => {
+        const locationLabel =
+          geocodedLocation?.label || formatCoordinateLabel(result.coordinates);
+
+        saveRecentLocation({
+          source: "store",
+          label: locationLabel,
+          addressLine: geocodedLocation?.addressLine,
+          coordinates: result.coordinates,
+        });
+        setNotice(`${getLocationAccuracyNotice(result.accuracy)} ${locationLabel}`);
+      });
     } catch (error) {
       setNotice(
         error instanceof Error
@@ -278,21 +290,18 @@ export default function OwnerSettingsPage() {
       </header>
 
       {notice ? (
-        <div
-          className={`rounded-2xl border p-4 text-sm font-bold ${
-            isSuccessNotice
-              ? "border-emerald-100 bg-emerald-50 text-emerald-700"
-              : "border-red-100 bg-red-50 text-red-700"
-          }`}
-        >
-          {notice}
-        </div>
+        <InlineNotice
+          variant={isSuccessNotice ? "success" : "error"}
+          description={notice}
+        />
       ) : null}
 
       {isLoading ? (
-        <div className="rounded-[28px] border border-gray-100 bg-white p-10 text-center text-sm font-bold text-gray-500 shadow-sm">
-          Memuat pengaturan...
-        </div>
+        <StateCard
+          title="Memuat pengaturan"
+          description="Mengambil profil owner, restoran, dan titik pickup."
+          variant="loading"
+        />
       ) : profile ? (
         <section className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
           <div className="rounded-[28px] border border-gray-100 bg-white p-6 shadow-sm">
@@ -442,17 +451,18 @@ export default function OwnerSettingsPage() {
                           onCoordinatesChange={(coordinates) => {
                             setLocationDraft(formatCoordinatesInput(coordinates));
                             setMapsInputError(null);
-                            setNotice(null);
+                            setNotice("Pin peta dipilih. Simpan titik toko untuk menerapkan perubahan.");
                           }}
                           title="Pin Lokasi Toko"
                           description="Klik peta atau geser pin tepat di lokasi pickup toko."
+                          recentSource="store"
                         />
                         {locationMapsHref ? (
                           <a
                             href={locationMapsHref}
                             target="_blank"
                             rel="noreferrer"
-                            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-xs font-extrabold text-emerald-700 transition-colors hover:bg-emerald-100"
+                            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-xs font-extrabold text-emerald-700 transition-colors hover:bg-emerald-100"
                           >
                             <Navigation size={15} />
                             Buka Maps
@@ -502,14 +512,22 @@ export default function OwnerSettingsPage() {
                 </section>
               </>
             ) : (
-              <p className="rounded-2xl bg-gray-50 p-5 text-sm font-bold text-gray-500">
-                Restoran akan dibuat otomatis setelah admin menyetujui
-                pendaftaran mitra.
-              </p>
+              <StateCard
+                title="Restoran belum aktif"
+                description="Restoran akan dibuat otomatis setelah admin menyetujui pendaftaran mitra."
+                variant="empty"
+                size="sm"
+              />
             )}
           </div>
         </section>
-      ) : null}
+      ) : (
+        <StateCard
+          title="Profil owner tidak ditemukan"
+          description="Coba login ulang atau hubungi admin jika akun sudah approved."
+          variant="empty"
+        />
+      )}
     </div>
   );
 }

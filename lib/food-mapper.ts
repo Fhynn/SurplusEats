@@ -44,6 +44,44 @@ export function normalizeFoodCategory(category: string): Exclude<Category, "Semu
     return "Sayur";
   }
 
+  if (
+    normalized.includes("ayam") ||
+    normalized.includes("ikan") ||
+    normalized.includes("daging") ||
+    normalized.includes("telur") ||
+    normalized.includes("lauk")
+  ) {
+    return "Lauk";
+  }
+
+  if (
+    normalized.includes("minum") ||
+    normalized.includes("kopi") ||
+    normalized.includes("teh") ||
+    normalized.includes("jus")
+  ) {
+    return "Minuman";
+  }
+
+  if (
+    normalized.includes("dessert") ||
+    normalized.includes("cake") ||
+    normalized.includes("kue") ||
+    normalized.includes("donut") ||
+    normalized.includes("puding")
+  ) {
+    return "Dessert";
+  }
+
+  if (
+    normalized.includes("paket") ||
+    normalized.includes("bundle") ||
+    normalized.includes("combo") ||
+    normalized.includes("hemat")
+  ) {
+    return "Paket Hemat";
+  }
+
   return "Snack";
 }
 

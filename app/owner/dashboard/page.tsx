@@ -10,11 +10,14 @@ import {
   Coffee,
   Eye,
   Leaf,
+  Loader2,
   PackageCheck,
   PackagePlus,
   Plus,
   Search,
   ShoppingBag,
+  Square,
+  CheckSquare,
   TrendingUp,
   UtensilsCrossed,
   X,
@@ -28,6 +31,7 @@ import {
   showSweetError,
   showSweetToast,
 } from "@/lib/sweet-alert";
+import { useRealtimePolling } from "@/components/use-realtime-polling";
 
 const formatRp = (amount: number) =>
   new Intl.NumberFormat("id-ID", {
@@ -61,6 +65,8 @@ type KanbanOrder = {
   note?: string;
   total: number;
   status: OrderStatus;
+  pickupVerifiedAt: string | null;
+  pickupVerifiedBy: string | null;
 };
 
 type ApiOwnerOrder = {
@@ -76,6 +82,8 @@ type ApiOwnerOrder = {
   note: string | null;
   total: number;
   status: ApiOrderStatus;
+  pickupVerifiedAt: string | null;
+  pickupVerifiedBy: string | null;
 };
 
 type ApiOwnerMenuItem = {
@@ -175,6 +183,8 @@ function mapApiOrder(order: ApiOwnerOrder): KanbanOrder | null {
     note: order.note ?? undefined,
     total: order.total,
     status,
+    pickupVerifiedAt: order.pickupVerifiedAt,
+    pickupVerifiedBy: order.pickupVerifiedBy,
   };
 }
 
@@ -214,18 +224,38 @@ function OrderCard({
   onAdvance,
   onReject,
   onOpenDetail,
+  onToggleSelected,
+  isSelected,
+  isSelectable,
+  isBusy,
 }: {
   order: KanbanOrder;
   onAdvance: (orderId: string) => void;
   onReject: (orderId: string) => void;
   onOpenDetail: (orderId: string) => void;
+  onToggleSelected: (orderId: string) => void;
+  isSelected: boolean;
+  isSelectable: boolean;
+  isBusy: boolean;
 }) {
   return (
-    <article className="group rounded-[24px] border border-transparent bg-white p-5 shadow-[0_4px_20px_rgba(15,23,42,0.04)] transition-all hover:border-emerald-100 hover:shadow-[0_12px_32px_rgba(15,23,42,0.07)]">
+    <article
+      className={`group rounded-[24px] border bg-white p-5 shadow-[0_4px_20px_rgba(15,23,42,0.04)] transition-all hover:border-emerald-100 hover:shadow-[0_12px_32px_rgba(15,23,42,0.07)] ${
+        isSelected ? "border-emerald-200 ring-4 ring-emerald-500/10" : "border-transparent"
+      }`}
+    >
       <div className="mb-4 flex items-center justify-between gap-3">
-        <span className="font-mono text-xs font-extrabold text-gray-400">
-          {order.id}
-        </span>
+        <button
+          type="button"
+          onClick={() => onToggleSelected(order.id)}
+          disabled={!isSelectable || isBusy}
+          className="inline-flex min-w-0 items-center gap-2 rounded-xl px-1 py-1 text-left font-mono text-xs font-extrabold text-gray-400 transition-colors hover:bg-emerald-50 hover:text-emerald-600"
+          aria-pressed={isSelected}
+          aria-label={`Pilih order ${order.id}`}
+        >
+          {isSelected ? <CheckSquare size={16} /> : <Square size={16} />}
+          <span className="truncate">{order.id}</span>
+        </button>
         <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-extrabold text-amber-600">
           <Clock size={13} />
           {order.time}
@@ -259,6 +289,17 @@ function OrderCard({
         </div>
       ) : null}
 
+      {order.pickupVerifiedBy ? (
+        <div className="mt-4 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3">
+          <p className="text-xs font-extrabold tracking-wider text-emerald-500 uppercase">
+            Staf Pickup
+          </p>
+          <p className="mt-1 text-sm font-bold text-emerald-800">
+            Diverifikasi oleh {order.pickupVerifiedBy}
+          </p>
+        </div>
+      ) : null}
+
       <div className="mt-5 flex items-center justify-between gap-4">
         <span className="text-xs font-extrabold tracking-wider text-gray-400 uppercase">
           Total
@@ -283,6 +324,7 @@ function OrderCard({
             <button
               type="button"
               onClick={() => onReject(order.id)}
+              disabled={isBusy}
               className="inline-flex items-center justify-center gap-2 rounded-2xl border border-red-200 bg-white px-3 py-3 text-sm font-extrabold text-red-600 transition-colors hover:bg-red-50"
             >
               <X size={16} />
@@ -291,9 +333,10 @@ function OrderCard({
             <button
               type="button"
               onClick={() => onAdvance(order.id)}
+              disabled={isBusy}
               className="inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-3 py-3 text-sm font-extrabold text-white shadow-[0_8px_20px_rgba(16,185,129,0.22)] transition-colors hover:bg-emerald-600"
             >
-              <Check size={16} />
+              {isBusy ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
               Terima Order
             </button>
           </div>
@@ -303,9 +346,10 @@ function OrderCard({
           <button
             type="button"
             onClick={() => onAdvance(order.id)}
+            disabled={isBusy}
             className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-500 px-4 py-3 text-sm font-extrabold text-white shadow-[0_8px_20px_rgba(59,130,246,0.22)] transition-colors hover:bg-blue-600"
           >
-            <PackageCheck size={17} />
+            {isBusy ? <Loader2 size={17} className="animate-spin" /> : <PackageCheck size={17} />}
             Tandai Siap Diambil
           </button>
         ) : null}
@@ -314,9 +358,10 @@ function OrderCard({
           <button
             type="button"
             onClick={() => onAdvance(order.id)}
+            disabled={isBusy}
             className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-gray-900 px-4 py-3 text-sm font-extrabold text-white shadow-[0_8px_20px_rgba(17,24,39,0.18)] transition-colors hover:bg-emerald-500"
           >
-            <ShoppingBag size={17} />
+            {isBusy ? <Loader2 size={17} className="animate-spin" /> : <ShoppingBag size={17} />}
             Konfirmasi Pickup
           </button>
         ) : null}
@@ -344,70 +389,89 @@ export default function OwnerDashboardPage() {
   const [rescuedItemCount, setRescuedItemCount] = useState(0);
   const [isLoadingDashboard, setIsLoadingDashboard] = useState(true);
   const [dashboardNotice, setDashboardNotice] = useState<string | null>(null);
+  const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(new Set());
+  const [updatingOrderIds, setUpdatingOrderIds] = useState<Set<string>>(new Set());
+  const [isBulkUpdating, setIsBulkUpdating] = useState(false);
   const searchParams = useSearchParams();
   const dashboardTab = searchParams.get("tab");
   const kanbanQuery = searchParams.get("q") ?? "";
   const activeTab: OwnerTab = dashboardTab === "orders" ? "orders" : "dashboard";
   const normalizedKanbanQuery = kanbanQuery.trim().toLowerCase();
 
-  const loadDashboardData = useCallback(async () => {
-    setIsLoadingDashboard(true);
-
-    try {
-      const [ordersResponse, menuResponse, profileResponse] = await Promise.all([
-        fetch("/api/orders", { cache: "no-store" }),
-        fetch("/api/menu-items?scope=owner", { cache: "no-store" }),
-        fetch("/api/owner/profile", { cache: "no-store" }),
-      ]);
-      const ordersData = (await ordersResponse.json()) as {
-        ok: boolean;
-        message?: string;
-        orders?: ApiOwnerOrder[];
-      };
-      const menuData = (await menuResponse.json()) as {
-        ok: boolean;
-        message?: string;
-        menuItems?: ApiOwnerMenuItem[];
-      };
-      const profileData = (await profileResponse.json()) as {
-        ok: boolean;
-        restaurant?: { name: string } | null;
-      };
-
-      if (!ordersResponse.ok || !ordersData.ok) {
-        throw new Error(ordersData.message || "Pesanan gagal dimuat.");
+  const loadDashboardData = useCallback(
+    async ({ silent = false }: { silent?: boolean } = {}) => {
+      if (!silent) {
+        setIsLoadingDashboard(true);
       }
 
-      if (!menuResponse.ok || !menuData.ok) {
-        throw new Error(menuData.message || "Menu owner gagal dimuat.");
+      try {
+        const [ordersResponse, menuResponse, profileResponse] = await Promise.all([
+          fetch("/api/orders", { cache: "no-store" }),
+          fetch("/api/menu-items?scope=owner", { cache: "no-store" }),
+          fetch("/api/owner/profile", { cache: "no-store" }),
+        ]);
+        const ordersData = (await ordersResponse.json()) as {
+          ok: boolean;
+          message?: string;
+          orders?: ApiOwnerOrder[];
+        };
+        const menuData = (await menuResponse.json()) as {
+          ok: boolean;
+          message?: string;
+          menuItems?: ApiOwnerMenuItem[];
+        };
+        const profileData = (await profileResponse.json()) as {
+          ok: boolean;
+          restaurant?: { name: string } | null;
+        };
+
+        if (!ordersResponse.ok || !ordersData.ok) {
+          throw new Error(ordersData.message || "Pesanan gagal dimuat.");
+        }
+
+        if (!menuResponse.ok || !menuData.ok) {
+          throw new Error(menuData.message || "Menu owner gagal dimuat.");
+        }
+
+        const nextOrders = (ordersData.orders || [])
+          .map(mapApiOrder)
+          .filter((order): order is KanbanOrder => order !== null);
+        const menuItems = menuData.menuItems || [];
+
+        setOrders(nextOrders);
+        setRestaurantName(profileData.restaurant?.name || "Restoran");
+        setActiveMenuCount(
+          menuItems.filter((item) => item.status === "ACTIVE").length,
+        );
+        setRescuedItemCount(
+          menuItems.reduce((total, item) => total + item.soldCount, 0),
+        );
+        setDashboardNotice(null);
+      } catch (error) {
+        if (!silent) {
+          setDashboardNotice(
+            error instanceof Error
+              ? error.message
+              : "Dashboard owner gagal dimuat.",
+          );
+        }
+      } finally {
+        if (!silent) {
+          setIsLoadingDashboard(false);
+        }
       }
-
-      const nextOrders = (ordersData.orders || [])
-        .map(mapApiOrder)
-        .filter((order): order is KanbanOrder => order !== null);
-      const menuItems = menuData.menuItems || [];
-
-      setOrders(nextOrders);
-      setRestaurantName(profileData.restaurant?.name || "Restoran");
-      setActiveMenuCount(
-        menuItems.filter((item) => item.status === "ACTIVE").length,
-      );
-      setRescuedItemCount(
-        menuItems.reduce((total, item) => total + item.soldCount, 0),
-      );
-      setDashboardNotice(null);
-    } catch (error) {
-      setDashboardNotice(
-        error instanceof Error ? error.message : "Dashboard owner gagal dimuat.",
-      );
-    } finally {
-      setIsLoadingDashboard(false);
-    }
-  }, []);
+    },
+    [],
+  );
 
   useEffect(() => {
     void loadDashboardData();
   }, [loadDashboardData]);
+
+  useRealtimePolling({
+    intervalMs: activeTab === "orders" ? 8000 : 15000,
+    onPoll: () => loadDashboardData({ silent: true }),
+  });
 
   const handleKanbanQueryChange = (value: string) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -502,6 +566,123 @@ export default function OwnerDashboardPage() {
       {} as Record<OrderStatus, KanbanOrder[]>,
     );
   }, [filteredOrders]);
+  const selectableFilteredOrders = useMemo(
+    () => filteredOrders.filter((order) => order.status !== "completed"),
+    [filteredOrders],
+  );
+
+  useEffect(() => {
+    const validOrderIds = new Set(orders.map((order) => order.id));
+
+    setSelectedOrderIds((currentIds) => {
+      const nextIds = new Set(
+        Array.from(currentIds).filter((orderId) => validOrderIds.has(orderId)),
+      );
+
+      return nextIds.size === currentIds.size ? currentIds : nextIds;
+    });
+  }, [orders]);
+
+  const toggleSelectedOrder = (orderId: string) => {
+    const order = orders.find((item) => item.id === orderId);
+
+    if (!order || order.status === "completed") {
+      return;
+    }
+
+    setSelectedOrderIds((currentIds) => {
+      const nextIds = new Set(currentIds);
+
+      if (nextIds.has(orderId)) {
+        nextIds.delete(orderId);
+      } else {
+        nextIds.add(orderId);
+      }
+
+      return nextIds;
+    });
+  };
+
+  const toggleSelectVisibleOrders = () => {
+    const visibleIds = selectableFilteredOrders.map((order) => order.id);
+
+    if (visibleIds.length === 0) {
+      return;
+    }
+
+    setSelectedOrderIds((currentIds) => {
+      const hasSelectedAll = visibleIds.every((orderId) =>
+        currentIds.has(orderId),
+      );
+      const nextIds = new Set(currentIds);
+
+      if (hasSelectedAll) {
+        visibleIds.forEach((orderId) => nextIds.delete(orderId));
+      } else {
+        visibleIds.forEach((orderId) => nextIds.add(orderId));
+      }
+
+      return nextIds;
+    });
+  };
+
+  const handleBulkOrderStatus = async (nextStatus: ApiOrderStatus) => {
+    const orderCodes = Array.from(selectedOrderIds);
+
+    if (orderCodes.length === 0 || isBulkUpdating) {
+      return;
+    }
+
+    setIsBulkUpdating(true);
+    setDashboardNotice(null);
+    setUpdatingOrderIds((currentIds) => {
+      const nextIds = new Set(currentIds);
+      orderCodes.forEach((orderCode) => nextIds.add(orderCode));
+      return nextIds;
+    });
+
+    try {
+      const response = await fetch("/api/orders/bulk", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ orderCodes, status: nextStatus }),
+      });
+      const data = (await response.json()) as {
+        ok: boolean;
+        message?: string;
+        updatedCount?: number;
+      };
+
+      if (!response.ok || !data.ok) {
+        throw new Error(data.message || "Bulk order gagal diperbarui.");
+      }
+
+      setSelectedOrderIds(new Set());
+      await loadDashboardData();
+      showSweetToast({
+        icon: "success",
+        title: `${data.updatedCount ?? orderCodes.length} order diperbarui.`,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Bulk order gagal diperbarui.";
+
+      setDashboardNotice(message);
+      void showSweetError({
+        title: "Bulk order gagal",
+        text: message,
+      });
+    } finally {
+      setIsBulkUpdating(false);
+      setUpdatingOrderIds((currentIds) => {
+        const nextIds = new Set(currentIds);
+        orderCodes.forEach((orderCode) => nextIds.delete(orderCode));
+        return nextIds;
+      });
+    }
+  };
 
   const updateOrderStatus = async (
     orderId: string,
@@ -509,21 +690,35 @@ export default function OwnerDashboardPage() {
     pickupCode?: string,
   ) => {
     setDashboardNotice(null);
+    setUpdatingOrderIds((currentIds) => new Set(currentIds).add(orderId));
 
-    const response = await fetch(`/api/orders/${orderId}`, {
-      method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ status: nextStatus, pickupCode }),
-    });
-    const data = (await response.json()) as {
-      ok: boolean;
-      message?: string;
-    };
+    try {
+      const response = await fetch(`/api/orders/${orderId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          status: nextStatus,
+          pickupCode,
+          pickupVerificationMethod:
+            nextStatus === "COMPLETED" ? "SCANNER_OR_MANUAL" : undefined,
+        }),
+      });
+      const data = (await response.json()) as {
+        ok: boolean;
+        message?: string;
+      };
 
-    if (!response.ok || !data.ok) {
-      throw new Error(data.message || "Status order gagal diperbarui.");
+      if (!response.ok || !data.ok) {
+        throw new Error(data.message || "Status order gagal diperbarui.");
+      }
+    } finally {
+      setUpdatingOrderIds((currentIds) => {
+        const nextIds = new Set(currentIds);
+        nextIds.delete(orderId);
+        return nextIds;
+      });
     }
   };
 
@@ -557,6 +752,11 @@ export default function OwnerDashboardPage() {
         apiStatusByKanbanStatus[nextStatus],
         pickupCode,
       );
+      setSelectedOrderIds((currentIds) => {
+        const nextIds = new Set(currentIds);
+        nextIds.delete(orderId);
+        return nextIds;
+      });
       await loadDashboardData();
       showSweetToast({
         icon: "success",
@@ -580,6 +780,11 @@ export default function OwnerDashboardPage() {
   const handleRejectOrder = async (orderId: string) => {
     try {
       await updateOrderStatus(orderId, "CANCELLED");
+      setSelectedOrderIds((currentIds) => {
+        const nextIds = new Set(currentIds);
+        nextIds.delete(orderId);
+        return nextIds;
+      });
       await loadDashboardData();
     } catch (error) {
       setDashboardNotice(
@@ -661,7 +866,7 @@ export default function OwnerDashboardPage() {
               <button
                 type="button"
                 onClick={() => router.replace("/owner/dashboard?tab=orders")}
-                className="text-sm font-bold text-emerald-600 hover:underline"
+                className="inline-flex min-h-11 items-center text-sm font-bold text-emerald-600 hover:underline"
               >
                 Lihat Semua
               </button>
@@ -845,6 +1050,65 @@ export default function OwnerDashboardPage() {
             </div>
           </div>
 
+          <div className="mb-4 flex shrink-0 flex-col gap-3 rounded-[24px] border border-emerald-100 bg-white p-4 shadow-sm lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={toggleSelectVisibleOrders}
+                disabled={selectableFilteredOrders.length === 0 || isBulkUpdating}
+                className="inline-flex items-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-extrabold text-gray-700 transition-colors hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700 disabled:bg-gray-100 disabled:text-gray-400"
+              >
+                {selectableFilteredOrders.length > 0 &&
+                selectableFilteredOrders.every((order) =>
+                  selectedOrderIds.has(order.id),
+                ) ? (
+                  <CheckSquare size={17} />
+                ) : (
+                  <Square size={17} />
+                )}
+                Pilih terlihat
+              </button>
+              <div>
+                <p className="text-sm font-extrabold text-gray-900">
+                  {selectedOrderIds.size} order dipilih
+                </p>
+                <p className="text-xs font-semibold text-gray-500">
+                  Bulk selesai pickup tetap per order karena wajib verifikasi QR.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+              <button
+                type="button"
+                onClick={() => void handleBulkOrderStatus("PREPARING")}
+                disabled={selectedOrderIds.size === 0 || isBulkUpdating}
+                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-blue-500 px-4 py-2.5 text-sm font-extrabold text-white shadow-[0_8px_20px_rgba(59,130,246,0.18)] transition-colors hover:bg-blue-600 disabled:bg-gray-200 disabled:text-gray-400 disabled:shadow-none"
+              >
+                {isBulkUpdating ? <Loader2 size={16} className="animate-spin" /> : <ChefHat size={16} />}
+                Proses
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleBulkOrderStatus("READY")}
+                disabled={selectedOrderIds.size === 0 || isBulkUpdating}
+                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-4 py-2.5 text-sm font-extrabold text-white shadow-[0_8px_20px_rgba(16,185,129,0.2)] transition-colors hover:bg-emerald-600 disabled:bg-gray-200 disabled:text-gray-400 disabled:shadow-none"
+              >
+                {isBulkUpdating ? <Loader2 size={16} className="animate-spin" /> : <PackageCheck size={16} />}
+                Siap
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleBulkOrderStatus("CANCELLED")}
+                disabled={selectedOrderIds.size === 0 || isBulkUpdating}
+                className="inline-flex items-center justify-center gap-2 rounded-2xl border border-red-200 bg-white px-4 py-2.5 text-sm font-extrabold text-red-600 transition-colors hover:bg-red-50 disabled:border-gray-200 disabled:bg-gray-100 disabled:text-gray-400"
+              >
+                {isBulkUpdating ? <Loader2 size={16} className="animate-spin" /> : <XCircle size={16} />}
+                Batalkan
+              </button>
+            </div>
+          </div>
+
           <div className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <div className="flex h-full min-w-max gap-5">
               {orderColumns.map((column) => {
@@ -891,6 +1155,10 @@ export default function OwnerDashboardPage() {
                             onOpenDetail={(orderId) =>
                               router.push(`/owner/orders/${orderId}`)
                             }
+                            onToggleSelected={toggleSelectedOrder}
+                            isSelected={selectedOrderIds.has(order.id)}
+                            isSelectable={order.status !== "completed"}
+                            isBusy={updatingOrderIds.has(order.id)}
                           />
                         ))
                       ) : (

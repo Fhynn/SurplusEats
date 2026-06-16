@@ -1,5 +1,6 @@
 import { NotificationType } from "@prisma/client";
 
+import { createManyNotificationsAndDeliver } from "@/lib/notification-delivery";
 import { prisma } from "@/lib/prisma";
 
 type NotifyRestaurantFollowersInput = {
@@ -24,15 +25,15 @@ export async function notifyRestaurantFollowers({
     return 0;
   }
 
-  const result = await prisma.notification.createMany({
-    data: followers.map((follower) => ({
-      userId: follower.userId,
-      type: NotificationType.PROMO,
-      title,
-      body,
-      href,
-    })),
-  });
+  const notifications = followers.map((follower) => ({
+    userId: follower.userId,
+    type: NotificationType.PROMO,
+    title,
+    body,
+    href,
+  }));
 
-  return result.count;
+  await createManyNotificationsAndDeliver(notifications);
+
+  return notifications.length;
 }

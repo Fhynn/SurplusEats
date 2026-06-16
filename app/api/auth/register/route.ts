@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { createSessionToken, setSessionCookie } from "@/lib/auth-session";
+import { createPersistedSession } from "@/lib/auth-session-records";
 import { hashPassword } from "@/lib/password";
 import { prisma } from "@/lib/prisma";
 
@@ -51,7 +52,13 @@ export async function POST(request: Request) {
       role: UserRole.CUSTOMER,
     },
   });
+  const persistedSession = await createPersistedSession({
+    userId: user.id,
+    request,
+    kind: "REGISTER",
+  });
   const token = await createSessionToken({
+    sessionId: persistedSession.tokenId,
     userId: user.id,
     email: user.email,
     name: user.name,
@@ -73,7 +80,7 @@ export async function POST(request: Request) {
     { status: 201 },
   );
 
-  setSessionCookie(response, token);
+  setSessionCookie(response, token, persistedSession.maxAgeSeconds);
 
   return response;
 }

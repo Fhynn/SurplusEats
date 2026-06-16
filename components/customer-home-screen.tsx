@@ -3,13 +3,14 @@
 import Image from "next/image";
 import Link from "next/link";
 import {
-  Bell,
   Bot,
+  Check,
   ChevronRight,
   Flame,
   Gift,
   Home,
   Leaf,
+  Loader2,
   MapPin,
   Plus,
   Search,
@@ -18,10 +19,20 @@ import {
   User,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import {
+  type CSSProperties,
+  type MouseEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import { useCustomerApp } from "@/components/customer-app-provider";
 import { CustomerLocationControl } from "@/components/customer-location-control";
+import { NotificationBellLink } from "@/components/notification-bell-link";
+import { PickupAvailabilityBadge } from "@/components/pickup-availability-badge";
+import { SkeletonCardGrid, StateCard } from "@/components/ui-state";
 import {
   CATEGORIES,
   formatRatingValue,
@@ -53,6 +64,16 @@ const navItems = [
   { label: "Akun", href: "/profile", icon: User },
 ] as const;
 
+type FlyingCartItem = {
+  id: string;
+  image: string;
+  name: string;
+  startX: number;
+  startY: number;
+  targetX: number;
+  targetY: number;
+};
+
 function getFoodDiscount(food: Food) {
   if (food.originalPrice <= 0 || food.originalPrice <= food.price) {
     return 0;
@@ -70,6 +91,18 @@ export function CustomerHomeScreen() {
   const [voucherCount, setVoucherCount] = useState(0);
   const [isLoadingFoods, setIsLoadingFoods] = useState(true);
   const [currentBannerIndex, setCurrentBannerIndex] = useState(0);
+  const [addingFoodId, setAddingFoodId] = useState<string | null>(null);
+  const [addedFoodId, setAddedFoodId] = useState<string | null>(null);
+  const [cartToast, setCartToast] = useState("");
+  const [isCartPulsing, setIsCartPulsing] = useState(false);
+  const [flyingCartItem, setFlyingCartItem] =
+    useState<FlyingCartItem | null>(null);
+  const desktopCartTargetRef = useRef<HTMLAnchorElement | null>(null);
+  const mobileCartTargetRef = useRef<HTMLAnchorElement | null>(null);
+  const toastTimeoutRef = useRef<number | null>(null);
+  const pulseTimeoutRef = useRef<number | null>(null);
+  const addedTimeoutRef = useRef<number | null>(null);
+  const flyTimeoutRef = useRef<number | null>(null);
   const {
     addToCart,
     cartCount,
@@ -87,6 +120,26 @@ export function CustomerHomeScreen() {
     }, 5000);
 
     return () => window.clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimeoutRef.current) {
+        window.clearTimeout(toastTimeoutRef.current);
+      }
+
+      if (pulseTimeoutRef.current) {
+        window.clearTimeout(pulseTimeoutRef.current);
+      }
+
+      if (addedTimeoutRef.current) {
+        window.clearTimeout(addedTimeoutRef.current);
+      }
+
+      if (flyTimeoutRef.current) {
+        window.clearTimeout(flyTimeoutRef.current);
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -186,6 +239,96 @@ export function CustomerHomeScreen() {
     );
   };
 
+  const showCartToast = (message: string) => {
+    if (toastTimeoutRef.current) {
+      window.clearTimeout(toastTimeoutRef.current);
+    }
+
+    setCartToast(message);
+    toastTimeoutRef.current = window.setTimeout(() => {
+      setCartToast("");
+    }, 2400);
+  };
+
+  const pulseCartTarget = () => {
+    if (pulseTimeoutRef.current) {
+      window.clearTimeout(pulseTimeoutRef.current);
+    }
+
+    setIsCartPulsing(true);
+    pulseTimeoutRef.current = window.setTimeout(() => {
+      setIsCartPulsing(false);
+    }, 520);
+  };
+
+  const animateToCart = (food: Food, sourceElement: HTMLElement) => {
+    const startRect = sourceElement.getBoundingClientRect();
+    const targetElement =
+      window.innerWidth >= 1024
+        ? desktopCartTargetRef.current
+        : mobileCartTargetRef.current;
+    const targetRect = targetElement?.getBoundingClientRect();
+
+    if (!targetRect) {
+      pulseCartTarget();
+      return;
+    }
+
+    if (flyTimeoutRef.current) {
+      window.clearTimeout(flyTimeoutRef.current);
+    }
+
+    setFlyingCartItem({
+      id: `${food.id}-${Date.now()}`,
+      image: food.image,
+      name: food.name,
+      startX: startRect.left + startRect.width / 2,
+      startY: startRect.top + startRect.height / 2,
+      targetX: targetRect.left + targetRect.width / 2,
+      targetY: targetRect.top + targetRect.height / 2,
+    });
+    window.setTimeout(pulseCartTarget, 420);
+    flyTimeoutRef.current = window.setTimeout(() => {
+      setFlyingCartItem(null);
+    }, 760);
+  };
+
+  const handleAddFoodToCart = async (
+    food: Food,
+    event: MouseEvent<HTMLButtonElement>,
+  ) => {
+    event.stopPropagation();
+
+    if (addingFoodId === food.id) {
+      return;
+    }
+
+    const sourceElement = event.currentTarget;
+
+    setAddingFoodId(food.id);
+
+    const added = await addToCart(food);
+
+    setAddingFoodId(null);
+
+    if (!added) {
+      showCartToast("Stok menu belum bisa ditambahkan.");
+      return;
+    }
+
+    setAddedFoodId(food.id);
+    showCartToast(`${food.name} masuk keranjang.`);
+    animateToCart(food, sourceElement);
+
+    if (addedTimeoutRef.current) {
+      window.clearTimeout(addedTimeoutRef.current);
+    }
+
+    addedTimeoutRef.current = window.setTimeout(() => {
+      setAddedFoodId(null);
+    }, 1200);
+  };
+
   const statsCards = [
     {
       label: "Voucher",
@@ -234,11 +377,12 @@ export function CustomerHomeScreen() {
               <Link
                 key={item.href}
                 href={item.href}
+                ref={item.href === "/cart" ? desktopCartTargetRef : undefined}
                 className={`flex items-center gap-3 rounded-xl px-4 py-3 font-bold transition-colors ${
                   isActive
                     ? "bg-emerald-50 text-emerald-700"
                     : "text-gray-500 hover:bg-gray-50 hover:text-gray-900"
-                }`}
+                } ${item.href === "/cart" && isCartPulsing ? "cart-target-bump" : ""}`}
               >
                 <Icon size={20} />
                 {item.label}
@@ -257,30 +401,21 @@ export function CustomerHomeScreen() {
         <header className="sticky top-0 z-30 border-b border-gray-100 bg-white px-4 py-3 lg:px-8 lg:py-5">
           <div className="flex flex-col justify-between gap-3 lg:flex-row lg:items-center lg:gap-4">
             <div className="flex items-center justify-between lg:w-auto">
-              <div className="rounded-full bg-emerald-50 p-2 text-emerald-600">
-                <CustomerLocationControl
-                  location={customerLocation}
-                  isLoading={isCustomerLocationLoading}
-                  onLocationChange={handleLocationChange}
-                />
-              </div>
+              <CustomerLocationControl
+                location={customerLocation}
+                isLoading={isCustomerLocationLoading}
+                onLocationChange={handleLocationChange}
+              />
 
               <div className="flex items-center gap-2 lg:hidden">
-                <button
-                  type="button"
-                  onClick={() => router.push("/notifications")}
-                  className="relative rounded-full p-2 text-gray-400 transition-colors hover:bg-gray-50 hover:text-gray-700"
-                  aria-label="Buka notifikasi"
-                >
-                  <Bell size={18} />
-                  {unreadNotificationCount > 0 ? (
-                    <span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-red-500" />
-                  ) : null}
-                </button>
+                <NotificationBellLink
+                  href="/notifications"
+                  unreadCount={unreadNotificationCount}
+                />
                 <button
                   type="button"
                   onClick={() => router.push("/profile")}
-                  className="flex h-8 w-8 items-center justify-center rounded-full border border-emerald-200 bg-emerald-100 text-emerald-600"
+                  className="flex h-11 w-11 items-center justify-center rounded-full border border-emerald-200 bg-emerald-100 text-emerald-600"
                   aria-label="Buka akun"
                 >
                   <User size={15} />
@@ -301,21 +436,14 @@ export function CustomerHomeScreen() {
             </button>
 
             <div className="hidden items-center gap-4 lg:flex">
-              <button
-                type="button"
-                onClick={() => router.push("/notifications")}
-                className="relative rounded-full p-2 text-gray-400 transition-colors hover:bg-gray-50 hover:text-gray-700"
-                aria-label="Buka notifikasi"
-              >
-                <Bell size={22} />
-                {unreadNotificationCount > 0 ? (
-                  <span className="absolute top-1 right-2 h-2 w-2 rounded-full bg-red-500" />
-                ) : null}
-              </button>
+              <NotificationBellLink
+                href="/notifications"
+                unreadCount={unreadNotificationCount}
+              />
               <button
                 type="button"
                 onClick={() => router.push("/profile")}
-                className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-emerald-50 bg-emerald-100 text-emerald-600"
+                className="flex h-11 w-11 items-center justify-center rounded-full border-2 border-emerald-50 bg-emerald-100 text-emerald-600"
                 aria-label="Buka akun"
               >
                 <User size={20} />
@@ -359,19 +487,23 @@ export function CustomerHomeScreen() {
                   Bulan ini kamu sudah menyelamatkan makanan lezat.
                 </p>
 
-                <div className="mt-3 flex gap-1.5 lg:mt-4">
+                <div className="mt-1 -ml-3 flex lg:mt-2">
                   {bannerImages.map((image, index) => (
                     <button
                       key={image}
                       type="button"
                       onClick={() => setCurrentBannerIndex(index)}
-                      className={`h-1.5 rounded-full transition-all duration-300 ${
-                        index === currentBannerIndex
-                          ? "w-5 bg-emerald-400"
-                          : "w-1.5 bg-white/50 hover:bg-white/90"
-                      }`}
+                      className="group flex h-11 w-11 items-center justify-center rounded-full"
                       aria-label={`Tampilkan banner ${index + 1}`}
-                    />
+                    >
+                      <span
+                        className={`h-1.5 rounded-full transition-all duration-300 ${
+                          index === currentBannerIndex
+                            ? "w-5 bg-emerald-400"
+                            : "w-1.5 bg-white/50 group-hover:bg-white/90"
+                        }`}
+                      />
+                    </button>
                   ))}
                 </div>
               </div>
@@ -453,7 +585,7 @@ export function CustomerHomeScreen() {
                 key={category}
                 type="button"
                 onClick={() => setActiveCategory(category)}
-                className={`whitespace-nowrap rounded-full px-4 py-2 text-[11px] font-semibold transition-all lg:px-5 lg:py-2.5 lg:text-sm ${
+                className={`min-h-11 whitespace-nowrap rounded-full px-4 py-2 text-[11px] font-semibold transition-all lg:px-5 lg:py-2.5 lg:text-sm ${
                   activeCategory === category
                     ? "bg-gray-900 text-white shadow-md"
                     : "border border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
@@ -483,7 +615,7 @@ export function CustomerHomeScreen() {
               <button
                 type="button"
                 onClick={() => router.push("/browser")}
-                className="flex items-center text-xs font-bold text-emerald-600 transition-colors hover:text-emerald-700 lg:text-sm"
+                className="flex min-h-11 items-center rounded-xl px-2 text-xs font-bold text-emerald-600 transition-colors hover:bg-emerald-50 hover:text-emerald-700 lg:text-sm"
               >
                 Lihat Semua
                 <ChevronRight size={14} className="lg:h-4 lg:w-4" />
@@ -500,15 +632,18 @@ export function CustomerHomeScreen() {
 
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3 lg:gap-6">
               {isLoadingFoods ? (
-                <div className="rounded-2xl border border-gray-100 bg-white p-6 text-center text-sm font-bold text-gray-500 shadow-sm">
-                  Memuat menu...
-                </div>
+                <SkeletonCardGrid
+                  count={6}
+                  className="md:col-span-2 lg:col-span-3"
+                />
               ) : null}
 
               {foods.map((food) => {
                 const discount = getFoodDiscount(food);
                 const detailRoute = `/detail/${food.id}`;
                 const hasDistance = food.distanceKm !== null && food.distanceKm !== undefined;
+                const isAddingThisFood = addingFoodId === food.id;
+                const isAddedThisFood = addedFoodId === food.id;
 
                 return (
                   <article
@@ -550,6 +685,9 @@ export function CustomerHomeScreen() {
                       <p className="truncate text-[10px] text-gray-500 lg:text-xs">
                         {food.restaurant}
                       </p>
+                      <div className="mt-1.5">
+                        <PickupAvailabilityBadge pickupWindow={food.time} compact />
+                      </div>
 
                       <div className="mt-1.5 flex items-center gap-2 lg:mt-2 lg:gap-3">
                         <span className="flex items-center gap-1 text-[10px] font-semibold text-amber-500 lg:text-xs">
@@ -585,14 +723,32 @@ export function CustomerHomeScreen() {
                         </div>
                         <button
                           type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            void addToCart(food);
-                          }}
-                          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-gray-50 text-gray-400 transition-colors hover:bg-emerald-50 hover:text-emerald-600 active:scale-95 lg:h-8 lg:w-8"
+                          onClick={(event) => void handleAddFoodToCart(food, event)}
+                          disabled={isAddingThisFood}
+                          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full border transition-all active:scale-95 disabled:cursor-wait ${
+                            isAddedThisFood
+                              ? "border-emerald-500 bg-emerald-500 text-white shadow-[0_10px_22px_rgba(16,185,129,0.24)]"
+                              : "border-gray-200 bg-gray-50 text-gray-400 hover:bg-emerald-50 hover:text-emerald-600"
+                          }`}
                           aria-label={`Tambah ${food.name} ke keranjang`}
                         >
-                          <Plus size={16} className="lg:h-[18px] lg:w-[18px]" />
+                          {isAddingThisFood ? (
+                            <Loader2
+                              size={16}
+                              className="animate-spin lg:h-[18px] lg:w-[18px]"
+                            />
+                          ) : isAddedThisFood ? (
+                            <Check
+                              size={16}
+                              strokeWidth={3}
+                              className="lg:h-[18px] lg:w-[18px]"
+                            />
+                          ) : (
+                            <Plus
+                              size={16}
+                              className="lg:h-[18px] lg:w-[18px]"
+                            />
+                          )}
                         </button>
                       </div>
                     </div>
@@ -601,15 +757,16 @@ export function CustomerHomeScreen() {
               })}
 
               {!isLoadingFoods && foods.length === 0 ? (
-                <div className="rounded-2xl border border-gray-100 bg-white p-6 text-center shadow-sm">
-                  <h3 className="text-base font-extrabold text-gray-950">
-                    Belum ada menu aktif
-                  </h3>
-                  <p className="mt-2 text-sm leading-6 font-medium text-gray-500">
-                    Menu akan tampil otomatis setelah owner menambahkan produk
-                    aktif saat tersedia.
-                  </p>
-                </div>
+                <StateCard
+                  title="Belum ada menu aktif"
+                  description="Menu akan tampil otomatis setelah owner menambahkan produk aktif saat tersedia."
+                  variant="empty"
+                  className="md:col-span-2 lg:col-span-3"
+                  action={{
+                    label: "Lihat Semua Menu",
+                    href: "/browser",
+                  }}
+                />
               ) : null}
             </div>
           </section>
@@ -625,11 +782,12 @@ export function CustomerHomeScreen() {
             <Link
               key={item.href}
               href={item.href}
+              ref={item.href === "/cart" ? mobileCartTargetRef : undefined}
               className={`relative flex w-16 flex-col items-center gap-1 p-2 transition-colors ${
                 isActive
                   ? "text-emerald-600"
                   : "text-gray-400 hover:text-gray-600"
-              }`}
+              } ${item.href === "/cart" && isCartPulsing ? "cart-target-bump" : ""}`}
             >
               <Icon
                 size={22}
@@ -650,6 +808,48 @@ export function CustomerHomeScreen() {
           );
         })}
       </nav>
+
+      {flyingCartItem ? (
+        <div
+          key={flyingCartItem.id}
+          className="cart-fly-item"
+          style={
+            {
+              left: flyingCartItem.startX,
+              top: flyingCartItem.startY,
+              "--cart-fly-dx": `${flyingCartItem.targetX - flyingCartItem.startX}px`,
+              "--cart-fly-dy": `${flyingCartItem.targetY - flyingCartItem.startY}px`,
+            } as CSSProperties
+          }
+          aria-hidden="true"
+        >
+          <div className="cart-fly-item-inner">
+            <Image
+              src={flyingCartItem.image}
+              alt=""
+              fill
+              sizes="52px"
+              className="object-cover"
+            />
+          </div>
+        </div>
+      ) : null}
+
+      {cartToast ? (
+        <div className="cart-add-toast fixed right-4 bottom-24 z-[80] flex max-w-[calc(100vw-2rem)] items-center gap-3 rounded-2xl border border-emerald-100 bg-white px-4 py-3 text-xs font-extrabold text-gray-800 shadow-[0_18px_44px_rgba(15,23,42,0.14)] lg:right-8 lg:bottom-8">
+          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
+            <Check size={17} strokeWidth={3} />
+          </span>
+          <span className="line-clamp-2">{cartToast}</span>
+          <button
+            type="button"
+            onClick={() => router.push("/cart")}
+            className="ml-1 min-h-11 rounded-full bg-emerald-600 px-3 py-2 text-[11px] font-extrabold text-white transition-colors hover:bg-emerald-700"
+          >
+            Lihat
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

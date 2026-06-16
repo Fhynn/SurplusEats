@@ -1,9 +1,13 @@
-import { UserRole } from "@prisma/client";
+import { PaymentStatus, UserRole } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { getCurrentSession } from "@/lib/auth-session";
 import { prisma } from "@/lib/prisma";
+import {
+  getVoucherRuleLabels,
+  isVoucherUsableNow,
+} from "@/lib/voucher-rules";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,37 +23,27 @@ const claimVoucherSchema = z.object({
   code: z.string().trim().min(3).max(40),
 });
 
-function isVoucherUsableNow(voucher: {
-  active: boolean;
-  startsAt: Date | null;
-  endsAt: Date | null;
-}) {
-  const now = Date.now();
-
-  return (
-    voucher.active &&
-    (!voucher.startsAt || voucher.startsAt.getTime() <= now) &&
-    (!voucher.endsAt || voucher.endsAt.getTime() >= now)
-  );
-}
-
 function getVoucherStatus(
   voucher: {
     active: boolean;
     startsAt: Date | null;
     endsAt: Date | null;
     quota: number | null;
+    perUserLimit: number | null;
+    firstOrderOnly: boolean | null;
   },
-  hasUsedVoucher: boolean,
-  usedCount: number,
+  userUsedCount: number,
+  totalUsedCount: number,
+  userOrderCount: number,
 ) {
-  if (hasUsedVoucher) {
+  if (userUsedCount >= Math.max(1, voucher.perUserLimit ?? 1)) {
     return "used";
   }
 
   if (
     !isVoucherUsableNow(voucher) ||
-    (voucher.quota !== null && usedCount >= voucher.quota)
+    (voucher.quota !== null && totalUsedCount >= voucher.quota) ||
+    (voucher.firstOrderOnly && userOrderCount > 0)
   ) {
     return "expired";
   }
@@ -60,13 +54,19 @@ function getVoucherStatus(
 function serializeVoucher(
   voucher: Awaited<ReturnType<typeof prisma.voucher.findMany>>[number] & {
     redemptions: Array<{ orderId: string | null }>;
+    restaurant?: { id: string; name: string } | null;
   },
   index: number,
-  usedCount: number,
+  totalUsedCount: number,
+  userOrderCount: number,
 ) {
-  const hasUsedVoucher = voucher.redemptions.some(
+  const userUsedCount = voucher.redemptions.filter(
     (redemption) => redemption.orderId,
-  );
+  ).length;
+  const ruleTerms = getVoucherRuleLabels({
+    ...voucher,
+    restaurant: voucher.restaurant ?? null,
+  });
 
   return {
     id: voucher.id,
@@ -76,6 +76,12 @@ function serializeVoucher(
     discount: voucher.discount,
     title: voucher.title,
     description: voucher.description || "Voucher aktif ResQFood.",
+    campaignName: voucher.campaignName,
+    restaurantId: voucher.restaurantId,
+    restaurantName: voucher.restaurant?.name ?? null,
+    category: voucher.category,
+    firstOrderOnly: voucher.firstOrderOnly,
+    perUserLimit: voucher.perUserLimit,
     meta: voucher.endsAt
       ? `Berlaku sampai ${new Intl.DateTimeFormat("id-ID", {
           day: "2-digit",
@@ -92,8 +98,14 @@ function serializeVoucher(
       "Berlaku untuk akun customer yang sedang login.",
       "Tidak bisa digabung dengan voucher lain pada order yang sama.",
       "Kuota dan masa berlaku mengikuti data voucher terbaru.",
+      ...ruleTerms,
     ],
-    status: getVoucherStatus(voucher, hasUsedVoucher, usedCount),
+    status: getVoucherStatus(
+      voucher,
+      userUsedCount,
+      totalUsedCount,
+      userOrderCount,
+    ),
   };
 }
 
@@ -107,22 +119,36 @@ export async function GET() {
     );
   }
 
-  const vouchers = await prisma.voucher.findMany({
-    where: {
-      redemptions: {
-        some: { userId: session.userId },
-      },
-    },
-    include: {
-      redemptions: {
-        where: { userId: session.userId },
-        select: {
-          orderId: true,
+  const [vouchers, userOrderCount] = await Promise.all([
+    prisma.voucher.findMany({
+      where: {
+        redemptions: {
+          some: { userId: session.userId },
         },
       },
-    },
-    orderBy: { createdAt: "desc" },
-  });
+      include: {
+        restaurant: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        redemptions: {
+          where: { userId: session.userId },
+          select: {
+            orderId: true,
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    }),
+    prisma.order.count({
+      where: {
+        customerId: session.userId,
+        paymentStatus: PaymentStatus.PAID,
+      },
+    }),
+  ]);
   const usedCounts =
     vouchers.length > 0
       ? await prisma.voucherRedemption.groupBy({
@@ -143,7 +169,12 @@ export async function GET() {
   return NextResponse.json({
     ok: true,
     vouchers: vouchers.map((voucher, index) =>
-      serializeVoucher(voucher, index, usedCountByVoucherId.get(voucher.id) ?? 0),
+      serializeVoucher(
+        voucher,
+        index,
+        usedCountByVoucherId.get(voucher.id) ?? 0,
+        userOrderCount,
+      ),
     ),
   });
 }
@@ -174,6 +205,12 @@ export async function POST(request: Request) {
   const voucher = await prisma.voucher.findUnique({
     where: { code: parsed.data.code.toUpperCase() },
     include: {
+      restaurant: {
+        select: {
+          id: true,
+          name: true,
+        },
+      },
       redemptions: {
         where: { userId: session.userId },
         select: {
@@ -212,15 +249,31 @@ export async function POST(request: Request) {
     );
   }
 
-  const hasUsedVoucher = voucher.redemptions.some(
+  const userUsedCount = voucher.redemptions.filter(
     (redemption) => redemption.orderId,
-  );
+  ).length;
 
-  if (hasUsedVoucher) {
+  if (userUsedCount >= Math.max(1, voucher.perUserLimit ?? 1)) {
     return NextResponse.json(
-      { ok: false, message: "Voucher sudah pernah dipakai oleh akun ini." },
+      { ok: false, message: "Voucher sudah mencapai limit pemakaian akun ini." },
       { status: 409 },
     );
+  }
+
+  if (voucher.firstOrderOnly) {
+    const userOrderCount = await prisma.order.count({
+      where: {
+        customerId: session.userId,
+        paymentStatus: PaymentStatus.PAID,
+      },
+    });
+
+    if (userOrderCount > 0) {
+      return NextResponse.json(
+        { ok: false, message: "Voucher ini hanya berlaku untuk order pertama." },
+        { status: 400 },
+      );
+    }
   }
 
   const existingClaim = voucher.redemptions.find(
@@ -239,6 +292,12 @@ export async function POST(request: Request) {
   const claimedVoucher = await prisma.voucher.findUniqueOrThrow({
     where: { id: voucher.id },
     include: {
+      restaurant: {
+        select: {
+          id: true,
+          name: true,
+        },
+      },
       redemptions: {
         where: { userId: session.userId },
         select: {
@@ -253,6 +312,6 @@ export async function POST(request: Request) {
     message: existingClaim
       ? "Voucher sudah ada di akun."
       : "Voucher berhasil diklaim.",
-    voucher: serializeVoucher(claimedVoucher, 0, usedCount),
+    voucher: serializeVoucher(claimedVoucher, 0, usedCount, 0),
   });
 }

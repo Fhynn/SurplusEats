@@ -126,6 +126,10 @@ function PaymentSuccessContent() {
     () => orders.reduce((total, order) => total + order.serviceFee, 0),
     [orders],
   );
+  const totalTaxFee = useMemo(
+    () => orders.reduce((total, order) => total + (order.taxFee ?? 0), 0),
+    [orders],
+  );
   const totalPaid = useMemo(
     () => orders.reduce((total, order) => total + order.total, 0),
     [orders],
@@ -327,6 +331,12 @@ function PaymentSuccessContent() {
                 <span>Biaya Layanan</span>
                 <span>{formatRp(totalServiceFee)}</span>
               </div>
+              {totalTaxFee > 0 ? (
+                <div className="flex justify-between text-sm font-medium text-gray-500">
+                  <span>Pajak Platform</span>
+                  <span>{formatRp(totalTaxFee)}</span>
+                </div>
+              ) : null}
               <div className="flex justify-between rounded-2xl bg-emerald-50 px-4 py-3 text-sm font-extrabold text-emerald-700">
                 <span>Total Dibayar</span>
                 <span>{formatRp(totalPaid)}</span>

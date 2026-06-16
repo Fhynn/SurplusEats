@@ -19,6 +19,7 @@ interface StorePageProps {
 export default async function StorePage({ params }: StorePageProps) {
   const { id } = await params;
   const session = await getCurrentSession();
+  const customerUserId = session?.role === UserRole.CUSTOMER ? session.userId : "";
   const restaurant = await prisma.restaurant.findFirst({
     where: {
       status: RestaurantStatus.APPROVED,
@@ -31,11 +32,38 @@ export default async function StorePage({ params }: StorePageProps) {
       },
       reviews: {
         orderBy: { createdAt: "desc" },
-        take: 6,
+        take: 30,
         include: {
+          helpfulVotes: {
+            where: {
+              userId: customerUserId,
+            },
+            select: {
+              id: true,
+            },
+          },
+          images: {
+            include: {
+              asset: true,
+            },
+          },
+          reports: {
+            where: {
+              userId: customerUserId,
+            },
+            select: {
+              id: true,
+            },
+          },
           user: {
             select: {
               name: true,
+            },
+          },
+          _count: {
+            select: {
+              helpfulVotes: true,
+              reports: true,
             },
           },
         },
@@ -93,6 +121,14 @@ export default async function StorePage({ params }: StorePageProps) {
       ownerRepliedAt: review.ownerRepliedAt?.toISOString() ?? null,
       customerName: review.user.name,
       createdAt: review.createdAt.toISOString(),
+      helpfulCount: review._count.helpfulVotes,
+      isHelpful: review.helpfulVotes.length > 0,
+      isReported: review.reports.length > 0,
+      reportCount: review._count.reports,
+      images: review.images.map((image) => ({
+        id: image.id,
+        url: image.asset.url,
+      })),
     })),
     foods,
   };

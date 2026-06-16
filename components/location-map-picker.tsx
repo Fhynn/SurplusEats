@@ -1,10 +1,22 @@
 "use client";
 
 import type { Map as LeafletMap, Marker as LeafletMarker } from "leaflet";
-import { Loader2, MapPinned, Navigation, Search, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { Clock3, Loader2, MapPinned, Navigation, Search, X } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { Coordinates } from "@/lib/geo-distance";
+import { getStorePickupCoordinateIssue } from "@/lib/location-quality";
+import {
+  readRecentLocations,
+  saveRecentLocation,
+  type RecentLocation,
+  type RecentLocationSource,
+} from "@/lib/recent-locations";
+import {
+  formatCoordinateLabel,
+  reverseGeocodeCoordinates,
+  type ReverseGeocodeResult,
+} from "@/lib/reverse-geocode";
 
 const defaultMapCenter: Coordinates = {
   latitude: -6.175392,
@@ -18,6 +30,7 @@ type LocationMapPickerProps = {
   title?: string;
   description?: string;
   buttonClassName?: string;
+  recentSource?: RecentLocationSource;
 };
 
 type MapNotice = {
@@ -32,6 +45,12 @@ type SearchResult = {
   lon: string;
 };
 
+type SearchLocationResponse = {
+  ok: boolean;
+  message?: string;
+  results?: SearchResult[];
+};
+
 function formatCoordinates(coordinates: Coordinates) {
   return `${coordinates.latitude.toFixed(6)}, ${coordinates.longitude.toFixed(6)}`;
 }
@@ -43,12 +62,18 @@ export function LocationMapPicker({
   title = "Pilih Titik Lokasi",
   description = "Klik peta atau geser pin sampai tepat di lokasi yang dipakai.",
   buttonClassName = "inline-flex items-center justify-center gap-2 rounded-2xl border border-emerald-100 bg-white px-4 py-3 text-xs font-extrabold text-emerald-700 transition-colors hover:bg-emerald-50",
+  recentSource,
 }: Readonly<LocationMapPickerProps>) {
   const mapElementRef = useRef<HTMLDivElement>(null);
   const leafletMapRef = useRef<LeafletMap | null>(null);
   const leafletMarkerRef = useRef<LeafletMarker | null>(null);
+  const reverseLookupIdRef = useRef(0);
   const setMarkerRef = useRef<
-    ((coordinates: Coordinates, notice?: MapNotice | null) => void) | null
+    ((
+      coordinates: Coordinates,
+      notice?: MapNotice | null,
+      fallbackAddress?: ReverseGeocodeResult | null,
+    ) => void) | null
   >(null);
   const [isOpen, setIsOpen] = useState(false);
   const [draftCoordinates, setDraftCoordinates] =
@@ -57,6 +82,37 @@ export function LocationMapPicker({
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [draftAddress, setDraftAddress] = useState<ReverseGeocodeResult | null>(
+    null,
+  );
+  const [isResolvingAddress, setIsResolvingAddress] = useState(false);
+  const [recentLocations, setRecentLocations] = useState<RecentLocation[]>([]);
+
+  const resolveDraftAddress = useCallback(
+    async (
+      nextCoordinates: Coordinates,
+      fallbackAddress: ReverseGeocodeResult | null = null,
+    ) => {
+      const requestId = reverseLookupIdRef.current + 1;
+      reverseLookupIdRef.current = requestId;
+
+      if (fallbackAddress) {
+        setDraftAddress(fallbackAddress);
+      } else {
+        setIsResolvingAddress(true);
+      }
+
+      const resolvedAddress = await reverseGeocodeCoordinates(nextCoordinates);
+
+      if (reverseLookupIdRef.current !== requestId) {
+        return;
+      }
+
+      setDraftAddress(resolvedAddress ?? fallbackAddress);
+      setIsResolvingAddress(false);
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!isOpen || !mapElementRef.current) {
@@ -69,6 +125,7 @@ export function LocationMapPicker({
     const setMarker = (
       nextCoordinates: Coordinates,
       notice: MapNotice | null = null,
+      fallbackAddress: ReverseGeocodeResult | null = null,
     ) => {
       if (!leafletMapRef.current) {
         return;
@@ -76,6 +133,7 @@ export function LocationMapPicker({
 
       setDraftCoordinates(nextCoordinates);
       setMapNotice(notice);
+      void resolveDraftAddress(nextCoordinates, fallbackAddress);
 
       if (leafletMarkerRef.current) {
         leafletMarkerRef.current.setLatLng([
@@ -107,6 +165,10 @@ export function LocationMapPicker({
 
           if (pin) {
             setDraftCoordinates({
+              latitude: pin.lat,
+              longitude: pin.lng,
+            });
+            void resolveDraftAddress({
               latitude: pin.lat,
               longitude: pin.lng,
             });
@@ -182,13 +244,15 @@ export function LocationMapPicker({
       map?.remove();
       leafletMapRef.current = null;
     };
-  }, [coordinates, isOpen]);
+  }, [coordinates, isOpen, resolveDraftAddress]);
 
   const handleOpen = () => {
     setDraftCoordinates(coordinates);
+    setDraftAddress(null);
     setMapNotice(null);
     setSearchQuery("");
     setSearchResults([]);
+    setRecentLocations(recentSource ? readRecentLocations(recentSource) : []);
     setIsOpen(true);
   };
 
@@ -206,23 +270,22 @@ export function LocationMapPicker({
 
     setIsSearching(true);
     setMapNotice(null);
+    setSearchResults([]);
 
     try {
-      const params = new URLSearchParams({
-        format: "jsonv2",
-        limit: "5",
-        countrycodes: "id",
-        q: query,
-      });
       const response = await fetch(
-        `https://nominatim.openstreetmap.org/search?${params.toString()}`,
+        `/api/locations/search?q=${encodeURIComponent(query)}`,
+        { cache: "no-store" },
       );
+      const data = (await response.json()) as SearchLocationResponse;
 
-      if (!response.ok) {
-        throw new Error("Pencarian lokasi gagal. Coba kata kunci lain.");
+      if (!response.ok || !data.ok) {
+        throw new Error(
+          data.message || "Pencarian lokasi gagal. Coba kata kunci lain.",
+        );
       }
 
-      const results = ((await response.json()) as SearchResult[]).filter(
+      const results = (data.results ?? []).filter(
         (result) =>
           Number.isFinite(Number(result.lat)) &&
           Number.isFinite(Number(result.lon)),
@@ -234,6 +297,11 @@ export function LocationMapPicker({
         setMapNotice({
           tone: "error",
           text: "Lokasi tidak ditemukan. Coba nama jalan, toko, atau kecamatan.",
+        });
+      } else {
+        setMapNotice({
+          tone: "success",
+          text: "Pilih salah satu hasil pencarian, lalu pastikan pin tepat di lokasi pickup.",
         });
       }
     } catch (error) {
@@ -255,6 +323,10 @@ export function LocationMapPicker({
       latitude: Number(result.lat),
       longitude: Number(result.lon),
     };
+    const fallbackAddress = {
+      label: result.display_name,
+      addressLine: result.display_name,
+    };
 
     setSearchQuery(result.display_name);
     setSearchResults([]);
@@ -263,18 +335,55 @@ export function LocationMapPicker({
       18,
     );
     if (leafletMapRef.current && setMarkerRef.current) {
-      setMarkerRef.current(nextCoordinates, {
-        tone: "success",
-        text: "Lokasi ditemukan dari pencarian. Geser pin kalau titiknya belum tepat.",
-      });
+      setMarkerRef.current(
+        nextCoordinates,
+        {
+          tone: "success",
+          text: "Lokasi ditemukan dari pencarian. Geser pin kalau titiknya belum tepat.",
+        },
+        fallbackAddress,
+      );
       return;
     }
 
     setDraftCoordinates(nextCoordinates);
+    void resolveDraftAddress(nextCoordinates, fallbackAddress);
     setMapNotice({
       tone: "success",
       text: "Lokasi ditemukan dari pencarian. Geser pin kalau titiknya belum tepat.",
     });
+  };
+
+  const handleSelectRecentLocation = (recentLocation: RecentLocation) => {
+    const fallbackAddress = {
+      label: recentLocation.label,
+      addressLine: recentLocation.addressLine || recentLocation.label,
+    };
+
+    setSearchQuery(recentLocation.label);
+    setSearchResults([]);
+    leafletMapRef.current?.setView(
+      [
+        recentLocation.coordinates.latitude,
+        recentLocation.coordinates.longitude,
+      ],
+      18,
+    );
+
+    if (leafletMapRef.current && setMarkerRef.current) {
+      setMarkerRef.current(
+        recentLocation.coordinates,
+        {
+          tone: "success",
+          text: "Lokasi terakhir dipakai. Geser pin kalau titiknya perlu disesuaikan.",
+        },
+        fallbackAddress,
+      );
+      return;
+    }
+
+    setDraftCoordinates(recentLocation.coordinates);
+    void resolveDraftAddress(recentLocation.coordinates, fallbackAddress);
   };
 
   const handleConfirm = () => {
@@ -284,6 +393,27 @@ export function LocationMapPicker({
         text: "Klik titik lokasi di peta dulu.",
       });
       return;
+    }
+
+    const coordinateIssue = getStorePickupCoordinateIssue(draftCoordinates);
+
+    if (coordinateIssue) {
+      setMapNotice({
+        tone: "error",
+        text: coordinateIssue,
+      });
+      return;
+    }
+
+    if (recentSource) {
+      const savedLocation = saveRecentLocation({
+        source: recentSource,
+        label: draftAddress?.label || formatCoordinateLabel(draftCoordinates),
+        addressLine: draftAddress?.addressLine,
+        coordinates: draftCoordinates,
+      });
+
+      setRecentLocations(readRecentLocations(savedLocation.source));
     }
 
     onCoordinatesChange(draftCoordinates);
@@ -347,7 +477,13 @@ export function LocationMapPicker({
                   <input
                     type="search"
                     value={searchQuery}
-                    onChange={(event) => setSearchQuery(event.target.value)}
+                    onChange={(event) => {
+                      setSearchQuery(event.target.value);
+                      setSearchResults([]);
+                      if (mapNotice?.tone === "error") {
+                        setMapNotice(null);
+                      }
+                    }}
                     placeholder="Cari nama toko, jalan, atau area"
                     className="h-12 min-w-0 flex-1 rounded-2xl border border-gray-200 bg-white pr-3 pl-10 text-sm font-bold text-gray-900 outline-none placeholder:text-gray-400 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10"
                   />
@@ -381,6 +517,34 @@ export function LocationMapPicker({
                 ) : null}
               </form>
 
+              {recentLocations.length > 0 ? (
+                <div className="mb-3 rounded-2xl border border-gray-100 bg-gray-50 p-2">
+                  <p className="mb-2 flex items-center gap-1.5 px-1 text-[10px] font-extrabold tracking-wider text-gray-400 uppercase">
+                    <Clock3 size={12} />
+                    Lokasi Terakhir
+                  </p>
+                  <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                    {recentLocations.map((recentLocation) => (
+                      <button
+                        key={recentLocation.id}
+                        type="button"
+                        onClick={() => handleSelectRecentLocation(recentLocation)}
+                        className="min-w-48 rounded-2xl bg-white px-3 py-2 text-left text-xs font-bold text-gray-700 shadow-sm transition-colors hover:bg-emerald-50 hover:text-emerald-800"
+                      >
+                        <span className="block truncate">
+                          {recentLocation.label}
+                        </span>
+                        {recentLocation.addressLine ? (
+                          <span className="mt-0.5 line-clamp-2 block text-[10px] leading-4 font-semibold text-gray-400">
+                            {recentLocation.addressLine}
+                          </span>
+                        ) : null}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
               <div
                 ref={mapElementRef}
                 className="h-[min(58dvh,31rem)] min-h-72 w-full overflow-hidden rounded-[24px] border border-gray-100 bg-emerald-50"
@@ -396,11 +560,22 @@ export function LocationMapPicker({
                 }`}
               >
                 <Navigation size={16} className="shrink-0 text-emerald-600" />
-                <p className="min-w-0 text-xs leading-5 font-bold text-gray-600">
-                  {draftCoordinates
-                    ? `Lokasi ditemukan: ${formatCoordinates(draftCoordinates)}`
-                    : "Klik peta untuk menaruh pin lokasi."}
-                </p>
+                <div className="min-w-0 text-xs leading-5 font-bold text-gray-600">
+                  {draftCoordinates ? (
+                    <>
+                      <p className="truncate">
+                        {isResolvingAddress && !draftAddress
+                          ? "Mencari nama lokasi..."
+                          : draftAddress?.label || "Lokasi ditemukan"}
+                      </p>
+                      <p className="text-[10px] font-semibold text-gray-400">
+                        {formatCoordinates(draftCoordinates)}
+                      </p>
+                    </>
+                  ) : (
+                    <p>Klik peta untuk menaruh pin lokasi.</p>
+                  )}
+                </div>
               </div>
               {mapNotice ? (
                 <p

@@ -18,6 +18,7 @@ import {
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { MobileDeviceFrame } from "@/components/mobile-device-frame";
+import { StateCard } from "@/components/ui-state";
 
 type VoucherStatus = "available" | "used" | "expired";
 type VoucherTone = "emerald" | "amber" | "blue" | "gray";
@@ -29,6 +30,11 @@ type Voucher = {
   label: string;
   title: string;
   description: string;
+  campaignName: string | null;
+  restaurantName: string | null;
+  category: string | null;
+  firstOrderOnly: boolean;
+  perUserLimit: number;
   meta: string;
   minSpend: string;
   terms: string[];
@@ -175,7 +181,7 @@ export default function CustomerVouchersPage() {
             <div className="flex min-w-0 items-center">
               <Link
                 href="/profile/settings"
-                className="-ml-2 rounded-full p-2 transition-colors hover:bg-gray-100"
+                className="-ml-2 flex h-11 w-11 items-center justify-center rounded-full transition-colors hover:bg-gray-100"
                 aria-label="Kembali ke pengaturan akun"
               >
                 <ChevronLeft size={24} className="text-gray-800" />
@@ -255,15 +261,12 @@ export default function CustomerVouchersPage() {
           </section>
 
           {isLoadingVouchers ? (
-            <div className="rounded-[24px] border border-gray-100 bg-white p-6 text-center shadow-sm">
-              <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-emerald-100 border-t-emerald-500" />
-              <p className="text-sm font-extrabold text-gray-950">
-                Memuat voucher
-              </p>
-              <p className="mt-1 text-xs font-medium text-gray-500">
-                Voucher aktif sedang dimuat.
-              </p>
-            </div>
+            <StateCard
+              title="Memuat voucher"
+              description="Voucher aktif sedang dimuat."
+              variant="loading"
+              className="rounded-[24px]"
+            />
           ) : null}
 
           <div className="grid gap-4 lg:grid-cols-2">
@@ -315,6 +318,19 @@ export default function CustomerVouchersPage() {
                   <p className="mb-3 text-[10px] leading-4 text-gray-500">
                     {voucher.description}
                   </p>
+                  <div className="mb-3 flex flex-wrap gap-1.5">
+                    {voucher.campaignName ? (
+                      <span className="rounded-full bg-blue-50 px-2 py-1 text-[9px] font-extrabold text-blue-600">
+                        {voucher.campaignName}
+                      </span>
+                    ) : null}
+                    <span className="rounded-full bg-emerald-50 px-2 py-1 text-[9px] font-extrabold text-emerald-600">
+                      {voucher.restaurantName || "Semua toko"}
+                    </span>
+                    <span className="rounded-full bg-gray-100 px-2 py-1 text-[9px] font-extrabold text-gray-600">
+                      {voucher.category || "Semua kategori"}
+                    </span>
+                  </div>
                   <div className="mb-3 flex items-center gap-2 rounded-xl bg-gray-50 px-3 py-2">
                     <span className="min-w-0 flex-1 truncate font-mono text-xs font-extrabold text-gray-700">
                       {voucher.code}
@@ -357,15 +373,16 @@ export default function CustomerVouchersPage() {
           </div>
 
           {!isLoadingVouchers && vouchers.length === 0 ? (
-            <div className="rounded-[24px] border border-dashed border-gray-200 bg-white p-6 text-center">
-              <Gift size={30} className="mx-auto mb-3 text-gray-400" />
-              <p className="text-sm font-extrabold text-gray-950">
-                Belum ada voucher aktif
-              </p>
-              <p className="mt-1 text-xs font-medium text-gray-500">
-                Voucher akan tampil otomatis saat tersedia.
-              </p>
-            </div>
+            <StateCard
+              title="Belum ada voucher aktif"
+              description="Voucher akan tampil otomatis saat tersedia."
+              variant="empty"
+              className="rounded-[24px]"
+              action={{
+                label: "Cari Promo Menu",
+                href: "/browser",
+              }}
+            />
           ) : null}
 
           <Link

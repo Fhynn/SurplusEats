@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import { useRealtimePolling } from "@/components/use-realtime-polling";
+
 const notificationsChangedEvent = "resqfood:notifications-changed";
 
 type NotificationSummary = {
@@ -57,6 +59,11 @@ export function useUnreadNotificationCount() {
       window.removeEventListener("focus", handleRefresh);
     };
   }, [refreshUnreadNotificationCount]);
+
+  useRealtimePolling({
+    intervalMs: 15000,
+    onPoll: refreshUnreadNotificationCount,
+  });
 
   return { unreadNotificationCount, refreshUnreadNotificationCount };
 }

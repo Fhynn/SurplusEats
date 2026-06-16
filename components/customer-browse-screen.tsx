@@ -2,10 +2,14 @@
 
 import Image from "next/image";
 import {
-  Bell,
+  BadgePercent,
+  Check,
+  Clock3,
   Filter,
   Flame,
+  Heart,
   Leaf,
+  Loader2,
   MapPin,
   Plus,
   Search,
@@ -15,10 +19,20 @@ import {
   X,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import {
+  type CSSProperties,
+  type MouseEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import { useCustomerApp } from "@/components/customer-app-provider";
 import { CustomerLocationControl } from "@/components/customer-location-control";
+import { NotificationBellLink } from "@/components/notification-bell-link";
+import { PickupAvailabilityBadge } from "@/components/pickup-availability-badge";
+import { SkeletonCardGrid, StateCard } from "@/components/ui-state";
 import {
   CATEGORIES,
   formatRatingValue,
@@ -39,10 +53,124 @@ const filterChips = [
   "Terdekat",
   "Harga Termurah",
   "Rating Tertinggi",
+  "Diskon Terbesar",
+  "Pickup Tercepat",
   "Stok Banyak",
 ] as const;
 
 type FilterChip = (typeof filterChips)[number];
+type PriceRangeId = "all" | "under-10k" | "10k-20k" | "20k-50k" | "over-50k";
+type RatingFilterId = "all" | "4" | "4.5";
+type DiscountFilterId = "all" | "30" | "50";
+type PickupTimeFilterId = "all" | "afternoon" | "evening" | "night";
+
+const priceRangeFilters: Array<{
+  id: PriceRangeId;
+  label: string;
+  min: number;
+  max: number;
+}> = [
+  { id: "all", label: "Semua harga", min: 0, max: Number.POSITIVE_INFINITY },
+  { id: "under-10k", label: "< Rp10 rb", min: 0, max: 9_999 },
+  { id: "10k-20k", label: "Rp10-20 rb", min: 10_000, max: 20_000 },
+  { id: "20k-50k", label: "Rp20-50 rb", min: 20_001, max: 50_000 },
+  { id: "over-50k", label: "> Rp50 rb", min: 50_001, max: Number.POSITIVE_INFINITY },
+];
+
+const ratingFilters: Array<{ id: RatingFilterId; label: string; min: number }> = [
+  { id: "all", label: "Semua rating", min: 0 },
+  { id: "4", label: "4.0+", min: 4 },
+  { id: "4.5", label: "4.5+", min: 4.5 },
+];
+
+const discountFilters: Array<{ id: DiscountFilterId; label: string; min: number }> = [
+  { id: "all", label: "Semua diskon", min: 0 },
+  { id: "30", label: "Diskon 30%+", min: 30 },
+  { id: "50", label: "Diskon 50%+", min: 50 },
+];
+
+const pickupTimeFilters: Array<{
+  id: PickupTimeFilterId;
+  label: string;
+  start: number;
+  end: number;
+}> = [
+  { id: "all", label: "Semua waktu", start: 0, end: 24 * 60 },
+  { id: "afternoon", label: "Sore 15-18", start: 15 * 60, end: 18 * 60 },
+  { id: "evening", label: "Malam 18-21", start: 18 * 60, end: 21 * 60 },
+  { id: "night", label: "Larut 21+", start: 21 * 60, end: 24 * 60 },
+];
+
+type FlyingCartItem = {
+  id: string;
+  image: string;
+  startX: number;
+  startY: number;
+  targetX: number;
+  targetY: number;
+};
+
+function getFoodDiscount(food: Food) {
+  if (food.originalPrice <= 0 || food.originalPrice <= food.price) {
+    return 0;
+  }
+
+  return Math.round(((food.originalPrice - food.price) / food.originalPrice) * 100);
+}
+
+function parseTimeToMinutes(value: string) {
+  const match = value.match(/^(\d{1,2}):(\d{2})/);
+
+  if (!match) {
+    return null;
+  }
+
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+
+  if (
+    !Number.isInteger(hours) ||
+    !Number.isInteger(minutes) ||
+    hours < 0 ||
+    hours > 23 ||
+    minutes < 0 ||
+    minutes > 59
+  ) {
+    return null;
+  }
+
+  return hours * 60 + minutes;
+}
+
+function getPickupWindow(food: Food) {
+  const [startText = "", endText = ""] = food.time.split(" - ");
+  const start = parseTimeToMinutes(startText);
+  const end = parseTimeToMinutes(endText);
+
+  if (start === null || end === null) {
+    return null;
+  }
+
+  return { start, end: end <= start ? end + 24 * 60 : end };
+}
+
+function getPickupStartMinutes(food: Food) {
+  return getPickupWindow(food)?.start ?? Number.POSITIVE_INFINITY;
+}
+
+function matchesPickupTime(food: Food, filter: (typeof pickupTimeFilters)[number]) {
+  if (filter.id === "all") {
+    return true;
+  }
+
+  const pickupWindow = getPickupWindow(food);
+
+  if (!pickupWindow) {
+    return false;
+  }
+
+  return pickupWindow.start < filter.end && pickupWindow.end > filter.start;
+}
 
 export function CustomerBrowseScreen() {
   const router = useRouter();
@@ -59,8 +187,68 @@ export function CustomerBrowseScreen() {
     useState<(typeof CATEGORIES)[number]>("Semua");
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [isNearbyOnly, setIsNearbyOnly] = useState(false);
+  const [activePriceRange, setActivePriceRange] =
+    useState<PriceRangeId>("all");
+  const [activeRatingFilter, setActiveRatingFilter] =
+    useState<RatingFilterId>("all");
+  const [activeDiscountFilter, setActiveDiscountFilter] =
+    useState<DiscountFilterId>("all");
+  const [activePickupTimeFilter, setActivePickupTimeFilter] =
+    useState<PickupTimeFilterId>("all");
+  const [isFavoriteStoresOnly, setIsFavoriteStoresOnly] = useState(false);
+  const [favoriteRestaurantIds, setFavoriteRestaurantIds] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [allFoods, setAllFoods] = useState<Food[]>([]);
   const [isLoadingFoods, setIsLoadingFoods] = useState(true);
+  const [addingFoodId, setAddingFoodId] = useState<string | null>(null);
+  const [addedFoodId, setAddedFoodId] = useState<string | null>(null);
+  const [cartToast, setCartToast] = useState("");
+  const [flyingCartItem, setFlyingCartItem] =
+    useState<FlyingCartItem | null>(null);
+  const flyTimeoutRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    let ignore = false;
+
+    async function loadFavoriteRestaurants() {
+      try {
+        const response = await fetch("/api/favorite-restaurants", {
+          cache: "no-store",
+        });
+        const data = (await response.json()) as {
+          ok: boolean;
+          favorites?: Array<{ restaurant?: { id?: string } }>;
+        };
+
+        if (!ignore && response.ok && data.ok) {
+          setFavoriteRestaurantIds(
+            new Set(
+              (data.favorites ?? [])
+                .map((favorite) => favorite.restaurant?.id)
+                .filter((id): id is string => Boolean(id)),
+            ),
+          );
+        }
+      } catch {
+        if (!ignore) {
+          setFavoriteRestaurantIds(new Set());
+        }
+      }
+    }
+
+    void loadFavoriteRestaurants();
+
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (favoriteRestaurantIds.size === 0) {
+      setIsFavoriteStoresOnly(false);
+    }
+  }, [favoriteRestaurantIds]);
 
   useEffect(() => {
     let ignore = false;
@@ -115,8 +303,43 @@ export function CustomerBrowseScreen() {
     }
   }, [customerLocation.coordinates]);
 
+  useEffect(() => {
+    if (!cartToast && !addedFoodId) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setCartToast("");
+      setAddedFoodId(null);
+    }, 2200);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [addedFoodId, cartToast]);
+
+  useEffect(() => {
+    return () => {
+      if (flyTimeoutRef.current) {
+        window.clearTimeout(flyTimeoutRef.current);
+      }
+    };
+  }, []);
+
   const foods = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
+    const priceFilter =
+      priceRangeFilters.find((filter) => filter.id === activePriceRange) ??
+      priceRangeFilters[0];
+    const ratingFilter =
+      ratingFilters.find((filter) => filter.id === activeRatingFilter) ??
+      ratingFilters[0];
+    const discountFilter =
+      discountFilters.find((filter) => filter.id === activeDiscountFilter) ??
+      discountFilters[0];
+    const pickupFilter =
+      pickupTimeFilters.find((filter) => filter.id === activePickupTimeFilter) ??
+      pickupTimeFilters[0];
     let nextFoods = [...allFoods];
 
     if (activeCategory !== "Semua") {
@@ -136,6 +359,36 @@ export function CustomerBrowseScreen() {
       nextFoods = nextFoods.filter((food) => isFoodWithinPickupRadius(food));
     }
 
+    if (priceFilter.id !== "all") {
+      nextFoods = nextFoods.filter(
+        (food) => food.price >= priceFilter.min && food.price <= priceFilter.max,
+      );
+    }
+
+    if (ratingFilter.id !== "all") {
+      nextFoods = nextFoods.filter(
+        (food) => food.reviews > 0 && food.rating >= ratingFilter.min,
+      );
+    }
+
+    if (discountFilter.id !== "all") {
+      nextFoods = nextFoods.filter(
+        (food) => getFoodDiscount(food) >= discountFilter.min,
+      );
+    }
+
+    if (pickupFilter.id !== "all") {
+      nextFoods = nextFoods.filter((food) =>
+        matchesPickupTime(food, pickupFilter),
+      );
+    }
+
+    if (isFavoriteStoresOnly) {
+      nextFoods = nextFoods.filter((food) =>
+        food.restaurantId ? favoriteRestaurantIds.has(food.restaurantId) : false,
+      );
+    }
+
     if (activeFilter === "Harga Termurah") {
       return nextFoods.sort((firstFood, secondFood) => firstFood.price - secondFood.price);
     }
@@ -146,6 +399,20 @@ export function CustomerBrowseScreen() {
       );
     }
 
+    if (activeFilter === "Diskon Terbesar") {
+      return nextFoods.sort(
+        (firstFood, secondFood) =>
+          getFoodDiscount(secondFood) - getFoodDiscount(firstFood),
+      );
+    }
+
+    if (activeFilter === "Pickup Tercepat") {
+      return nextFoods.sort(
+        (firstFood, secondFood) =>
+          getPickupStartMinutes(firstFood) - getPickupStartMinutes(secondFood),
+      );
+    }
+
     if (activeFilter === "Stok Banyak") {
       return nextFoods.sort(
         (firstFood, secondFood) => secondFood.stock - firstFood.stock,
@@ -153,10 +420,67 @@ export function CustomerBrowseScreen() {
     }
 
     return sortFoodsByDistance(nextFoods);
-  }, [activeCategory, activeFilter, allFoods, isNearbyOnly, query]);
+  }, [
+    activeCategory,
+    activeDiscountFilter,
+    activeFilter,
+    activePickupTimeFilter,
+    activePriceRange,
+    activeRatingFilter,
+    allFoods,
+    favoriteRestaurantIds,
+    isFavoriteStoresOnly,
+    isNearbyOnly,
+    query,
+  ]);
   const foodWithoutPickupPinCount = foods.filter(
     (food) => !hasFoodPickupCoordinates(food),
   ).length;
+  const activeAdvancedFilterCount = [
+    activeCategory !== "Semua",
+    activeFilter !== "Terdekat",
+    activePriceRange !== "all",
+    activeRatingFilter !== "all",
+    activeDiscountFilter !== "all",
+    activePickupTimeFilter !== "all",
+    isFavoriteStoresOnly,
+    isNearbyOnly,
+  ].filter(Boolean).length;
+  const selectedPriceRange =
+    priceRangeFilters.find((filter) => filter.id === activePriceRange) ??
+    priceRangeFilters[0];
+  const selectedRatingFilter =
+    ratingFilters.find((filter) => filter.id === activeRatingFilter) ??
+    ratingFilters[0];
+  const selectedDiscountFilter =
+    discountFilters.find((filter) => filter.id === activeDiscountFilter) ??
+    discountFilters[0];
+  const selectedPickupTimeFilter =
+    pickupTimeFilters.find((filter) => filter.id === activePickupTimeFilter) ??
+    pickupTimeFilters[0];
+  const activeFilterBadges = [
+    query.trim() ? `Cari: ${query.trim()}` : null,
+    activeCategory !== "Semua" ? activeCategory : null,
+    activeFilter !== "Terdekat" ? activeFilter : null,
+    selectedPriceRange.id !== "all" ? selectedPriceRange.label : null,
+    selectedRatingFilter.id !== "all" ? selectedRatingFilter.label : null,
+    selectedDiscountFilter.id !== "all" ? selectedDiscountFilter.label : null,
+    selectedPickupTimeFilter.id !== "all" ? selectedPickupTimeFilter.label : null,
+    isFavoriteStoresOnly ? "Toko favorit" : null,
+    isNearbyOnly ? `${NEARBY_PICKUP_RADIUS_KM} km` : null,
+  ].filter((badge): badge is string => Boolean(badge));
+
+  const resetSearchFilters = () => {
+    setQuery("");
+    setActiveCategory("Semua");
+    setActiveFilter("Terdekat");
+    setActivePriceRange("all");
+    setActiveRatingFilter("all");
+    setActiveDiscountFilter("all");
+    setActivePickupTimeFilter("all");
+    setIsFavoriteStoresOnly(false);
+    setIsNearbyOnly(false);
+  };
 
   const handleLocationChange = (nextLocation: CustomerLocation) => {
     setCustomerLocation(nextLocation);
@@ -167,6 +491,80 @@ export function CustomerBrowseScreen() {
         ),
       ),
     );
+  };
+
+  const getCartTargetElement = () => {
+    const targetType = window.innerWidth >= 1024 ? "desktop" : "mobile";
+    const preferredTarget = document.querySelector<HTMLElement>(
+      `[data-customer-cart-target="${targetType}"]`,
+    );
+    const fallbackTarget = document.querySelector<HTMLElement>(
+      "[data-customer-cart-target]",
+    );
+
+    return preferredTarget ?? fallbackTarget;
+  };
+
+  const animateToCart = (food: Food, sourceElement: HTMLElement) => {
+    const startRect = sourceElement.getBoundingClientRect();
+    const targetElement = getCartTargetElement();
+    const targetRect = targetElement?.getBoundingClientRect();
+
+    if (!targetElement || !targetRect) {
+      return;
+    }
+
+    if (flyTimeoutRef.current) {
+      window.clearTimeout(flyTimeoutRef.current);
+    }
+
+    setFlyingCartItem({
+      id: `${food.id}-${Date.now()}`,
+      image: food.image,
+      startX: startRect.left + startRect.width / 2,
+      startY: startRect.top + startRect.height / 2,
+      targetX: targetRect.left + targetRect.width / 2,
+      targetY: targetRect.top + targetRect.height / 2,
+    });
+
+    window.setTimeout(() => {
+      targetElement.classList.add("cart-target-bump");
+      window.setTimeout(() => {
+        targetElement.classList.remove("cart-target-bump");
+      }, 560);
+    }, 420);
+
+    flyTimeoutRef.current = window.setTimeout(() => {
+      setFlyingCartItem(null);
+    }, 760);
+  };
+
+  const handleAddFoodToCart = async (
+    food: Food,
+    event: MouseEvent<HTMLButtonElement>,
+  ) => {
+    event.stopPropagation();
+
+    if (addingFoodId === food.id) {
+      return;
+    }
+
+    const sourceElement = event.currentTarget;
+
+    setAddingFoodId(food.id);
+
+    const added = await addToCart(food);
+
+    setAddingFoodId(null);
+
+    if (!added) {
+      setCartToast("Stok menu belum bisa ditambahkan.");
+      return;
+    }
+
+    setAddedFoodId(food.id);
+    setCartToast(`${food.name} masuk keranjang.`);
+    animateToCart(food, sourceElement);
   };
 
   return (
@@ -180,21 +578,12 @@ export function CustomerBrowseScreen() {
           />
 
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => router.push("/notifications")}
-              className="relative flex h-10 w-10 items-center justify-center rounded-full bg-gray-50 text-gray-600 transition-colors hover:bg-emerald-50 hover:text-emerald-600"
-              aria-label="Buka notifikasi"
-            >
-              <Bell size={19} />
-              {unreadNotificationCount > 0 ? (
-                <span className="absolute -top-1 -right-1 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-white bg-red-500 px-1 text-[9px] font-extrabold text-white">
-                  {unreadNotificationCount > 9 ? "9+" : unreadNotificationCount}
-                </span>
-              ) : null}
-            </button>
+            <NotificationBellLink
+              href="/notifications"
+              unreadCount={unreadNotificationCount}
+            />
 
-            <div className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-emerald-500 bg-emerald-50 text-emerald-600">
+            <div className="flex h-11 w-11 items-center justify-center rounded-full border-2 border-emerald-500 bg-emerald-50 text-emerald-600">
               <UserRound size={20} />
             </div>
           </div>
@@ -215,7 +604,7 @@ export function CustomerBrowseScreen() {
             <button
               type="button"
               onClick={() => setQuery("")}
-              className="absolute right-14 flex h-9 w-9 items-center justify-center rounded-xl bg-gray-100 text-gray-500 transition-colors hover:bg-gray-200"
+              className="absolute right-14 flex h-11 w-11 items-center justify-center rounded-xl bg-gray-100 text-gray-500 transition-colors hover:bg-gray-200"
               aria-label="Hapus pencarian"
             >
               <X size={16} />
@@ -224,10 +613,15 @@ export function CustomerBrowseScreen() {
           <button
             type="button"
             onClick={() => setIsFilterOpen(true)}
-            className="absolute right-2 flex h-10 w-10 items-center justify-center rounded-xl bg-gray-900 text-white transition-colors hover:bg-emerald-500"
+            className="absolute right-1 flex h-11 w-11 items-center justify-center rounded-xl bg-gray-900 text-white transition-colors hover:bg-emerald-500"
             aria-label="Buka filter pencarian"
           >
             <SlidersHorizontal size={18} />
+            {activeAdvancedFilterCount > 0 ? (
+              <span className="absolute -top-1 -right-1 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-white bg-emerald-500 px-1 text-[10px] font-extrabold text-white">
+                {activeAdvancedFilterCount}
+              </span>
+            ) : null}
           </button>
         </div>
       </header>
@@ -261,7 +655,7 @@ export function CustomerBrowseScreen() {
               key={category}
               type="button"
               onClick={() => setActiveCategory(category)}
-              className={`whitespace-nowrap rounded-2xl px-5 py-2.5 text-xs font-bold transition-all duration-200 ${
+              className={`min-h-11 whitespace-nowrap rounded-2xl px-5 py-2.5 text-xs font-bold transition-all duration-200 ${
                 activeCategory === category
                   ? "bg-gray-900 text-white shadow-[0_4px_18px_rgba(17,24,39,0.18)]"
                   : "border border-gray-200 bg-white text-gray-500 hover:bg-gray-50"
@@ -271,6 +665,26 @@ export function CustomerBrowseScreen() {
             </button>
           ))}
         </section>
+
+        {activeFilterBadges.length > 0 ? (
+          <section className="mt-2 mb-4 flex flex-wrap items-center gap-2 rounded-[22px] border border-gray-100 bg-white px-3 py-3 shadow-sm">
+            {activeFilterBadges.map((badge) => (
+              <span
+                key={badge}
+                className="rounded-full bg-emerald-50 px-3 py-1.5 text-[11px] font-extrabold text-emerald-700"
+              >
+                {badge}
+              </span>
+            ))}
+            <button
+              type="button"
+              onClick={resetSearchFilters}
+              className="ml-auto min-h-11 rounded-full bg-gray-100 px-3 py-2 text-[11px] font-extrabold text-gray-600 transition-colors hover:bg-gray-200"
+            >
+              Reset
+            </button>
+          </section>
+        ) : null}
 
         <section className="mt-4 mb-4 flex items-end justify-between">
           <div>
@@ -288,7 +702,7 @@ export function CustomerBrowseScreen() {
               type="button"
               onClick={() => setIsNearbyOnly((current) => !current)}
               disabled={!customerLocation.coordinates}
-              className={`flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-extrabold transition-colors disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400 ${
+              className={`flex min-h-11 items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-extrabold transition-colors disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400 ${
                 isNearbyOnly
                   ? "bg-emerald-500 text-white"
                   : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
@@ -300,10 +714,10 @@ export function CustomerBrowseScreen() {
             <button
               type="button"
               onClick={() => setIsFilterOpen(true)}
-              className="flex items-center gap-1.5 text-xs font-bold text-emerald-600"
+              className="flex min-h-11 items-center gap-1.5 rounded-xl px-2 text-xs font-bold text-emerald-600 hover:bg-emerald-50"
             >
               <Filter size={14} />
-              Filter
+              Filter{activeAdvancedFilterCount > 0 ? ` (${activeAdvancedFilterCount})` : ""}
             </button>
           </div>
         </section>
@@ -319,18 +733,14 @@ export function CustomerBrowseScreen() {
         </section>
 
         {isLoadingFoods ? (
-          <section className="rounded-[28px] border border-gray-100 bg-white p-8 text-center shadow-sm">
-            <h2 className="text-lg font-extrabold text-gray-950">
-              Memuat menu...
-            </h2>
-            <p className="mt-2 text-sm leading-6 font-medium text-gray-500">
-              Sistem mengambil menu aktif dari restoran yang sudah approved.
-            </p>
-          </section>
+          <SkeletonCardGrid count={6} />
         ) : foods.length > 0 ? (
           <section className="space-y-4 md:grid md:grid-cols-2 md:gap-4 md:space-y-0 xl:grid-cols-3">
             {foods.map((food) => {
+              const discount = getFoodDiscount(food);
               const detailRoute = `/detail/${food.id}`;
+              const isAddingThisFood = addingFoodId === food.id;
+              const isAddedThisFood = addedFoodId === food.id;
 
               return (
                 <article
@@ -357,6 +767,11 @@ export function CustomerBrowseScreen() {
                   <div className="absolute top-2 left-2 rounded-lg border border-white/20 bg-amber-500/90 px-2 py-1 text-[9px] font-bold text-white backdrop-blur-sm">
                     Sisa {food.stock}
                   </div>
+                  {discount > 0 ? (
+                    <div className="absolute right-2 bottom-2 rounded-lg border border-white/20 bg-emerald-500/90 px-2 py-1 text-[9px] font-bold text-white backdrop-blur-sm">
+                      -{discount}%
+                    </div>
+                  ) : null}
                 </div>
                 <div className="flex min-w-0 flex-1 flex-col justify-center py-1 pr-2">
                   <h3 className="mb-1 line-clamp-2 text-sm leading-snug font-bold text-gray-900">
@@ -382,6 +797,11 @@ export function CustomerBrowseScreen() {
                       <MapPin size={10} />
                       {food.distance}
                     </span>
+                    <span className="flex items-center gap-1 rounded bg-blue-50 px-1.5 py-0.5 text-blue-700">
+                      <Clock3 size={10} />
+                      {food.time}
+                    </span>
+                    <PickupAvailabilityBadge pickupWindow={food.time} compact />
                   </div>
                   <div className="mt-auto flex items-end justify-between gap-3">
                     <div>
@@ -394,14 +814,22 @@ export function CustomerBrowseScreen() {
                     </div>
                     <button
                       type="button"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        addToCart(food);
-                      }}
-                      className="rounded-xl bg-gray-100 p-2 text-gray-600 transition-colors duration-300 hover:bg-emerald-500 hover:text-white active:scale-95"
+                      onClick={(event) => void handleAddFoodToCart(food, event)}
+                      disabled={isAddingThisFood}
+                      className={`rounded-xl p-2 transition-all duration-300 active:scale-95 disabled:cursor-wait ${
+                        isAddedThisFood
+                          ? "bg-emerald-500 text-white shadow-[0_10px_22px_rgba(16,185,129,0.24)]"
+                          : "bg-gray-100 text-gray-600 hover:bg-emerald-500 hover:text-white"
+                      }`}
                       aria-label={`Tambah ${food.name} ke keranjang`}
                     >
-                      <Plus size={16} />
+                      {isAddingThisFood ? (
+                        <Loader2 size={16} className="animate-spin" />
+                      ) : isAddedThisFood ? (
+                        <Check size={16} strokeWidth={3} />
+                      ) : (
+                        <Plus size={16} />
+                      )}
                     </button>
                   </div>
                 </div>
@@ -410,35 +838,63 @@ export function CustomerBrowseScreen() {
             })}
           </section>
         ) : (
-          <section className="rounded-[28px] border border-gray-100 bg-white p-8 text-center shadow-sm">
-            <div className="mx-auto mb-5 flex h-20 w-20 items-center justify-center rounded-[26px] bg-gray-50 text-gray-400">
-              <Search size={36} />
-            </div>
-            <h2 className="text-lg font-extrabold text-gray-950">
-              Tidak ada hasil
-            </h2>
-            <p className="mt-2 text-sm leading-6 font-medium text-gray-500">
-              Coba ubah kata kunci, kategori, atau filter pencarian.
-            </p>
-            <button
-              type="button"
-              onClick={() => {
-                setQuery("");
-                setActiveCategory("Semua");
-                setActiveFilter("Terdekat");
-                setIsNearbyOnly(false);
-              }}
-              className="mt-6 rounded-2xl bg-gray-900 px-6 py-3 text-sm font-extrabold text-white"
-            >
-              Reset Pencarian
-            </button>
-          </section>
+          <StateCard
+            title="Tidak ada hasil"
+            description="Coba ubah kata kunci, kategori, atau filter pencarian."
+            variant="empty"
+            action={{
+              label: "Reset Pencarian",
+              onClick: resetSearchFilters,
+            }}
+          />
         )}
       </main>
 
+      {cartToast ? (
+        <div className="cart-add-toast fixed right-4 bottom-24 z-[80] flex max-w-[calc(100vw-2rem)] items-center gap-3 rounded-2xl border border-emerald-100 bg-white px-4 py-3 text-xs font-extrabold text-gray-800 shadow-[0_18px_44px_rgba(15,23,42,0.14)] lg:right-8 lg:bottom-8">
+          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
+            <Check size={17} strokeWidth={3} />
+          </span>
+          <span className="line-clamp-2">{cartToast}</span>
+          <button
+            type="button"
+            onClick={() => router.push("/cart")}
+            className="ml-1 rounded-full bg-emerald-600 px-3 py-1.5 text-[11px] font-extrabold text-white transition-colors hover:bg-emerald-700"
+          >
+            Lihat
+          </button>
+        </div>
+      ) : null}
+
+      {flyingCartItem ? (
+        <div
+          key={flyingCartItem.id}
+          className="cart-fly-item"
+          style={
+            {
+              left: flyingCartItem.startX,
+              top: flyingCartItem.startY,
+              "--cart-fly-dx": `${flyingCartItem.targetX - flyingCartItem.startX}px`,
+              "--cart-fly-dy": `${flyingCartItem.targetY - flyingCartItem.startY}px`,
+            } as CSSProperties
+          }
+          aria-hidden="true"
+        >
+          <div className="cart-fly-item-inner">
+            <Image
+              src={flyingCartItem.image}
+              alt=""
+              fill
+              sizes="52px"
+              className="object-cover"
+            />
+          </div>
+        </div>
+      ) : null}
+
       {isFilterOpen ? (
         <div className="absolute inset-0 z-50 flex items-end bg-gray-950/30 backdrop-blur-sm md:items-center md:justify-center md:p-6">
-          <div className="w-full rounded-t-[36px] bg-white px-6 pt-5 pb-8 shadow-[0_-24px_70px_rgba(15,23,42,0.22)] md:max-w-lg md:rounded-[32px] md:shadow-[0_24px_80px_rgba(15,23,42,0.24)]">
+          <div className="max-h-[calc(100dvh-1rem)] w-full overflow-y-auto rounded-t-[36px] bg-white px-6 pt-5 pb-8 shadow-[0_-24px_70px_rgba(15,23,42,0.22)] md:max-w-lg md:rounded-[32px] md:shadow-[0_24px_80px_rgba(15,23,42,0.24)]">
             <div className="mx-auto mb-5 h-1.5 w-12 rounded-full bg-gray-200 md:hidden" />
             <div className="mb-5 flex items-start justify-between gap-4">
               <div>
@@ -446,7 +902,7 @@ export function CustomerBrowseScreen() {
                   Filter Pencarian
                 </h2>
                 <p className="mt-1 text-sm font-medium text-gray-500">
-                  Pilih urutan dan batas jarak hasil makanan surplus.
+                  Atur hasil makanan surplus sesuai budget, rating, dan waktu pickup.
                 </p>
               </div>
               <button
@@ -460,6 +916,9 @@ export function CustomerBrowseScreen() {
             </div>
 
             <div className="grid gap-2">
+              <p className="mb-1 text-xs font-extrabold tracking-wider text-gray-400 uppercase">
+                Urutkan
+              </p>
               {filterChips.map((filter) => {
                 const isActive = activeFilter === filter;
 
@@ -469,7 +928,6 @@ export function CustomerBrowseScreen() {
                     type="button"
                     onClick={() => {
                       setActiveFilter(filter);
-                      setIsFilterOpen(false);
                     }}
                     className={`rounded-2xl border p-4 text-left text-sm font-extrabold transition-all ${
                       isActive
@@ -481,6 +939,140 @@ export function CustomerBrowseScreen() {
                   </button>
                 );
               })}
+            </div>
+
+            <div className="mt-5">
+              <p className="mb-2 text-xs font-extrabold tracking-wider text-gray-400 uppercase">
+                Range Harga
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                {priceRangeFilters.map((filter) => {
+                  const isActive = activePriceRange === filter.id;
+
+                  return (
+                    <button
+                      key={filter.id}
+                      type="button"
+                      onClick={() => setActivePriceRange(filter.id)}
+                      className={`rounded-2xl border px-3 py-3 text-left text-xs font-extrabold transition-all ${
+                        isActive
+                          ? "border-emerald-200 bg-emerald-50 text-emerald-700 ring-4 ring-emerald-500/10"
+                          : "border-gray-100 bg-gray-50 text-gray-600 hover:bg-gray-100"
+                      }`}
+                    >
+                      {filter.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="mt-5 grid gap-4 sm:grid-cols-2">
+              <div>
+                <p className="mb-2 flex items-center gap-1.5 text-xs font-extrabold tracking-wider text-gray-400 uppercase">
+                  <Star size={13} />
+                  Rating
+                </p>
+                <div className="grid gap-2">
+                  {ratingFilters.map((filter) => {
+                    const isActive = activeRatingFilter === filter.id;
+
+                    return (
+                      <button
+                        key={filter.id}
+                        type="button"
+                        onClick={() => setActiveRatingFilter(filter.id)}
+                        className={`rounded-2xl border px-3 py-3 text-left text-xs font-extrabold transition-all ${
+                          isActive
+                            ? "border-emerald-200 bg-emerald-50 text-emerald-700 ring-4 ring-emerald-500/10"
+                            : "border-gray-100 bg-gray-50 text-gray-600 hover:bg-gray-100"
+                        }`}
+                      >
+                        {filter.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <p className="mb-2 flex items-center gap-1.5 text-xs font-extrabold tracking-wider text-gray-400 uppercase">
+                  <BadgePercent size={13} />
+                  Diskon
+                </p>
+                <div className="grid gap-2">
+                  {discountFilters.map((filter) => {
+                    const isActive = activeDiscountFilter === filter.id;
+
+                    return (
+                      <button
+                        key={filter.id}
+                        type="button"
+                        onClick={() => setActiveDiscountFilter(filter.id)}
+                        className={`rounded-2xl border px-3 py-3 text-left text-xs font-extrabold transition-all ${
+                          isActive
+                            ? "border-emerald-200 bg-emerald-50 text-emerald-700 ring-4 ring-emerald-500/10"
+                            : "border-gray-100 bg-gray-50 text-gray-600 hover:bg-gray-100"
+                        }`}
+                      >
+                        {filter.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-5">
+              <p className="mb-2 flex items-center gap-1.5 text-xs font-extrabold tracking-wider text-gray-400 uppercase">
+                <Clock3 size={13} />
+                Waktu Pickup
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                {pickupTimeFilters.map((filter) => {
+                  const isActive = activePickupTimeFilter === filter.id;
+
+                  return (
+                    <button
+                      key={filter.id}
+                      type="button"
+                      onClick={() => setActivePickupTimeFilter(filter.id)}
+                      className={`rounded-2xl border px-3 py-3 text-left text-xs font-extrabold transition-all ${
+                        isActive
+                          ? "border-emerald-200 bg-emerald-50 text-emerald-700 ring-4 ring-emerald-500/10"
+                          : "border-gray-100 bg-gray-50 text-gray-600 hover:bg-gray-100"
+                      }`}
+                    >
+                      {filter.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="mt-5 rounded-[24px] border border-gray-100 bg-gray-50 p-4">
+              <p className="flex items-center gap-1.5 text-sm font-extrabold text-gray-950">
+                <Heart size={15} />
+                Toko Favorit
+              </p>
+              <p className="mt-1 text-xs leading-5 font-semibold text-gray-500">
+                {favoriteRestaurantIds.size > 0
+                  ? `${favoriteRestaurantIds.size} toko favorit tersedia untuk filter.`
+                  : "Belum ada toko favorit yang bisa difilter."}
+              </p>
+              <button
+                type="button"
+                onClick={() => setIsFavoriteStoresOnly((current) => !current)}
+                disabled={favoriteRestaurantIds.size === 0}
+                className={`mt-3 flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-extrabold transition-colors disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400 ${
+                  isFavoriteStoresOnly
+                    ? "bg-emerald-500 text-white"
+                    : "bg-white text-emerald-700 ring-1 ring-emerald-100 hover:bg-emerald-50"
+                }`}
+              >
+                <Heart size={15} className={isFavoriteStoresOnly ? "fill-white" : ""} />
+                {isFavoriteStoresOnly ? "Tampilkan Semua Toko" : "Hanya Toko Favorit"}
+              </button>
             </div>
 
             <div className="mt-5 rounded-[24px] border border-gray-100 bg-gray-50 p-4">
@@ -496,7 +1088,6 @@ export function CustomerBrowseScreen() {
                 type="button"
                 onClick={() => {
                   setIsNearbyOnly((current) => !current);
-                  setIsFilterOpen(false);
                 }}
                 disabled={!customerLocation.coordinates}
                 className={`mt-3 flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-extrabold transition-colors disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400 ${
@@ -509,6 +1100,23 @@ export function CustomerBrowseScreen() {
                 {isNearbyOnly
                   ? `Lihat Semua Radius`
                   : `Hanya Dalam ${NEARBY_PICKUP_RADIUS_KM} km`}
+              </button>
+            </div>
+
+            <div className="mt-5 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={resetSearchFilters}
+                className="rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm font-extrabold text-gray-700 transition-colors hover:bg-gray-50"
+              >
+                Reset
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsFilterOpen(false)}
+                className="rounded-2xl bg-gray-900 px-4 py-3 text-sm font-extrabold text-white transition-colors hover:bg-emerald-500"
+              >
+                Terapkan
               </button>
             </div>
           </div>

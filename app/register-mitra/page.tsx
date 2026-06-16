@@ -1,9 +1,11 @@
 "use client";
 
 import {
+  AlertTriangle,
   Banknote,
   Camera,
   CheckCircle2,
+  ChevronRight,
   ChevronLeft,
   Clock3,
   Eye,
@@ -27,6 +29,7 @@ import {
   type FormEvent,
   type ReactNode,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
@@ -41,6 +44,12 @@ import { waitForLoadingScreen } from "@/lib/loading-delay";
 import {
   formatCoordinatesInput,
 } from "@/lib/maps-coordinate";
+import { getStorePickupCoordinateIssue } from "@/lib/location-quality";
+import { saveRecentLocation } from "@/lib/recent-locations";
+import {
+  formatCoordinateLabel,
+  reverseGeocodeCoordinates,
+} from "@/lib/reverse-geocode";
 
 const inputWrapClassName =
   "relative rounded-2xl border border-gray-200 bg-white shadow-[0_4px_20px_rgba(15,23,42,0.03)] transition-all focus-within:border-emerald-300 focus-within:ring-4 focus-within:ring-emerald-500/10";
@@ -101,13 +110,112 @@ type PartnerForm = {
   longitude: string;
   pickupWindow: string;
   averageSurplus: string;
-  bankAccount: string;
+  bankName: string;
+  bankAccountNumber: string;
+  bankAccountHolder: string;
   password: string;
 };
 
 type UploadedDocs = Record<UploadKind, File | null>;
 type FormErrorKey = keyof PartnerForm | UploadKind;
 type FormErrors = Partial<Record<FormErrorKey, string>>;
+
+const formSteps = [
+  {
+    id: "account",
+    title: "Akun",
+    description: "Owner dan toko",
+  },
+  {
+    id: "location",
+    title: "Lokasi Toko",
+    description: "Alamat dan pin",
+  },
+  {
+    id: "operation",
+    title: "Operasional",
+    description: "Pickup dan rekening",
+  },
+  {
+    id: "documents",
+    title: "Dokumen",
+    description: "File verifikasi",
+  },
+] as const;
+
+type FormStepId = (typeof formSteps)[number]["id"];
+
+const formStepOrder = formSteps.map((step) => step.id);
+
+const stepFieldMap: Record<FormStepId, FormErrorKey[]> = {
+  account: ["storeName", "ownerName", "email", "phone", "password"],
+  location: ["address", "latitude", "longitude"],
+  operation: [
+    "pickupWindow",
+    "averageSurplus",
+    "bankName",
+    "bankAccountNumber",
+    "bankAccountHolder",
+  ],
+  documents: ["identity", "permit", "storefront"],
+};
+
+const fieldStepMap: Record<FormErrorKey, FormStepId> = {
+  storeName: "account",
+  ownerName: "account",
+  email: "account",
+  phone: "account",
+  password: "account",
+  address: "location",
+  latitude: "location",
+  longitude: "location",
+  pickupWindow: "operation",
+  averageSurplus: "operation",
+  bankName: "operation",
+  bankAccountNumber: "operation",
+  bankAccountHolder: "operation",
+  identity: "documents",
+  permit: "documents",
+  storefront: "documents",
+};
+
+const fieldErrorOrder: FormErrorKey[] = [
+  "storeName",
+  "ownerName",
+  "email",
+  "phone",
+  "password",
+  "address",
+  "latitude",
+  "longitude",
+  "pickupWindow",
+  "averageSurplus",
+  "bankName",
+  "bankAccountNumber",
+  "bankAccountHolder",
+  "identity",
+  "permit",
+  "storefront",
+];
+
+const fieldErrorLabels: Record<FormErrorKey, string> = {
+  storeName: "Nama toko",
+  ownerName: "Nama pemilik",
+  email: "Email owner",
+  phone: "No. WhatsApp",
+  password: "Password owner",
+  address: "Alamat pickup",
+  latitude: "Titik lokasi toko",
+  longitude: "Titik lokasi toko",
+  pickupWindow: "Jam pickup",
+  averageSurplus: "Estimasi surplus",
+  bankName: "Nama bank/e-wallet",
+  bankAccountNumber: "Nomor rekening",
+  bankAccountHolder: "Nama pemilik rekening",
+  identity: "Foto KTP pemilik",
+  permit: "Surat izin / NIB",
+  storefront: "Foto toko",
+};
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const maxUploadSize = 6 * 1024 * 1024;
@@ -117,6 +225,80 @@ const allowedUploadTypes = new Set([
   "image/webp",
   "application/pdf",
 ]);
+
+function normalizeBankAccountNumber(value: string) {
+  return value.replace(/\D/g, "").slice(0, 20);
+}
+
+function getBankNameError(value: string) {
+  const normalizedValue = value.replace(/\s+/g, " ").trim();
+
+  if (normalizedValue.length < 2) {
+    return "Nama bank/e-wallet wajib diisi, contoh: BCA.";
+  }
+
+  if (normalizedValue.length > 40) {
+    return "Nama bank/e-wallet maksimal 40 karakter.";
+  }
+
+  return "";
+}
+
+function getBankAccountNumberError(value: string) {
+  const digits = normalizeBankAccountNumber(value);
+
+  if (digits.length < 6 || digits.length > 20) {
+    return "Nomor rekening harus 6-20 digit angka.";
+  }
+
+  return "";
+}
+
+function getBankAccountHolderError(value: string) {
+  const normalizedValue = value.replace(/\s+/g, " ").trim();
+
+  if (normalizedValue.length < 3) {
+    return "Nama pemilik rekening minimal 3 karakter.";
+  }
+
+  if (normalizedValue.length > 80) {
+    return "Nama pemilik rekening maksimal 80 karakter.";
+  }
+
+  return "";
+}
+
+function getFormErrorCount(errors: FormErrors) {
+  return fieldErrorOrder.filter((key) => Boolean(errors[key])).length;
+}
+
+function getFirstErrorKey(errors: FormErrors) {
+  return fieldErrorOrder.find((key) => Boolean(errors[key])) || null;
+}
+
+function pickStepErrors(errors: FormErrors, stepId: FormStepId) {
+  return stepFieldMap[stepId].reduce<FormErrors>((stepErrors, key) => {
+    if (errors[key]) {
+      stepErrors[key] = errors[key];
+    }
+
+    return stepErrors;
+  }, {});
+}
+
+function mergeStepErrors(
+  currentErrors: FormErrors,
+  stepId: FormStepId,
+  stepErrors: FormErrors,
+) {
+  const nextErrors = { ...currentErrors };
+
+  stepFieldMap[stepId].forEach((key) => {
+    delete nextErrors[key];
+  });
+
+  return { ...nextErrors, ...stepErrors };
+}
 
 function getInputWrapClassName(error?: string) {
   return `${inputWrapClassName} ${
@@ -177,28 +359,14 @@ function validatePartnerForm(form: PartnerForm, uploadedDocs: UploadedDocs) {
     errors.latitude = "Titik lokasi toko belum lengkap. Klik Ambil Lokasi lagi.";
   }
 
-  if (latitude) {
-    const latitudeNumber = Number(latitude);
+  if (latitude && longitude) {
+    const coordinateIssue = getStorePickupCoordinateIssue({
+      latitude: Number(latitude),
+      longitude: Number(longitude),
+    });
 
-    if (
-      !Number.isFinite(latitudeNumber) ||
-      latitudeNumber < -90 ||
-      latitudeNumber > 90
-    ) {
-      errors.latitude = "Titik lokasi toko tidak valid. Klik Ambil Lokasi lagi.";
-    }
-  }
-
-  if (longitude) {
-    const longitudeNumber = Number(longitude);
-
-    if (
-      !Number.isFinite(longitudeNumber) ||
-      longitudeNumber < -180 ||
-      longitudeNumber > 180
-    ) {
-      errors.longitude =
-        "Titik lokasi toko tidak valid. Klik Ambil Lokasi lagi.";
+    if (coordinateIssue) {
+      errors.latitude = coordinateIssue;
     }
   }
 
@@ -208,6 +376,26 @@ function validatePartnerForm(form: PartnerForm, uploadedDocs: UploadedDocs) {
 
   if (form.averageSurplus.trim().length < 3) {
     errors.averageSurplus = "Tulis estimasi surplus, contoh: 10 porsi / hari.";
+  }
+
+  const bankNameError = getBankNameError(form.bankName);
+  const bankAccountNumberError = getBankAccountNumberError(
+    form.bankAccountNumber,
+  );
+  const bankAccountHolderError = getBankAccountHolderError(
+    form.bankAccountHolder,
+  );
+
+  if (bankNameError) {
+    errors.bankName = bankNameError;
+  }
+
+  if (bankAccountNumberError) {
+    errors.bankAccountNumber = bankAccountNumberError;
+  }
+
+  if (bankAccountHolderError) {
+    errors.bankAccountHolder = bankAccountHolderError;
   }
 
   if (!uploadedDocs.identity) {
@@ -226,7 +414,9 @@ function validatePartnerForm(form: PartnerForm, uploadedDocs: UploadedDocs) {
 }
 
 function getFirstError(errors: FormErrors) {
-  return Object.values(errors).find(Boolean) || "";
+  const firstKey = getFirstErrorKey(errors);
+
+  return firstKey ? errors[firstKey] || "" : "";
 }
 
 function FieldLabel({ children }: { children: ReactNode }) {
@@ -234,6 +424,53 @@ function FieldLabel({ children }: { children: ReactNode }) {
     <label className="mb-2 block text-sm font-extrabold text-gray-800">
       {children}
     </label>
+  );
+}
+
+function ErrorSummary({
+  errors,
+  onSelect,
+}: {
+  errors: FormErrors;
+  onSelect: (key: FormErrorKey) => void;
+}) {
+  const errorKeys = fieldErrorOrder.filter((key) => Boolean(errors[key]));
+
+  if (errorKeys.length === 0) {
+    return null;
+  }
+
+  return (
+    <section
+      className="rounded-[28px] border border-red-100 bg-red-50 p-5 text-red-700"
+      role="alert"
+    >
+      <div className="flex items-start gap-3">
+        <span className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white text-red-500">
+          <AlertTriangle size={19} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-extrabold">
+            Ada {errorKeys.length} data yang perlu diperbaiki.
+          </p>
+          <p className="mt-1 text-xs leading-5 font-semibold text-red-600/80">
+            Klik item di bawah untuk langsung menuju bagian yang bermasalah.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {errorKeys.slice(0, 6).map((key) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => onSelect(key)}
+                className="rounded-full border border-red-100 bg-white px-3 py-1.5 text-[11px] font-extrabold text-red-700 transition-colors hover:bg-red-100"
+              >
+                {fieldErrorLabels[key]}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -300,8 +537,12 @@ function UploadBox({
 
 export default function RegisterMitraPage() {
   const router = useRouter();
+  const fieldRefs = useRef<Partial<Record<FormErrorKey, HTMLDivElement | null>>>(
+    {},
+  );
   const [category, setCategory] =
     useState<(typeof businessCategories)[number]>("Bakery");
+  const [activeStep, setActiveStep] = useState<FormStepId>("account");
   const [form, setForm] = useState<PartnerForm>({
     storeName: "",
     ownerName: "",
@@ -312,7 +553,9 @@ export default function RegisterMitraPage() {
     longitude: "",
     pickupWindow: "17:00 - 21:00",
     averageSurplus: "",
-    bankAccount: "",
+    bankName: "",
+    bankAccountNumber: "",
+    bankAccountHolder: "",
     password: "",
   });
   const [showPassword, setShowPassword] = useState(false);
@@ -321,6 +564,7 @@ export default function RegisterMitraPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isWelcomeLoading, setIsWelcomeLoading] = useState(false);
   const [isLocatingStore, setIsLocatingStore] = useState(false);
+  const [storeLocationLabel, setStoreLocationLabel] = useState("");
   const [uploadedDocs, setUploadedDocs] = useState<UploadedDocs>({
     identity: null,
     permit: null,
@@ -336,6 +580,9 @@ export default function RegisterMitraPage() {
       form.address,
       form.pickupWindow,
       form.averageSurplus,
+      form.bankName,
+      form.bankAccountNumber,
+      form.bankAccountHolder,
       form.latitude && form.longitude,
       form.password,
       uploadedDocs.identity?.name,
@@ -346,6 +593,32 @@ export default function RegisterMitraPage() {
 
     return Math.round((completed / requiredItems.length) * 100);
   }, [form, uploadedDocs]);
+  const activeStepIndex = formStepOrder.indexOf(activeStep);
+  const stepErrorCount = getFormErrorCount(pickStepErrors(formErrors, activeStep));
+  const setFieldRef =
+    (key: FormErrorKey) => (node: HTMLDivElement | null) => {
+      fieldRefs.current[key] = node;
+    };
+  const focusField = (key: FormErrorKey) => {
+    const stepId = fieldStepMap[key];
+
+    setActiveStep(stepId);
+    window.setTimeout(() => {
+      const fieldNode = fieldRefs.current[key];
+
+      fieldNode?.scrollIntoView({ behavior: "smooth", block: "center" });
+      fieldNode
+        ?.querySelector<HTMLElement>("input, textarea, button")
+        ?.focus({ preventScroll: true });
+    }, 90);
+  };
+  const focusFirstError = (errors: FormErrors) => {
+    const firstKey = getFirstErrorKey(errors);
+
+    if (firstKey) {
+      focusField(firstKey);
+    }
+  };
   const hasStoreCoordinates = Boolean(
     form.latitude.trim() && form.longitude.trim(),
   );
@@ -382,6 +655,46 @@ export default function RegisterMitraPage() {
       return next;
     });
   };
+  const handleStoreCoordinatesChange = async (
+    coordinates: {
+      latitude: number;
+      longitude: number;
+    },
+    { fillAddress = false }: { fillAddress?: boolean } = {},
+  ) => {
+    setStoreCoordinates(coordinates);
+    setStoreLocationLabel(formatCoordinateLabel(coordinates));
+
+    const geocodedLocation = await reverseGeocodeCoordinates(coordinates);
+    const locationLabel =
+      geocodedLocation?.label || formatCoordinateLabel(coordinates);
+
+    setStoreLocationLabel(locationLabel);
+    saveRecentLocation({
+      source: "store",
+      label: locationLabel,
+      addressLine: geocodedLocation?.addressLine,
+      coordinates,
+    });
+
+    if (fillAddress && geocodedLocation?.addressLine) {
+      setForm((current) =>
+        current.address.trim().length >= 20
+          ? current
+          : { ...current, address: geocodedLocation.addressLine },
+      );
+      setFormErrors((current) => {
+        if (!current.address) {
+          return current;
+        }
+
+        const next = { ...current };
+        delete next.address;
+
+        return next;
+      });
+    }
+  };
 
   const handleInputChange =
     (key: keyof PartnerForm) =>
@@ -399,6 +712,48 @@ export default function RegisterMitraPage() {
         return next;
       });
     };
+
+  const handleBankAccountNumberChange = (
+    event: ChangeEvent<HTMLInputElement>,
+  ) => {
+    const nextValue = normalizeBankAccountNumber(event.target.value);
+
+    setForm((current) => ({ ...current, bankAccountNumber: nextValue }));
+    setNotice("");
+    setFormErrors((current) => {
+      if (!current.bankAccountNumber) {
+        return current;
+      }
+
+      const next = { ...current };
+      delete next.bankAccountNumber;
+
+      return next;
+    });
+  };
+
+  const handleBankFieldBlur = (
+    key: "bankName" | "bankAccountNumber" | "bankAccountHolder",
+  ) => {
+    const fieldError =
+      key === "bankName"
+        ? getBankNameError(form.bankName)
+        : key === "bankAccountNumber"
+          ? getBankAccountNumberError(form.bankAccountNumber)
+          : getBankAccountHolderError(form.bankAccountHolder);
+
+    setFormErrors((current) => {
+      const next = { ...current };
+
+      if (fieldError) {
+        next[key] = fieldError;
+      } else {
+        delete next[key];
+      }
+
+      return next;
+    });
+  };
 
   const handleUploadChange =
     (key: UploadKind) => (event: ChangeEvent<HTMLInputElement>) => {
@@ -452,7 +807,9 @@ export default function RegisterMitraPage() {
     try {
       const result = await getBestBrowserLocation();
 
-      setStoreCoordinates(result.coordinates);
+      void handleStoreCoordinatesChange(result.coordinates, {
+        fillAddress: form.address.trim().length < 20,
+      });
       setNotice(getLocationAccuracyNotice(result.accuracy));
     } catch (error) {
       setNotice(
@@ -463,6 +820,27 @@ export default function RegisterMitraPage() {
     } finally {
       setIsLocatingStore(false);
     }
+  };
+
+  const handleNextStep = () => {
+    const validationErrors = validatePartnerForm(form, uploadedDocs);
+    const activeStepErrors = pickStepErrors(validationErrors, activeStep);
+
+    if (Object.keys(activeStepErrors).length > 0) {
+      setFormErrors((current) =>
+        mergeStepErrors(current, activeStep, activeStepErrors),
+      );
+      setNotice(
+        getFirstError(activeStepErrors) ||
+          "Periksa data yang ditandai merah sebelum lanjut.",
+      );
+      focusFirstError(activeStepErrors);
+      return;
+    }
+
+    setFormErrors((current) => mergeStepErrors(current, activeStep, {}));
+    setNotice("");
+    setActiveStep(formStepOrder[Math.min(activeStepIndex + 1, formStepOrder.length - 1)]);
   };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -477,6 +855,7 @@ export default function RegisterMitraPage() {
         getFirstError(validationErrors) ||
           "Periksa data yang ditandai merah sebelum mendaftar.",
       );
+      focusFirstError(validationErrors);
       return;
     }
 
@@ -496,9 +875,17 @@ export default function RegisterMitraPage() {
       formData.set("city", "Jakarta");
       formData.set("latitude", form.latitude);
       formData.set("longitude", form.longitude);
+      formData.set("bankName", form.bankName);
+      formData.set(
+        "bankAccountNumber",
+        normalizeBankAccountNumber(form.bankAccountNumber),
+      );
+      formData.set("bankAccountHolder", form.bankAccountHolder);
       formData.set(
         "description",
-        `Jam pickup ${form.pickupWindow}. Estimasi surplus ${form.averageSurplus}. Rekening ${form.bankAccount || "belum diisi"}.`,
+        `Jam pickup ${form.pickupWindow}. Estimasi surplus ${form.averageSurplus}. Rekening ${form.bankName} ${normalizeBankAccountNumber(
+          form.bankAccountNumber,
+        )} a.n. ${form.bankAccountHolder}.`,
       );
 
       Object.entries(uploadedDocs).forEach(([key, file]) => {
@@ -578,7 +965,7 @@ export default function RegisterMitraPage() {
           <button
             type="button"
             onClick={() => router.push("/")}
-            className="mb-7 flex h-10 w-10 items-center justify-center rounded-full bg-gray-50 text-gray-700 transition-colors hover:bg-gray-100"
+            className="mb-7 flex h-11 w-11 items-center justify-center rounded-full bg-gray-50 text-gray-700 transition-colors hover:bg-gray-100"
             aria-label="Kembali ke login"
           >
             <ChevronLeft size={21} />
@@ -626,18 +1013,65 @@ export default function RegisterMitraPage() {
         </aside>
 
         <div className="space-y-6">
-          <section className="rounded-[32px] border border-gray-100 bg-white p-6 shadow-[0_10px_40px_rgba(15,23,42,0.05)]">
+          <section className="rounded-[28px] border border-gray-100 bg-white p-4 shadow-[0_10px_40px_rgba(15,23,42,0.05)]">
+            <div className="grid gap-3 sm:grid-cols-4">
+              {formSteps.map((step, index) => {
+                const isActive = step.id === activeStep;
+                const hasStepError = getFormErrorCount(
+                  pickStepErrors(formErrors, step.id),
+                ) > 0;
+
+                return (
+                  <button
+                    key={step.id}
+                    type="button"
+                    onClick={() => setActiveStep(step.id)}
+                    className={`rounded-2xl border p-3 text-left transition-all ${
+                      isActive
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-700 shadow-sm"
+                        : hasStepError
+                          ? "border-red-100 bg-red-50 text-red-700"
+                          : "border-gray-100 bg-gray-50 text-gray-500 hover:bg-gray-100"
+                    }`}
+                  >
+                    <span className="flex items-center gap-2 text-xs font-extrabold">
+                      <span
+                        className={`flex h-6 w-6 items-center justify-center rounded-full text-[11px] ${
+                          isActive
+                            ? "bg-emerald-500 text-white"
+                            : hasStepError
+                              ? "bg-red-500 text-white"
+                              : "bg-white text-gray-500"
+                        }`}
+                      >
+                        {index + 1}
+                      </span>
+                      {step.title}
+                    </span>
+                    <span className="mt-1 block text-[11px] font-semibold opacity-75">
+                      {step.description}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+
+          <ErrorSummary errors={formErrors} onSelect={focusField} />
+
+          {activeStep === "account" ? (
+            <section className="rounded-[32px] border border-gray-100 bg-white p-6 shadow-[0_10px_40px_rgba(15,23,42,0.05)]">
             <div className="mb-5">
               <h2 className="text-lg font-extrabold text-gray-950">
-                Informasi Toko
+                Akun Owner dan Toko
               </h2>
               <p className="mt-1 text-xs font-medium text-gray-500">
-                Data ini akan tampil di dashboard owner dan halaman customer.
+                Data ini dipakai untuk login owner dan identitas toko.
               </p>
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
-              <div>
+              <div ref={setFieldRef("storeName")}>
                 <FieldLabel>Nama Toko</FieldLabel>
                 <div className={getInputWrapClassName(formErrors.storeName)}>
                   <Store
@@ -657,7 +1091,7 @@ export default function RegisterMitraPage() {
                 <FieldError message={formErrors.storeName} />
               </div>
 
-              <div>
+              <div ref={setFieldRef("ownerName")}>
                 <FieldLabel>Nama Pemilik</FieldLabel>
                 <div className={getInputWrapClassName(formErrors.ownerName)}>
                   <User
@@ -677,7 +1111,7 @@ export default function RegisterMitraPage() {
                 <FieldError message={formErrors.ownerName} />
               </div>
 
-              <div>
+              <div ref={setFieldRef("email")}>
                 <FieldLabel>Email Owner</FieldLabel>
                 <div className={getInputWrapClassName(formErrors.email)}>
                   <Mail
@@ -697,7 +1131,7 @@ export default function RegisterMitraPage() {
                 <FieldError message={formErrors.email} />
               </div>
 
-              <div>
+              <div ref={setFieldRef("phone")}>
                 <FieldLabel>No. WhatsApp</FieldLabel>
                 <div className={getInputWrapClassName(formErrors.phone)}>
                   <Phone
@@ -717,7 +1151,7 @@ export default function RegisterMitraPage() {
                 <FieldError message={formErrors.phone} />
               </div>
 
-              <div className="md:col-span-2">
+              <div ref={setFieldRef("password")} className="md:col-span-2">
                 <FieldLabel>Password Owner</FieldLabel>
                 <div className={getInputWrapClassName(formErrors.password)}>
                   <Lock
@@ -736,7 +1170,7 @@ export default function RegisterMitraPage() {
                   <button
                     type="button"
                     onClick={() => setShowPassword((value) => !value)}
-                    className="absolute top-1/2 right-4 -translate-y-1/2 p-1 text-gray-400 transition-colors hover:text-gray-600"
+                    className="absolute top-1/2 right-1 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-xl text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
                     aria-label={
                       showPassword ? "Sembunyikan password" : "Lihat password"
                     }
@@ -747,7 +1181,23 @@ export default function RegisterMitraPage() {
                 <FieldError message={formErrors.password} />
               </div>
 
-              <div className="md:col-span-2">
+            </div>
+          </section>
+          ) : null}
+
+          {activeStep === "location" ? (
+            <section className="rounded-[32px] border border-gray-100 bg-white p-6 shadow-[0_10px_40px_rgba(15,23,42,0.05)]">
+            <div className="mb-5">
+              <h2 className="text-lg font-extrabold text-gray-950">
+                Lokasi Pickup Toko
+              </h2>
+              <p className="mt-1 text-xs font-medium text-gray-500">
+                Alamat dan titik peta ini jadi patokan rute customer.
+              </p>
+            </div>
+
+            <div className="grid gap-4">
+              <div ref={setFieldRef("address")}>
                 <FieldLabel>Alamat Pickup</FieldLabel>
                 <div className={getInputWrapClassName(formErrors.address)}>
                   <MapPin
@@ -767,7 +1217,7 @@ export default function RegisterMitraPage() {
                 <FieldError message={formErrors.address} />
               </div>
 
-              <div className="md:col-span-2">
+              <div ref={setFieldRef("latitude")}>
                 <section className="rounded-[24px] border border-emerald-100 bg-emerald-50/60 p-4">
                   <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                     <div>
@@ -827,13 +1277,16 @@ export default function RegisterMitraPage() {
                         <LocationMapPicker
                           coordinates={storeCoordinates}
                           onCoordinatesChange={(coordinates) => {
-                            setStoreCoordinates(coordinates);
+                            void handleStoreCoordinatesChange(coordinates, {
+                              fillAddress: form.address.trim().length < 20,
+                            });
                             setNotice(
                               "Lokasi ditemukan. Titik toko sudah tersimpan di form.",
                             );
                           }}
                           title="Pin Lokasi Toko"
                           description="Cari nama jalan/toko, lalu pastikan pin tepat di lokasi pickup mitra."
+                          recentSource="store"
                           buttonLabel={
                             hasStoreCoordinates
                               ? "Ubah Titik di Peta"
@@ -857,8 +1310,9 @@ export default function RegisterMitraPage() {
                     {hasStoreCoordinates ? (
                       <p className="mt-4 flex items-start gap-2 rounded-2xl border border-emerald-100 bg-emerald-50 px-3 py-2.5 text-xs leading-5 font-bold text-emerald-700">
                         <CheckCircle2 size={16} className="mt-0.5 shrink-0" />
-                        Lokasi ditemukan. Titik pickup sudah siap dipakai untuk
-                        rute customer.
+                        {storeLocationLabel
+                          ? `Lokasi ditemukan: ${storeLocationLabel}. Titik pickup sudah siap dipakai untuk rute customer.`
+                          : "Lokasi ditemukan. Titik pickup sudah siap dipakai untuk rute customer."}
                       </p>
                     ) : null}
                     <input
@@ -881,8 +1335,10 @@ export default function RegisterMitraPage() {
               </div>
             </div>
           </section>
+          ) : null}
 
-          <section className="rounded-[32px] border border-gray-100 bg-white p-6 shadow-[0_10px_40px_rgba(15,23,42,0.05)]">
+          {activeStep === "operation" ? (
+            <section className="rounded-[32px] border border-gray-100 bg-white p-6 shadow-[0_10px_40px_rgba(15,23,42,0.05)]">
             <div className="mb-5">
               <h2 className="text-lg font-extrabold text-gray-950">
                 Operasional Surplus
@@ -914,8 +1370,8 @@ export default function RegisterMitraPage() {
               })}
             </div>
 
-            <div className="grid gap-4 md:grid-cols-3">
-              <div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div ref={setFieldRef("pickupWindow")}>
                 <FieldLabel>Jam Pickup</FieldLabel>
                 <div className={getInputWrapClassName(formErrors.pickupWindow)}>
                   <Clock3
@@ -935,7 +1391,7 @@ export default function RegisterMitraPage() {
                 <FieldError message={formErrors.pickupWindow} />
               </div>
 
-              <div>
+              <div ref={setFieldRef("averageSurplus")}>
                 <FieldLabel>Estimasi Surplus</FieldLabel>
                 <div className={getInputWrapClassName(formErrors.averageSurplus)}>
                   <FileText
@@ -955,27 +1411,85 @@ export default function RegisterMitraPage() {
                 <FieldError message={formErrors.averageSurplus} />
               </div>
 
-              <div>
-                <FieldLabel>Rekening Pencairan</FieldLabel>
-                <div className={getInputWrapClassName(formErrors.bankAccount)}>
+              <div ref={setFieldRef("bankName")}>
+                <FieldLabel>Nama Bank / E-wallet</FieldLabel>
+                <div className={getInputWrapClassName(formErrors.bankName)}>
                   <Banknote
                     size={19}
                     className="absolute top-1/2 left-4 -translate-y-1/2 text-emerald-500"
                   />
                   <input
+                    required
                     type="text"
-                    value={form.bankAccount}
-                    onChange={handleInputChange("bankAccount")}
-                    placeholder="BCA 1234567890"
+                    value={form.bankName}
+                    onChange={handleInputChange("bankName")}
+                    onBlur={() => handleBankFieldBlur("bankName")}
+                    placeholder="BCA, BRI, Mandiri, GoPay"
                     className={inputClassName}
-                    aria-invalid={Boolean(formErrors.bankAccount)}
+                    aria-invalid={Boolean(formErrors.bankName)}
                   />
                 </div>
-                <FieldError message={formErrors.bankAccount} />
+                <FieldError message={formErrors.bankName} />
+              </div>
+
+              <div ref={setFieldRef("bankAccountNumber")}>
+                <FieldLabel>Nomor Rekening</FieldLabel>
+                <div
+                  className={getInputWrapClassName(
+                    formErrors.bankAccountNumber,
+                  )}
+                >
+                  <Banknote
+                    size={19}
+                    className="absolute top-1/2 left-4 -translate-y-1/2 text-emerald-500"
+                  />
+                  <input
+                    required
+                    type="text"
+                    inputMode="numeric"
+                    value={form.bankAccountNumber}
+                    onChange={handleBankAccountNumberChange}
+                    onBlur={() => handleBankFieldBlur("bankAccountNumber")}
+                    placeholder="1234567890"
+                    className={inputClassName}
+                    aria-invalid={Boolean(formErrors.bankAccountNumber)}
+                  />
+                </div>
+                <p className="mt-2 text-xs leading-5 font-semibold text-gray-400">
+                  Angka saja, 6-20 digit. Sistem otomatis membuang spasi/simbol.
+                </p>
+                <FieldError message={formErrors.bankAccountNumber} />
+              </div>
+
+              <div ref={setFieldRef("bankAccountHolder")} className="md:col-span-2">
+                <FieldLabel>Nama Pemilik Rekening</FieldLabel>
+                <div
+                  className={getInputWrapClassName(
+                    formErrors.bankAccountHolder,
+                  )}
+                >
+                  <User
+                    size={19}
+                    className="absolute top-1/2 left-4 -translate-y-1/2 text-emerald-500"
+                  />
+                  <input
+                    required
+                    type="text"
+                    value={form.bankAccountHolder}
+                    onChange={handleInputChange("bankAccountHolder")}
+                    onBlur={() => handleBankFieldBlur("bankAccountHolder")}
+                    placeholder="Nama sesuai rekening"
+                    className={inputClassName}
+                    aria-invalid={Boolean(formErrors.bankAccountHolder)}
+                  />
+                </div>
+                <FieldError message={formErrors.bankAccountHolder} />
               </div>
             </div>
           </section>
+          ) : null}
 
+          {activeStep === "documents" ? (
           <section className="rounded-[32px] border border-gray-100 bg-white p-6 shadow-[0_10px_40px_rgba(15,23,42,0.05)]">
             <div className="mb-5">
               <h2 className="text-lg font-extrabold text-gray-950">
@@ -988,18 +1502,20 @@ export default function RegisterMitraPage() {
 
             <div className="grid gap-4 md:grid-cols-3">
               {uploadRequirements.map((item) => (
-                <UploadBox
-                  key={item.id}
-                  title={item.title}
-                  description={item.description}
-                  icon={item.icon}
-                  fileName={uploadedDocs[item.id]?.name}
-                  error={formErrors[item.id]}
-                  onChange={handleUploadChange(item.id)}
-                />
+                <div key={item.id} ref={setFieldRef(item.id)}>
+                  <UploadBox
+                    title={item.title}
+                    description={item.description}
+                    icon={item.icon}
+                    fileName={uploadedDocs[item.id]?.name}
+                    error={formErrors[item.id]}
+                    onChange={handleUploadChange(item.id)}
+                  />
+                </div>
               ))}
             </div>
           </section>
+          ) : null}
 
           {notice ? (
             <div className="rounded-[24px] border border-amber-100 bg-amber-50 px-5 py-4 text-sm leading-6 font-bold text-amber-700">
@@ -1007,15 +1523,48 @@ export default function RegisterMitraPage() {
             </div>
           ) : null}
 
-          <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="flex min-h-14 w-full items-center justify-center gap-2 rounded-2xl bg-gray-900 px-6 py-4 text-sm font-extrabold text-white shadow-[0_12px_30px_rgba(15,23,42,0.18)] transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-gray-300 disabled:shadow-none"
-            >
-              <Send size={18} />
-              {isSubmitting ? "Mengirim Pendaftaran..." : "Kirim Pendaftaran"}
-            </button>
+          <div className="grid gap-3 sm:grid-cols-[auto_1fr_auto]">
+            {activeStepIndex > 0 ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setNotice("");
+                  setActiveStep(formStepOrder[activeStepIndex - 1]);
+                }}
+                className="min-h-14 rounded-2xl border border-gray-200 bg-white px-6 py-4 text-sm font-extrabold whitespace-nowrap text-gray-700 transition-colors hover:bg-gray-50"
+              >
+                Kembali
+              </button>
+            ) : (
+              <span className="hidden sm:block" />
+            )}
+
+            {activeStep === "documents" ? (
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="flex min-h-14 w-full items-center justify-center gap-2 rounded-2xl bg-gray-900 px-6 py-4 text-sm font-extrabold text-white shadow-[0_12px_30px_rgba(15,23,42,0.18)] transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-gray-300 disabled:shadow-none"
+              >
+                <Send size={18} />
+                {isSubmitting ? "Mengirim Pendaftaran..." : "Kirim Pendaftaran"}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleNextStep}
+                className="flex min-h-14 w-full items-center justify-center gap-2 rounded-2xl bg-gray-900 px-6 py-4 text-sm font-extrabold text-white shadow-[0_12px_30px_rgba(15,23,42,0.18)] transition-colors hover:bg-emerald-500"
+              >
+                Lanjut
+                {stepErrorCount > 0 ? (
+                  <span className="rounded-full bg-red-500 px-2 py-0.5 text-[10px] text-white">
+                    {stepErrorCount}
+                  </span>
+                ) : (
+                  <ChevronRight size={18} />
+                )}
+              </button>
+            )}
+
             <button
               type="button"
               onClick={() => router.push("/owner/verify")}

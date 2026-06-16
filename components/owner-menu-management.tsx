@@ -2,8 +2,12 @@
 
 import Image from "next/image";
 import {
+  Archive,
+  CalendarClock,
+  CheckSquare,
   ChevronDown,
   Clock,
+  Copy,
   Edit,
   Plus,
   Search,
@@ -16,6 +20,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import type { ChangeEvent, FormEvent } from "react";
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
 
+import { SkeletonCardGrid, StateCard } from "@/components/ui-state";
 import { showSweetError, showSweetToast } from "@/lib/sweet-alert";
 
 type SurplusMenuItem = {
@@ -30,7 +35,10 @@ type SurplusMenuItem = {
   pickupEnd: string;
   imageUrl: string | null;
   image: string;
-  status: "ACTIVE" | "HIDDEN" | "SOLD_OUT";
+  expiresAt: string | null;
+  publishAt: string | null;
+  archivedAt: string | null;
+  status: MenuItemStatus;
 };
 
 type MenuFormState = {
@@ -42,7 +50,12 @@ type MenuFormState = {
   stock: string;
   pickupStart: string;
   pickupEnd: string;
+  publishAt: string;
+  expiresAt: string;
+  status: MenuItemStatus;
 };
+
+type MenuItemStatus = "ACTIVE" | "HIDDEN" | "SOLD_OUT" | "SCHEDULED" | "ARCHIVED";
 
 type ApiOwnerMenuItem = {
   id: string;
@@ -54,9 +67,14 @@ type ApiOwnerMenuItem = {
   discountedPrice: number;
   pickupStart: string | null;
   pickupEnd: string | null;
+  expiresAt: string | null;
+  publishAt: string | null;
+  archivedAt: string | null;
   imageUrl: string | null;
-  status: "ACTIVE" | "HIDDEN" | "SOLD_OUT";
+  status: MenuItemStatus;
 };
+
+type BulkAction = "activate" | "hide" | "archive" | "sold_out" | "set_stock" | "set_pickup";
 
 const formatRp = (amount: number) =>
   new Intl.NumberFormat("id-ID", {
@@ -85,6 +103,28 @@ const defaultFormState: MenuFormState = {
   stock: "",
   pickupStart: "",
   pickupEnd: "",
+  publishAt: "",
+  expiresAt: "",
+  status: "ACTIVE",
+};
+
+const allowedMenuImageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
+const maxMenuImageSize = 4 * 1024 * 1024;
+
+const statusLabel: Record<MenuItemStatus, string> = {
+  ACTIVE: "Aktif",
+  HIDDEN: "Hidden",
+  SOLD_OUT: "Sold Out",
+  SCHEDULED: "Terjadwal",
+  ARCHIVED: "Arsip",
+};
+
+const statusClassName: Record<MenuItemStatus, string> = {
+  ACTIVE: "bg-emerald-50 text-emerald-700",
+  HIDDEN: "bg-gray-100 text-gray-600",
+  SOLD_OUT: "bg-red-50 text-red-600",
+  SCHEDULED: "bg-blue-50 text-blue-700",
+  ARCHIVED: "bg-slate-100 text-slate-600",
 };
 
 const fieldLabelClassName =
@@ -113,6 +153,34 @@ function formatPickupWindow(start: string, end: string) {
   }
 
   return `${start} - ${end}`;
+}
+
+function toLocalDateTimeInput(value: string | null) {
+  if (!value) {
+    return "";
+  }
+
+  const date = new Date(value);
+  const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+
+  return localDate.toISOString().slice(0, 16);
+}
+
+function dateInputToIso(value: string) {
+  return value ? new Date(value).toISOString() : null;
+}
+
+function formatSchedule(value: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  return new Intl.DateTimeFormat("id-ID", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
 }
 
 function getFormValidationMessage(
@@ -157,6 +225,18 @@ function getFormValidationMessage(
     return "Jam selesai pickup harus lebih besar dari jam mulai.";
   }
 
+  if (formState.status === "SCHEDULED" && !formState.publishAt) {
+    return "Isi jadwal publish untuk menu terjadwal.";
+  }
+
+  if (
+    formState.publishAt &&
+    formState.expiresAt &&
+    new Date(formState.publishAt) >= new Date(formState.expiresAt)
+  ) {
+    return "Jadwal publish harus sebelum waktu expired.";
+  }
+
   return null;
 }
 
@@ -191,6 +271,9 @@ function mapOwnerMenuItem(item: ApiOwnerMenuItem): SurplusMenuItem {
     discountPrice: item.discountedPrice,
     pickupStart: item.pickupStart ?? "",
     pickupEnd: item.pickupEnd ?? "",
+    publishAt: item.publishAt,
+    expiresAt: item.expiresAt,
+    archivedAt: item.archivedAt,
     imageUrl,
     image: imageUrl ?? defaultMenuImage,
     status: item.status,
@@ -210,18 +293,29 @@ export function OwnerMenuManagement() {
   const [isLoadingMenu, setIsLoadingMenu] = useState(true);
   const [isSavingMenu, setIsSavingMenu] = useState(false);
   const [isDeletingMenu, setIsDeletingMenu] = useState(false);
+  const [isBulkUpdating, setIsBulkUpdating] = useState(false);
+  const [duplicatingItemId, setDuplicatingItemId] = useState<string | null>(null);
   const [menuNotice, setMenuNotice] = useState<string | null>(null);
   const [formState, setFormState] = useState<MenuFormState>(defaultFormState);
   const [menuQuery, setMenuQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState("Semua");
-  const [stockFilter, setStockFilter] = useState<"all" | "active" | "soldout">(
-    "all",
-  );
+  const [stockFilter, setStockFilter] = useState<
+    "all" | "active" | "scheduled" | "soldout" | "hidden" | "archived"
+  >("all");
+  const [selectedMenuIds, setSelectedMenuIds] = useState<Set<string>>(new Set());
+  const [bulkStock, setBulkStock] = useState("");
+  const [bulkPickupStart, setBulkPickupStart] = useState("");
+  const [bulkPickupEnd, setBulkPickupEnd] = useState("");
   const isEditMode = editingItem !== null;
   const isAddActionOpen = searchParams.get("action") === "add";
   const isFoodModalOpen = isAddActionOpen || isModalOpen || isEditMode;
-  const activeMenuCount = menuItems.filter((item) => item.stock > 0).length;
-  const soldOutCount = menuItems.length - activeMenuCount;
+  const activeMenuCount = menuItems.filter((item) => item.status === "ACTIVE").length;
+  const scheduledCount = menuItems.filter(
+    (item) => item.status === "SCHEDULED",
+  ).length;
+  const soldOutCount = menuItems.filter(
+    (item) => item.status === "SOLD_OUT" || item.stock === 0,
+  ).length;
   const averageDiscount = Math.round(
     menuItems.reduce((total, item) => {
       return (
@@ -244,8 +338,11 @@ export function OwnerMenuManagement() {
         activeCategory === "Semua" || item.category === activeCategory;
       const matchesStock =
         stockFilter === "all" ||
-        (stockFilter === "active" && item.stock > 0) ||
-        (stockFilter === "soldout" && item.stock === 0);
+        (stockFilter === "active" && item.status === "ACTIVE") ||
+        (stockFilter === "scheduled" && item.status === "SCHEDULED") ||
+        (stockFilter === "soldout" && item.status === "SOLD_OUT") ||
+        (stockFilter === "hidden" && item.status === "HIDDEN") ||
+        (stockFilter === "archived" && item.status === "ARCHIVED");
 
       return matchesQuery && matchesCategory && matchesStock;
     });
@@ -255,7 +352,7 @@ export function OwnerMenuManagement() {
     setIsLoadingMenu(true);
 
     try {
-      const response = await fetch("/api/menu-items?scope=owner", {
+      const response = await fetch("/api/menu-items?scope=owner&includeArchived=true", {
         cache: "no-store",
       });
       const data = (await response.json()) as {
@@ -269,6 +366,7 @@ export function OwnerMenuManagement() {
       }
 
       setMenuItems((data.menuItems || []).map(mapOwnerMenuItem));
+      setSelectedMenuIds(new Set());
     } catch (error) {
       setMenuNotice(
         error instanceof Error ? error.message : "Menu restoran gagal dimuat.",
@@ -341,6 +439,9 @@ export function OwnerMenuManagement() {
       stock: String(item.stock),
       pickupStart: item.pickupStart,
       pickupEnd: item.pickupEnd,
+      publishAt: toLocalDateTimeInput(item.publishAt),
+      expiresAt: toLocalDateTimeInput(item.expiresAt),
+      status: item.status,
     });
   };
 
@@ -359,6 +460,18 @@ export function OwnerMenuManagement() {
     const file = event.target.files?.[0];
 
     if (!file) {
+      return;
+    }
+
+    if (!allowedMenuImageTypes.has(file.type)) {
+      setMenuNotice("Format gambar harus JPG, PNG, atau WEBP.");
+      event.target.value = "";
+      return;
+    }
+
+    if (file.size > maxMenuImageSize) {
+      setMenuNotice("Ukuran gambar maksimal 4MB.");
+      event.target.value = "";
       return;
     }
 
@@ -436,6 +549,9 @@ export function OwnerMenuManagement() {
         stock,
         pickupStart: formState.pickupStart,
         pickupEnd: formState.pickupEnd,
+        publishAt: dateInputToIso(formState.publishAt),
+        expiresAt: dateInputToIso(formState.expiresAt),
+        status: formState.status,
         imageUrl,
       };
       const response = await fetch(
@@ -530,6 +646,176 @@ export function OwnerMenuManagement() {
     }
   };
 
+  const toggleSelectedMenu = (menuId: string) => {
+    setSelectedMenuIds((currentIds) => {
+      const nextIds = new Set(currentIds);
+
+      if (nextIds.has(menuId)) {
+        nextIds.delete(menuId);
+      } else {
+        nextIds.add(menuId);
+      }
+
+      return nextIds;
+    });
+  };
+
+  const toggleSelectAllVisible = () => {
+    setSelectedMenuIds((currentIds) => {
+      const visibleIds = filteredMenuItems.map((item) => item.id);
+      const allVisibleSelected = visibleIds.every((id) => currentIds.has(id));
+
+      if (allVisibleSelected) {
+        return new Set(
+          Array.from(currentIds).filter((id) => !visibleIds.includes(id)),
+        );
+      }
+
+      return new Set([...Array.from(currentIds), ...visibleIds]);
+    });
+  };
+
+  const handleBulkAction = async (action: BulkAction) => {
+    if (selectedMenuIds.size === 0 || isBulkUpdating) {
+      return;
+    }
+
+    if (action === "set_stock" && bulkStock.trim() === "") {
+      setMenuNotice("Isi stok bulk terlebih dahulu.");
+      return;
+    }
+
+    if (action === "set_pickup") {
+      if (!bulkPickupStart || !bulkPickupEnd) {
+        setMenuNotice("Isi jam pickup bulk terlebih dahulu.");
+        return;
+      }
+
+      if (bulkPickupEnd <= bulkPickupStart) {
+        setMenuNotice("Jam selesai pickup harus lebih besar dari jam mulai.");
+        return;
+      }
+    }
+
+    setIsBulkUpdating(true);
+    setMenuNotice(null);
+
+    try {
+      const response = await fetch("/api/menu-items/bulk", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          ids: Array.from(selectedMenuIds),
+          action,
+          stock: action === "set_stock" ? Number(bulkStock) : undefined,
+          pickupStart: action === "set_pickup" ? bulkPickupStart : undefined,
+          pickupEnd: action === "set_pickup" ? bulkPickupEnd : undefined,
+        }),
+      });
+      const data = (await response.json()) as {
+        ok: boolean;
+        message?: string;
+        updatedCount?: number;
+      };
+
+      if (!response.ok || !data.ok) {
+        throw new Error(data.message || "Bulk update menu gagal.");
+      }
+
+      await loadMenuItems();
+      showSweetToast({
+        icon: "success",
+        title: `${data.updatedCount ?? selectedMenuIds.size} menu diperbarui.`,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Bulk update menu gagal.";
+
+      setMenuNotice(message);
+      void showSweetError({
+        title: "Bulk update gagal",
+        text: message,
+      });
+    } finally {
+      setIsBulkUpdating(false);
+    }
+  };
+
+  const handleDuplicateMenuItem = async (item: SurplusMenuItem) => {
+    setDuplicatingItemId(item.id);
+    setMenuNotice(null);
+
+    try {
+      const response = await fetch(`/api/menu-items/${item.id}?action=duplicate`, {
+        method: "POST",
+      });
+      const data = (await response.json()) as {
+        ok: boolean;
+        message?: string;
+      };
+
+      if (!response.ok || !data.ok) {
+        throw new Error(data.message || "Menu gagal diduplikasi.");
+      }
+
+      await loadMenuItems();
+      showSweetToast({
+        icon: "success",
+        title: "Menu berhasil diduplikasi sebagai draft hidden.",
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Menu gagal diduplikasi.";
+
+      setMenuNotice(message);
+      void showSweetError({
+        title: "Duplicate gagal",
+        text: message,
+      });
+    } finally {
+      setDuplicatingItemId(null);
+    }
+  };
+
+  const handleArchiveMenuItem = async (item: SurplusMenuItem) => {
+    setMenuNotice(null);
+
+    try {
+      const response = await fetch(`/api/menu-items/${item.id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ status: "ARCHIVED" }),
+      });
+      const data = (await response.json()) as {
+        ok: boolean;
+        message?: string;
+      };
+
+      if (!response.ok || !data.ok) {
+        throw new Error(data.message || "Menu gagal diarsipkan.");
+      }
+
+      await loadMenuItems();
+      showSweetToast({
+        icon: "success",
+        title: "Menu berhasil diarsipkan.",
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Menu gagal diarsipkan.";
+
+      setMenuNotice(message);
+      void showSweetError({
+        title: "Arsip gagal",
+        text: message,
+      });
+    }
+  };
+
   return (
     <>
       <section className="space-y-6">
@@ -584,7 +870,10 @@ export function OwnerMenuManagement() {
                 {[
                   ["all", "Semua Stok"],
                   ["active", "Aktif"],
+                  ["scheduled", "Terjadwal"],
                   ["soldout", "Sold Out"],
+                  ["hidden", "Hidden"],
+                  ["archived", "Arsip"],
                 ].map(([key, label]) => {
                   const isActive = stockFilter === key;
 
@@ -593,7 +882,15 @@ export function OwnerMenuManagement() {
                       key={key}
                       type="button"
                       onClick={() =>
-                        setStockFilter(key as "all" | "active" | "soldout")
+                        setStockFilter(
+                          key as
+                            | "all"
+                            | "active"
+                            | "scheduled"
+                            | "soldout"
+                            | "hidden"
+                            | "archived",
+                        )
                       }
                       className={`inline-flex h-12 items-center gap-2 rounded-2xl px-4 text-sm font-extrabold transition-colors ${
                         isActive
@@ -629,11 +926,94 @@ export function OwnerMenuManagement() {
                 );
               })}
             </div>
+
+            <div className="mt-4 rounded-[22px] border border-gray-100 bg-gray-50 p-4">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <button
+                  type="button"
+                  onClick={toggleSelectAllVisible}
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white px-4 py-3 text-xs font-extrabold text-gray-700 transition-colors hover:bg-emerald-50 hover:text-emerald-700"
+                >
+                  <CheckSquare size={16} />
+                  {filteredMenuItems.every((item) => selectedMenuIds.has(item.id)) &&
+                  filteredMenuItems.length > 0
+                    ? "Batal pilih semua"
+                    : "Pilih semua tampil"}
+                </button>
+                <p className="text-xs font-bold text-gray-500">
+                  {selectedMenuIds.size} menu dipilih untuk bulk edit.
+                </p>
+              </div>
+
+              {selectedMenuIds.size > 0 ? (
+                <div className="mt-4 grid gap-3 xl:grid-cols-[1fr_1fr_auto]">
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      ["activate", "Aktifkan"],
+                      ["hide", "Hidden"],
+                      ["sold_out", "Sold Out"],
+                      ["archive", "Arsip"],
+                    ].map(([action, label]) => (
+                      <button
+                        key={action}
+                        type="button"
+                        onClick={() => void handleBulkAction(action as BulkAction)}
+                        disabled={isBulkUpdating}
+                        className="rounded-xl bg-white px-3 py-2 text-xs font-extrabold text-gray-700 transition-colors hover:bg-emerald-500 hover:text-white disabled:cursor-wait disabled:text-gray-300"
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-3">
+                    <input
+                      type="number"
+                      min={0}
+                      value={bulkStock}
+                      onChange={(event) => setBulkStock(event.target.value)}
+                      placeholder="Set stok"
+                      className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-bold text-gray-900 outline-none focus:border-emerald-500"
+                    />
+                    <input
+                      type="time"
+                      value={bulkPickupStart}
+                      onChange={(event) => setBulkPickupStart(event.target.value)}
+                      className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-bold text-gray-900 outline-none focus:border-emerald-500"
+                    />
+                    <input
+                      type="time"
+                      value={bulkPickupEnd}
+                      onChange={(event) => setBulkPickupEnd(event.target.value)}
+                      className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-bold text-gray-900 outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void handleBulkAction("set_stock")}
+                      disabled={isBulkUpdating}
+                      className="rounded-xl bg-gray-900 px-3 py-2 text-xs font-extrabold text-white transition-colors hover:bg-emerald-500 disabled:cursor-wait disabled:bg-gray-300"
+                    >
+                      Set Stok
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleBulkAction("set_pickup")}
+                      disabled={isBulkUpdating}
+                      className="rounded-xl bg-gray-900 px-3 py-2 text-xs font-extrabold text-white transition-colors hover:bg-emerald-500 disabled:cursor-wait disabled:bg-gray-300"
+                    >
+                      Set Pickup
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 xl:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-4 xl:grid-cols-4">
             {[
               ["Aktif", activeMenuCount, "text-emerald-600"],
+              ["Terjadwal", scheduledCount, "text-blue-600"],
               ["Sold Out", soldOutCount, "text-red-600"],
               ["Avg Diskon", `${averageDiscount}%`, "text-amber-600"],
             ].map(([label, value, className]) => (
@@ -653,15 +1033,7 @@ export function OwnerMenuManagement() {
         </div>
 
         {isLoadingMenu ? (
-          <div className="rounded-[28px] border border-gray-100 bg-white p-10 text-center">
-            <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-4 border-emerald-100 border-t-emerald-500" />
-            <h3 className="text-lg font-extrabold text-gray-950">
-              Memuat menu
-            </h3>
-            <p className="mt-2 text-sm font-medium text-gray-500">
-              Data yang tampil diambil dari restoran owner yang sedang login.
-            </p>
-          </div>
+          <SkeletonCardGrid count={6} />
         ) : (
         <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
           {filteredMenuItems.map((item) => {
@@ -676,6 +1048,18 @@ export function OwnerMenuManagement() {
                 className="group overflow-hidden rounded-[24px] border border-gray-100 bg-white shadow-[0_8px_28px_rgba(15,23,42,0.05)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_22px_60px_rgba(15,23,42,0.1)]"
               >
                 <div className="relative h-52 overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => toggleSelectedMenu(item.id)}
+                    className={`absolute top-4 left-4 z-10 flex h-9 w-9 items-center justify-center rounded-xl border text-sm font-extrabold shadow-sm transition-colors ${
+                      selectedMenuIds.has(item.id)
+                        ? "border-emerald-500 bg-emerald-500 text-white"
+                        : "border-white/70 bg-white/90 text-gray-500"
+                    }`}
+                    aria-label={`Pilih ${item.name}`}
+                  >
+                    {selectedMenuIds.has(item.id) ? "✓" : ""}
+                  </button>
                   <Image
                     src={item.image}
                     alt={item.name}
@@ -684,13 +1068,9 @@ export function OwnerMenuManagement() {
                     className="object-cover transition-transform duration-500 group-hover:scale-105"
                   />
                   <span
-                    className={`absolute top-4 right-4 rounded-full px-3 py-1 text-xs font-extrabold shadow-sm ${
-                      item.stock > 0
-                        ? "bg-white text-emerald-600"
-                        : "bg-red-500 text-white"
-                    }`}
+                    className={`absolute top-4 right-4 rounded-full px-3 py-1 text-xs font-extrabold shadow-sm ${statusClassName[item.status]}`}
                   >
-                    {item.stock > 0 ? `Sisa Stok: ${item.stock}` : "SOLD OUT"}
+                    {statusLabel[item.status]} · Stok {item.stock}
                   </span>
                 </div>
 
@@ -709,6 +1089,17 @@ export function OwnerMenuManagement() {
                       <Clock size={16} className="text-emerald-500" />
                       Pickup Time {formatPickupWindow(item.pickupStart, item.pickupEnd)}
                     </p>
+                    {item.publishAt || item.expiresAt ? (
+                      <p className="mt-2 flex items-center gap-2 text-xs font-bold text-blue-600">
+                        <CalendarClock size={14} />
+                        {item.publishAt
+                          ? `Publish ${formatSchedule(item.publishAt)}`
+                          : "Publish langsung"}
+                        {item.expiresAt
+                          ? ` · Expired ${formatSchedule(item.expiresAt)}`
+                          : ""}
+                      </p>
+                    ) : null}
                   </div>
 
                   <div className="flex items-end justify-between gap-3">
@@ -725,7 +1116,7 @@ export function OwnerMenuManagement() {
                     </span>
                   </div>
 
-                  <div className="flex gap-3 border-t border-gray-100 pt-5">
+                  <div className="grid grid-cols-2 gap-3 border-t border-gray-100 pt-5">
                     <button
                       type="button"
                       onClick={() => handleOpenEditModal(item)}
@@ -733,6 +1124,23 @@ export function OwnerMenuManagement() {
                     >
                       <Edit size={16} />
                       Edit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleDuplicateMenuItem(item)}
+                      disabled={duplicatingItemId === item.id}
+                      className="flex flex-1 items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm font-bold text-gray-700 transition-colors hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 disabled:cursor-wait disabled:text-gray-300"
+                    >
+                      <Copy size={16} />
+                      Duplicate
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleArchiveMenuItem(item)}
+                      className="flex flex-1 items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm font-bold text-gray-700 transition-colors hover:border-amber-200 hover:bg-amber-50 hover:text-amber-700"
+                    >
+                      <Archive size={16} />
+                      Arsip
                     </button>
                     <button
                       type="button"
@@ -751,18 +1159,15 @@ export function OwnerMenuManagement() {
         )}
 
         {!isLoadingMenu && filteredMenuItems.length === 0 ? (
-          <div className="rounded-[28px] border border-dashed border-gray-200 bg-white p-10 text-center">
-            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-gray-50 text-gray-400">
-              <Search size={24} />
-            </div>
-            <h3 className="text-lg font-extrabold text-gray-950">
-              Menu tidak ditemukan
-            </h3>
-            <p className="mx-auto mt-2 max-w-md text-sm leading-6 font-medium text-gray-500">
-              Ubah kata kunci, kategori, atau filter stok untuk melihat menu
-              lain.
-            </p>
-          </div>
+          <StateCard
+            title="Menu tidak ditemukan"
+            description="Ubah kata kunci, kategori, atau filter stok untuk melihat menu lain."
+            variant="empty"
+            action={{
+              label: "Tambah Menu",
+              onClick: handleOpenModal,
+            }}
+          />
         ) : null}
       </section>
 
@@ -856,7 +1261,7 @@ export function OwnerMenuManagement() {
                           Klik untuk upload gambar
                         </p>
                         <p className="mt-2 text-sm text-gray-500">
-                          Format JPG, PNG, atau WEBP untuk tampilan card menu.
+                          Format JPG, PNG, atau WEBP. Maksimal 4MB.
                         </p>
                       </>
                     )}
@@ -1001,6 +1406,65 @@ export function OwnerMenuManagement() {
                       value={formState.pickupEnd}
                       onChange={(event) =>
                         handleFieldChange("pickupEnd", event.target.value)
+                      }
+                      className={inputClassName}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-3">
+                  <div>
+                    <label htmlFor="food-status" className={fieldLabelClassName}>
+                      Status Menu
+                    </label>
+                    <div className="relative">
+                      <select
+                        id="food-status"
+                        value={formState.status}
+                        onChange={(event) =>
+                          handleFieldChange(
+                            "status",
+                            event.target.value as MenuItemStatus,
+                          )
+                        }
+                        className={`${inputClassName} appearance-none pr-11`}
+                      >
+                        <option value="ACTIVE">Aktif</option>
+                        <option value="HIDDEN">Hidden</option>
+                        <option value="SCHEDULED">Terjadwal</option>
+                        <option value="SOLD_OUT">Sold Out</option>
+                        <option value="ARCHIVED">Arsip</option>
+                      </select>
+                      <ChevronDown
+                        size={18}
+                        className="pointer-events-none absolute top-1/2 right-4 -translate-y-1/2 text-gray-400"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label htmlFor="food-publish-at" className={fieldLabelClassName}>
+                      Jadwal Publish
+                    </label>
+                    <input
+                      id="food-publish-at"
+                      type="datetime-local"
+                      value={formState.publishAt}
+                      onChange={(event) =>
+                        handleFieldChange("publishAt", event.target.value)
+                      }
+                      className={inputClassName}
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="food-expires-at" className={fieldLabelClassName}>
+                      Otomatis Sold Out
+                    </label>
+                    <input
+                      id="food-expires-at"
+                      type="datetime-local"
+                      value={formState.expiresAt}
+                      onChange={(event) =>
+                        handleFieldChange("expiresAt", event.target.value)
                       }
                       className={inputClassName}
                     />

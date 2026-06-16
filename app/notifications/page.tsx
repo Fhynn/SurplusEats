@@ -1,22 +1,19 @@
 "use client";
 
-import Link from "next/link";
-import {
-  Bell,
-  CheckCircle2,
-  ChevronLeft,
-  Clock,
-  Gift,
-  MailCheck,
-  ReceiptText,
-  RefreshCcw,
-  ShoppingBag,
-  Trash2,
-} from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { Gift, ReceiptText, RefreshCcw, ShoppingBag } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useCustomerApp } from "@/components/customer-app-provider";
 import { MobileDeviceFrame } from "@/components/mobile-device-frame";
+import {
+  NotificationCard,
+  NotificationCenterHeader,
+  NotificationFilterTabs,
+  NotificationListHeading,
+  type NotificationTone,
+} from "@/components/notification-center-ui";
+import { StateCard } from "@/components/ui-state";
+import { useRealtimePolling } from "@/components/use-realtime-polling";
 import { emitUnreadNotificationsChanged } from "@/components/use-unread-notification-count";
 
 type NotificationType = "order" | "promo" | "refund" | "system";
@@ -45,21 +42,28 @@ type ApiNotification = {
 const notificationStyleByType = {
   order: {
     icon: ShoppingBag,
-    className: "bg-emerald-50 text-emerald-600",
+    tone: "emerald",
+    label: "Order",
   },
   promo: {
     icon: Gift,
-    className: "bg-amber-50 text-amber-600",
+    tone: "amber",
+    label: "Promo",
   },
   refund: {
     icon: RefreshCcw,
-    className: "bg-blue-50 text-blue-600",
+    tone: "blue",
+    label: "Refund",
   },
   system: {
     icon: ReceiptText,
-    className: "bg-purple-50 text-purple-600",
+    tone: "violet",
+    label: "Sistem",
   },
-} as const;
+} satisfies Record<
+  NotificationType,
+  { icon: typeof ShoppingBag; tone: NotificationTone; label: string }
+>;
 
 const notificationFilters: Array<{ key: NotificationFilter; label: string }> = [
   { key: "all", label: "Semua" },
@@ -69,13 +73,6 @@ const notificationFilters: Array<{ key: NotificationFilter; label: string }> = [
   { key: "refund", label: "Refund" },
   { key: "system", label: "Sistem" },
 ];
-
-const notificationTypeLabel: Record<NotificationType, string> = {
-  order: "Order",
-  promo: "Promo",
-  refund: "Refund",
-  system: "Sistem",
-};
 
 const apiTypeToUiType: Record<ApiNotification["type"], NotificationType> = {
   ORDER: "order",
@@ -120,11 +117,11 @@ export default function CustomerNotificationsPage() {
   const [isLoadingNotifications, setIsLoadingNotifications] = useState(true);
   const unreadCount = notifications.filter((notification) => notification.unread).length;
 
-  useEffect(() => {
-    let ignore = false;
-
-    async function loadNotifications() {
-      setIsLoadingNotifications(true);
+  const loadNotifications = useCallback(
+    async ({ silent = false }: { silent?: boolean } = {}) => {
+      if (!silent) {
+        setIsLoadingNotifications(true);
+      }
 
       try {
         const response = await fetch("/api/notifications", { cache: "no-store" });
@@ -133,30 +130,31 @@ export default function CustomerNotificationsPage() {
           notifications?: ApiNotification[];
         };
 
-        if (!ignore) {
-          setNotifications(
-            result.notifications?.map(apiNotificationToUi) ?? [],
-          );
-          await refreshUnreadNotifications();
-          emitUnreadNotificationsChanged();
-        }
+        setNotifications(result.notifications?.map(apiNotificationToUi) ?? []);
+        await refreshUnreadNotifications();
+        emitUnreadNotificationsChanged();
       } catch {
-        if (!ignore) {
+        if (!silent) {
           setNotifications([]);
         }
       } finally {
-        if (!ignore) {
+        if (!silent) {
           setIsLoadingNotifications(false);
         }
       }
-    }
+    },
+    [refreshUnreadNotifications],
+  );
 
-    loadNotifications();
+  useEffect(() => {
+    void loadNotifications();
+  }, [loadNotifications]);
 
-    return () => {
-      ignore = true;
-    };
-  }, [refreshUnreadNotifications]);
+  useRealtimePolling({
+    intervalMs: 15000,
+    onPoll: () => loadNotifications({ silent: true }),
+  });
+
   const filteredNotifications = useMemo(() => {
     if (activeFilter === "all") {
       return notifications;
@@ -238,194 +236,70 @@ export default function CustomerNotificationsPage() {
   return (
     <MobileDeviceFrame backgroundClassName="bg-[#f8fafc]">
       <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-[#f8fafc]">
-        <header className="sticky top-0 z-20 rounded-b-[32px] bg-white px-5 pt-10 pb-5 shadow-[0_4px_20px_rgba(0,0,0,0.03)] sm:px-6 md:mx-auto md:w-full md:max-w-5xl md:px-8">
-          <div className="mb-5 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <Link
-                href="/home"
-                className="-ml-2 rounded-full p-2 transition-colors hover:bg-gray-100"
-                aria-label="Kembali ke beranda"
-              >
-                <ChevronLeft size={24} className="text-gray-800" />
-              </Link>
-              <div>
-                <h1 className="text-xl font-extrabold text-gray-900">
-                  Notifikasi
-                </h1>
-                <p className="mt-0.5 text-xs font-medium text-gray-500">
-                  {unreadCount > 0
-                    ? `${unreadCount} belum dibaca`
-                    : "Semua sudah dibaca"}
-                </p>
-              </div>
-            </div>
+        <div className="sticky top-0 z-20 md:mx-auto md:w-full md:max-w-5xl">
+          <NotificationCenterHeader
+            eyebrow="Customer"
+            description="Pantau status order, promo, refund, dan informasi akun dari satu tempat."
+            unreadCount={unreadCount}
+            backHref="/home"
+            onMarkAllRead={markAllAsRead}
+          />
+          <NotificationFilterTabs
+            options={notificationFilters}
+            activeFilter={activeFilter}
+            counts={filterCounts}
+            onChange={setActiveFilter}
+          />
+        </div>
 
-            <div className="relative flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
-              <Bell size={21} />
-              {unreadCount > 0 ? (
-                <span className="absolute top-2 right-2 h-2.5 w-2.5 rounded-full border-2 border-white bg-red-500" />
-              ) : null}
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={markAllAsRead}
-            disabled={unreadCount === 0}
-            className="flex w-full items-center justify-center gap-2 rounded-2xl border border-emerald-100 bg-emerald-50 py-3 text-sm font-extrabold text-emerald-700 transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:border-gray-100 disabled:bg-gray-50 disabled:text-gray-400"
-          >
-            <CheckCircle2 size={17} />
-            Tandai Semua Dibaca
-          </button>
-
-          <div className="mt-4 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            {notificationFilters.map((filter) => {
-              const isActive = activeFilter === filter.key;
-
-              return (
-                <button
-                  key={filter.key}
-                  type="button"
-                  onClick={() => setActiveFilter(filter.key)}
-                  className={`shrink-0 rounded-2xl px-3.5 py-2 text-xs font-extrabold transition-colors ${
-                    isActive
-                      ? "bg-gray-950 text-white"
-                      : "bg-gray-50 text-gray-600 hover:bg-gray-100"
-                  }`}
-                >
-                  {filter.label}
-                  <span
-                    className={`ml-2 rounded-full px-1.5 py-0.5 text-[10px] ${
-                      isActive ? "bg-white/15 text-white" : "bg-white text-gray-400"
-                    }`}
-                  >
-                    {filterCounts[filter.key]}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </header>
-
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-6 pb-28 [scrollbar-width:none] sm:px-6 md:mx-auto md:w-full md:max-w-5xl md:px-8 [&::-webkit-scrollbar]:hidden">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-sm font-extrabold tracking-wide text-gray-900">
-              Hari Ini
-            </h2>
-            <span className="flex items-center gap-1.5 rounded-full bg-white px-3 py-1 text-[10px] font-bold text-gray-400 shadow-sm">
-              <Clock size={12} />
-              Live update
-            </span>
-          </div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 pb-28 [scrollbar-width:none] sm:px-6 md:mx-auto md:w-full md:max-w-5xl [&::-webkit-scrollbar]:hidden">
+          <NotificationListHeading />
 
           <section className="space-y-3">
             {isLoadingNotifications ? (
-              <div className="rounded-[24px] border border-gray-100 bg-white p-8 text-center shadow-sm">
-                <h3 className="text-base font-extrabold text-gray-950">
-                  Memuat notifikasi...
-                </h3>
-                <p className="mx-auto mt-2 max-w-[240px] text-sm leading-6 font-medium text-gray-500">
-                  Notifikasi diambil sesuai session akun yang sedang login.
-                </p>
-              </div>
+              <StateCard
+                title="Memuat notifikasi"
+                description="Notifikasi diambil sesuai session akun yang sedang login."
+                variant="loading"
+                className="rounded-[24px]"
+              />
             ) : null}
 
             {filteredNotifications.map((notification) => {
               const style = notificationStyleByType[notification.type];
-              const Icon = style.icon;
 
               return (
-                <article
+                <NotificationCard
                   key={notification.id}
-                  className={`rounded-[24px] border p-4 shadow-sm transition-all ${
-                    notification.unread
-                      ? "border-emerald-200 bg-white shadow-[0_10px_24px_rgba(16,185,129,0.06)]"
-                      : "border-gray-100 bg-white/80"
-                  }`}
-                >
-                  <div className="flex gap-4">
-                    <div
-                      className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ${style.className}`}
-                    >
-                      <Icon size={21} />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="mb-2 flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="mb-1 flex flex-wrap items-center gap-1.5">
-                            <span className="rounded-full bg-gray-50 px-2.5 py-1 text-[10px] font-extrabold text-gray-500">
-                              {notificationTypeLabel[notification.type]}
-                            </span>
-                            {notification.unread ? (
-                              <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-extrabold text-emerald-700">
-                                Baru
-                              </span>
-                            ) : null}
-                          </div>
-                          <h3 className="text-sm font-extrabold text-gray-950">
-                            {notification.title}
-                          </h3>
-                        </div>
-                        {notification.unread ? (
-                          <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-emerald-500" />
-                        ) : null}
-                      </div>
-                      <p className="text-xs leading-5 font-medium text-gray-500">
-                        {notification.description}
-                      </p>
-                      <p className="mt-3 text-[10px] font-bold text-gray-400">
-                        {notification.time}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="mt-4 grid grid-cols-1 gap-2 border-t border-gray-100 pt-4 sm:grid-cols-2">
-                    {notification.href ? (
-                      <Link
-                        href={notification.href}
-                        onClick={() => void markAsRead(notification.id)}
-                        className="flex min-h-10 items-center justify-center rounded-xl bg-gray-900 px-3 text-xs font-extrabold text-white transition-colors hover:bg-emerald-500"
-                      >
-                        Buka Detail
-                      </Link>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => void markAsRead(notification.id)}
-                        className="flex min-h-10 items-center justify-center gap-1.5 rounded-xl bg-gray-900 px-3 text-xs font-extrabold text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-gray-200"
-                        disabled={!notification.unread}
-                      >
-                        <MailCheck size={14} />
-                        {notification.unread ? "Tandai Dibaca" : "Dibaca"}
-                      </button>
-                    )}
-
-                    <button
-                      type="button"
-                      onClick={() => void removeNotification(notification.id)}
-                      className="flex min-h-10 items-center justify-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 text-xs font-extrabold text-gray-600 transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600"
-                    >
-                      <Trash2 size={14} />
-                      Hapus
-                    </button>
-                  </div>
-                </article>
+                  icon={style.icon}
+                  tone={style.tone}
+                  label={style.label}
+                  title={notification.title}
+                  description={notification.description}
+                  time={notification.time}
+                  unread={notification.unread}
+                  href={notification.href}
+                  onMarkRead={() => markAsRead(notification.id)}
+                  onDelete={() => removeNotification(notification.id)}
+                />
               );
             })}
 
             {!isLoadingNotifications && filteredNotifications.length === 0 ? (
-              <div className="rounded-[24px] border border-dashed border-gray-200 bg-white p-8 text-center">
-                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-gray-50 text-gray-400">
-                  <Bell size={24} />
-                </div>
-                <h3 className="text-base font-extrabold text-gray-950">
-                  Tidak ada notifikasi
-                </h3>
-                <p className="mx-auto mt-2 max-w-[240px] text-sm leading-6 font-medium text-gray-500">
-                  Ubah filter atau tunggu update terbaru dari order, promo, dan
-                  refund.
-                </p>
-              </div>
+              <StateCard
+                title="Tidak ada notifikasi"
+                description="Ubah filter atau tunggu update terbaru dari order, promo, dan refund."
+                variant="empty"
+                className="rounded-[24px]"
+                action={
+                  activeFilter === "all"
+                    ? undefined
+                    : {
+                        label: "Tampilkan Semua",
+                        onClick: () => setActiveFilter("all"),
+                      }
+                }
+              />
             ) : null}
           </section>
         </div>

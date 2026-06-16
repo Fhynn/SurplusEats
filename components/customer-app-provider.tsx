@@ -17,6 +17,7 @@ import {
   type CustomerLocation,
 } from "@/lib/customer-location";
 import { menuItemToFood, type ApiMenuItem } from "@/lib/food-mapper";
+import { useRealtimePolling } from "@/components/use-realtime-polling";
 
 interface CustomerAppContextValue {
   cart: CartItem[];
@@ -276,6 +277,11 @@ export function CustomerAppProvider({
   useEffect(() => {
     void refreshUnreadNotifications();
   }, [refreshUnreadNotifications]);
+
+  useRealtimePolling({
+    intervalMs: 15000,
+    onPoll: refreshUnreadNotifications,
+  });
 
   const value = useMemo<CustomerAppContextValue>(() => {
     const upsertCartItem = (cartItem: CartItem) => {

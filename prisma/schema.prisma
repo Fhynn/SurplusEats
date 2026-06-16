@@ -36,6 +36,8 @@ enum MenuItemStatus {
   ACTIVE
   HIDDEN
   SOLD_OUT
+  SCHEDULED
+  ARCHIVED
 }
 
 enum OrderStatus {
@@ -116,21 +118,28 @@ model User {
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
 
-  addresses           Address[]
-  applications        RestaurantApplication[]
-  cartItems           CartItem[]
-  favoriteMenuItems   FavoriteMenuItem[]
-  favoriteRestaurants FavoriteRestaurant[]
-  notifications       Notification[]
-  orders              Order[]                 @relation("CustomerOrders")
-  ownedRestaurants    Restaurant[]            @relation("RestaurantOwner")
-  orderMessages       OrderMessage[]
-  refunds             RefundRequest[]         @relation("CustomerRefunds")
-  reviews             Review[]
-  supportTickets      SupportTicket[]
-  uploadedAssets      Asset[]                 @relation("AssetUploader")
-  adminLogs           AdminActionLog[]        @relation("AdminActionActor")
-  checkoutAttempts    CheckoutAttempt[]
+  addresses              Address[]
+  applications           RestaurantApplication[]
+  cartItems              CartItem[]
+  favoriteMenuItems      FavoriteMenuItem[]
+  favoriteRestaurants    FavoriteRestaurant[]
+  notifications          Notification[]
+  orders                 Order[]                 @relation("CustomerOrders")
+  ownedRestaurants       Restaurant[]            @relation("RestaurantOwner")
+  orderMessages          OrderMessage[]
+  refunds                RefundRequest[]         @relation("CustomerRefunds")
+  reviews                Review[]
+  reviewHelpfulVotes     ReviewHelpful[]
+  reviewReports          ReviewReport[]
+  supportTickets         SupportTicket[]
+  assignedSupportTickets SupportTicket[]         @relation("SupportTicketAssignee")
+  supportMessages        SupportMessage[]        @relation("SupportMessageSender")
+  uploadedAssets         Asset[]                 @relation("AssetUploader")
+  adminLogs              AdminActionLog[]        @relation("AdminActionActor")
+  checkoutAttempts       CheckoutAttempt[]
+  sessions               UserSession[]           @relation("UserSessions")
+  impersonatedSessions   UserSession[]           @relation("ImpersonatedSessions")
+  revokedSessions        UserSession[]           @relation("RevokedSessions")
 
   @@index([role])
   @@index([status])
@@ -157,24 +166,27 @@ model Address {
 }
 
 model RestaurantApplication {
-  id            String            @id @default(cuid())
-  userId        String?
-  applicantName String
-  email         String
-  phone         String
-  businessName  String
-  businessType  String
-  address       String
-  city          String
-  latitude      Float?
-  longitude     Float?
-  description   String?
-  status        ApplicationStatus @default(PENDING)
-  adminNote     String?
-  submittedAt   DateTime          @default(now())
-  reviewedAt    DateTime?
-  createdAt     DateTime          @default(now())
-  updatedAt     DateTime          @updatedAt
+  id                String            @id @default(cuid())
+  userId            String?
+  applicantName     String
+  email             String
+  phone             String
+  businessName      String
+  businessType      String
+  address           String
+  city              String
+  latitude          Float?
+  longitude         Float?
+  description       String?
+  bankName          String?
+  bankAccountNumber String?
+  bankAccountHolder String?
+  status            ApplicationStatus @default(PENDING)
+  adminNote         String?
+  submittedAt       DateTime          @default(now())
+  reviewedAt        DateTime?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
 
   documents  VerificationDocument[]
   restaurant Restaurant?
@@ -186,26 +198,30 @@ model RestaurantApplication {
 }
 
 model Restaurant {
-  id            String           @id @default(cuid())
-  ownerId       String
-  applicationId String?          @unique
-  name          String
-  slug          String           @unique
-  description   String?
-  address       String
-  city          String
-  latitude      Float?
-  longitude     Float?
-  phone         String?
-  imageUrl      String?
-  bannerUrl     String?
-  rating        Float            @default(0)
-  reviewCount   Int              @default(0)
-  status        RestaurantStatus @default(PENDING)
-  pickupStart   String?
-  pickupEnd     String?
-  createdAt     DateTime         @default(now())
-  updatedAt     DateTime         @updatedAt
+  id                String           @id @default(cuid())
+  ownerId           String
+  applicationId     String?          @unique
+  name              String
+  slug              String           @unique
+  description       String?
+  address           String
+  city              String
+  latitude          Float?
+  longitude         Float?
+  phone             String?
+  imageUrl          String?
+  bannerUrl         String?
+  rating            Float            @default(0)
+  reviewCount       Int              @default(0)
+  status            RestaurantStatus @default(PENDING)
+  pickupStart       String?
+  pickupEnd         String?
+  bankName          String?
+  bankAccountNumber String?
+  bankAccountHolder String?
+  bankVerifiedAt    DateTime?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
 
   application           RestaurantApplication? @relation(fields: [applicationId], references: [id], onDelete: SetNull)
   menuItems             MenuItem[]
@@ -214,6 +230,7 @@ model Restaurant {
   favoritedBy           FavoriteRestaurant[]
   reviews               Review[]
   verificationDocuments VerificationDocument[]
+  vouchers              Voucher[]
   walletTransactions    WalletTransaction[]
 
   @@index([ownerId])
@@ -236,6 +253,8 @@ model MenuItem {
   pickupStart     String?
   pickupEnd       String?
   expiresAt       DateTime?
+  publishAt       DateTime?
+  archivedAt      DateTime?
   status          MenuItemStatus @default(ACTIVE)
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
@@ -248,6 +267,8 @@ model MenuItem {
   @@unique([restaurantId, slug])
   @@index([restaurantId, status])
   @@index([category])
+  @@index([status, publishAt])
+  @@index([status, expiresAt])
 }
 
 model CartItem {
@@ -295,26 +316,34 @@ model FavoriteRestaurant {
 }
 
 model Order {
-  id                String        @id @default(cuid())
-  orderCode         String        @unique
-  customerId        String
-  restaurantId      String
-  checkoutAttemptId String?
-  status            OrderStatus   @default(PENDING)
-  paymentStatus     PaymentStatus @default(PENDING)
-  subtotal          Int
-  discount          Int           @default(0)
-  serviceFee        Int           @default(0)
-  total             Int
-  pickupCode        String?
-  pickupTime        DateTime?
-  note              String?
-  paidAt            DateTime?
-  completedAt       DateTime?
-  noShowAt          DateTime?
-  cancelledAt       DateTime?
-  createdAt         DateTime      @default(now())
-  updatedAt         DateTime      @updatedAt
+  id                       String        @id @default(cuid())
+  orderCode                String        @unique
+  customerId               String
+  restaurantId             String
+  checkoutAttemptId        String?
+  status                   OrderStatus   @default(PENDING)
+  paymentStatus            PaymentStatus @default(PENDING)
+  subtotal                 Int
+  discount                 Int           @default(0)
+  serviceFee               Int           @default(0)
+  taxFee                   Int           @default(0)
+  platformFee              Int           @default(0)
+  total                    Int
+  pickupCode               String?
+  pickupTime               DateTime?
+  note                     String?
+  paidAt                   DateTime?
+  acceptedAt               DateTime?
+  preparingAt              DateTime?
+  readyAt                  DateTime?
+  pickupVerifiedAt         DateTime?
+  pickupVerifiedBy         String?
+  pickupVerificationMethod String?
+  completedAt              DateTime?
+  noShowAt                 DateTime?
+  cancelledAt              DateTime?
+  createdAt                DateTime      @default(now())
+  updatedAt                DateTime      @updatedAt
 
   customer        User             @relation("CustomerOrders", fields: [customerId], references: [id], onDelete: Cascade)
   checkoutAttempt CheckoutAttempt? @relation(fields: [checkoutAttemptId], references: [id], onDelete: SetNull)
@@ -332,13 +361,26 @@ model Order {
 }
 
 model CheckoutAttempt {
-  id             String                @id @default(cuid())
-  userId         String
-  idempotencyKey String
-  status         CheckoutAttemptStatus @default(PROCESSING)
-  errorMessage   String?
-  createdAt      DateTime              @default(now())
-  updatedAt      DateTime              @updatedAt
+  id                 String                @id @default(cuid())
+  userId             String
+  idempotencyKey     String
+  status             CheckoutAttemptStatus @default(PROCESSING)
+  errorMessage       String?
+  paymentProvider    String?
+  paymentMethodCode  String?
+  paymentMethodName  String?
+  paymentReference   String?               @unique
+  paymentStatus      String?
+  paymentAmount      Int?
+  paymentFeeMerchant Int?
+  paymentFeeCustomer Int?
+  paymentCheckoutUrl String?
+  paymentPayCode     String?
+  paymentQrUrl       String?
+  paymentExpiresAt   DateTime?
+  paymentPaidAt      DateTime?
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
 
   user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   orders Order[]
@@ -346,6 +388,7 @@ model CheckoutAttempt {
   @@unique([userId, idempotencyKey])
   @@index([userId, createdAt])
   @@index([status, updatedAt])
+  @@index([paymentStatus, paymentExpiresAt])
 }
 
 model OrderItem {
@@ -416,22 +459,47 @@ model RefundEvidence {
 }
 
 model VerificationDocument {
-  id            String   @id @default(cuid())
+  id            String    @id @default(cuid())
   applicationId String?
   restaurantId  String?
   assetId       String?
   type          String
   label         String
-  status        String   @default("pending")
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  status        String    @default("pending")
+  reviewNote    String?
+  reviewedAt    DateTime?
+  reviewedById  String?
+  revision      Int       @default(1)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
-  application RestaurantApplication? @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-  asset       Asset?                 @relation(fields: [assetId], references: [id], onDelete: SetNull)
-  restaurant  Restaurant?            @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  application RestaurantApplication?         @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  asset       Asset?                         @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  restaurant  Restaurant?                    @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  revisions   VerificationDocumentRevision[]
 
   @@index([applicationId])
   @@index([restaurantId])
+  @@index([status])
+}
+
+model VerificationDocumentRevision {
+  id                     String   @id @default(cuid())
+  verificationDocumentId String
+  assetId                String?
+  revision               Int
+  status                 String
+  note                   String?
+  event                  String
+  createdById            String?
+  createdAt              DateTime @default(now())
+
+  asset                Asset?               @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  verificationDocument VerificationDocument @relation(fields: [verificationDocumentId], references: [id], onDelete: Cascade)
+
+  @@index([verificationDocumentId, createdAt])
+  @@index([verificationDocumentId, revision])
+  @@index([assetId])
 }
 
 model Asset {
@@ -447,9 +515,12 @@ model Asset {
   entityId     String?
   createdAt    DateTime        @default(now())
 
-  refundEvidence        RefundEvidence[]
-  uploadedBy            User?                  @relation("AssetUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
-  verificationDocuments VerificationDocument[]
+  refundEvidence                RefundEvidence[]
+  reviewImages                  ReviewImage[]
+  uploadedBy                    User?                          @relation("AssetUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
+  verificationDocuments         VerificationDocument[]
+  verificationDocumentRevisions VerificationDocumentRevision[]
+  supportAttachments            SupportAttachment[]
 
   @@index([uploadedById])
   @@index([entityType, entityId])
@@ -472,25 +543,73 @@ model Notification {
 }
 
 model SupportTicket {
-  id         String    @id @default(cuid())
-  userId     String
-  orderId    String?
-  orderCode  String?
-  category   String
-  subject    String
-  message    String
-  status     String    @default("OPEN")
-  adminNote  String?
-  resolvedAt DateTime?
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+  id                    String    @id @default(cuid())
+  userId                String
+  orderId               String?
+  orderCode             String?
+  assignedAdminId       String?
+  category              String
+  subject               String
+  message               String
+  status                String    @default("OPEN")
+  priority              String    @default("NORMAL")
+  adminNote             String?
+  firstResponseDueAt    DateTime?
+  resolutionDueAt       DateTime?
+  firstRespondedAt      DateTime?
+  lastCustomerMessageAt DateTime?
+  lastAdminMessageAt    DateTime?
+  resolvedAt            DateTime?
+  closedAt              DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
-  order Order? @relation(fields: [orderId], references: [id], onDelete: SetNull)
-  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assignee    User?               @relation("SupportTicketAssignee", fields: [assignedAdminId], references: [id], onDelete: SetNull)
+  attachments SupportAttachment[]
+  messages    SupportMessage[]
+  order       Order?              @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  user        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, status])
+  @@index([assignedAdminId, status])
   @@index([orderId])
+  @@index([priority, status])
   @@index([status, createdAt])
+  @@index([firstResponseDueAt])
+  @@index([resolutionDueAt])
+}
+
+model SupportMessage {
+  id         String   @id @default(cuid())
+  ticketId   String
+  senderId   String?
+  senderRole String
+  body       String
+  createdAt  DateTime @default(now())
+
+  attachments SupportAttachment[]
+  sender      User?               @relation("SupportMessageSender", fields: [senderId], references: [id], onDelete: SetNull)
+  ticket      SupportTicket       @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId, createdAt])
+  @@index([senderId])
+}
+
+model SupportAttachment {
+  id        String   @id @default(cuid())
+  ticketId  String
+  messageId String?
+  assetId   String
+  label     String?
+  createdAt DateTime @default(now())
+
+  asset   Asset           @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  message SupportMessage? @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  ticket  SupportTicket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@unique([ticketId, assetId])
+  @@index([messageId])
+  @@index([assetId])
 }
 
 model Review {
@@ -503,33 +622,91 @@ model Review {
   ownerReply     String?
   ownerRepliedAt DateTime?
   createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @default(now()) @updatedAt
 
-  order      Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
-  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  helpfulVotes ReviewHelpful[]
+  images       ReviewImage[]
+  order        Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  reports      ReviewReport[]
+  restaurant   Restaurant      @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  user         User            @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([restaurantId])
   @@index([userId])
   @@index([ownerRepliedAt])
 }
 
-model Voucher {
-  id          String    @id @default(cuid())
-  code        String    @unique
-  title       String
-  description String?
-  discount    Int
-  minSpend    Int       @default(0)
-  quota       Int?
-  active      Boolean   @default(true)
-  startsAt    DateTime?
-  endsAt      DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+model ReviewImage {
+  id        String   @id @default(cuid())
+  reviewId  String
+  assetId   String
+  createdAt DateTime @default(now())
 
+  asset  Asset  @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  review Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+
+  @@unique([reviewId, assetId])
+  @@index([reviewId])
+  @@index([assetId])
+}
+
+model ReviewHelpful {
+  id        String   @id @default(cuid())
+  reviewId  String
+  userId    String
+  createdAt DateTime @default(now())
+
+  review Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([reviewId, userId])
+  @@index([userId])
+}
+
+model ReviewReport {
+  id        String   @id @default(cuid())
+  reviewId  String
+  userId    String
+  reason    String
+  note      String?
+  status    String   @default("OPEN")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  review Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([reviewId, userId])
+  @@index([status, createdAt])
+  @@index([userId])
+}
+
+model Voucher {
+  id             String    @id @default(cuid())
+  code           String    @unique
+  title          String
+  description    String?
+  campaignName   String?
+  discount       Int
+  minSpend       Int       @default(0)
+  quota          Int?
+  perUserLimit   Int       @default(1)
+  firstOrderOnly Boolean   @default(false)
+  restaurantId   String?
+  category       String?
+  active         Boolean   @default(true)
+  startsAt       DateTime?
+  endsAt         DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  restaurant  Restaurant?         @relation(fields: [restaurantId], references: [id], onDelete: SetNull)
   redemptions VoucherRedemption[]
 
   @@index([active])
+  @@index([restaurantId])
+  @@index([category])
+  @@index([endsAt, active])
 }
 
 model VoucherRedemption {
@@ -546,19 +723,51 @@ model VoucherRedemption {
 }
 
 model WalletTransaction {
-  id           String                  @id @default(cuid())
-  restaurantId String
-  type         WalletTransactionType
-  status       WalletTransactionStatus @default(PENDING)
-  amount       Int
-  reference    String?
-  description  String?
-  createdAt    DateTime                @default(now())
-  updatedAt    DateTime                @updatedAt
+  id                   String                  @id @default(cuid())
+  restaurantId         String
+  type                 WalletTransactionType
+  status               WalletTransactionStatus @default(PENDING)
+  amount               Int
+  grossAmount          Int?
+  platformFee          Int?
+  netAmount            Int?
+  payoutFee            Int?
+  payoutNetAmount      Int?
+  reference            String?
+  payoutBatchReference String?
+  transferReference    String?
+  transferProofUrl     String?
+  bankName             String?
+  bankAccountNumber    String?
+  bankAccountHolder    String?
+  bankValidationStatus String?
+  processedAt          DateTime?
+  processedBy          String?
+  adminNote            String?
+  description          String?
+  createdAt            DateTime                @default(now())
+  updatedAt            DateTime                @updatedAt
 
   restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
 
   @@index([restaurantId, status])
+  @@index([type, status])
+  @@index([payoutBatchReference])
+}
+
+model PlatformFeeSetting {
+  id                String   @id @default("default")
+  active            Boolean  @default(true)
+  serviceFeeFlat    Int      @default(2000)
+  serviceFeePercent Float    @default(0)
+  taxFeeFlat        Int      @default(0)
+  taxFeePercent     Float    @default(0)
+  commissionFlat    Int      @default(0)
+  commissionPercent Float    @default(0)
+  minCommission     Int      @default(0)
+  updatedById       String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 }
 
 model AdminActionLog {
@@ -574,4 +783,29 @@ model AdminActionLog {
 
   @@index([adminId])
   @@index([targetType, targetId])
+}
+
+model UserSession {
+  id               String    @id @default(cuid())
+  tokenId          String    @unique
+  userId           String
+  kind             String    @default("LOGIN")
+  deviceLabel      String?
+  userAgent        String?
+  ipAddress        String?
+  impersonatedById String?
+  startedAt        DateTime  @default(now())
+  lastSeenAt       DateTime  @default(now())
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  revokedById      String?
+  revokeReason     String?
+
+  user           User  @relation("UserSessions", fields: [userId], references: [id], onDelete: Cascade)
+  impersonatedBy User? @relation("ImpersonatedSessions", fields: [impersonatedById], references: [id], onDelete: SetNull)
+  revokedBy      User? @relation("RevokedSessions", fields: [revokedById], references: [id], onDelete: SetNull)
+
+  @@index([userId, lastSeenAt])
+  @@index([impersonatedById])
+  @@index([revokedAt])
 }

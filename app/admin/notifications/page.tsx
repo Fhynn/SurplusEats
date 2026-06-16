@@ -1,9 +1,17 @@
 "use client";
 
-import Link from "next/link";
-import { Bell, CheckCircle2, Clock3, Trash2 } from "lucide-react";
+import { Gift, ReceiptText, RefreshCcw, ShoppingBag } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import {
+  NotificationCard,
+  NotificationCenterHeader,
+  NotificationFilterTabs,
+  NotificationListHeading,
+  type NotificationTone,
+} from "@/components/notification-center-ui";
+import { InlineNotice, StateCard } from "@/components/ui-state";
+import { useRealtimePolling } from "@/components/use-realtime-polling";
 import { emitUnreadNotificationsChanged } from "@/components/use-unread-notification-count";
 
 type AdminNotification = {
@@ -14,6 +22,37 @@ type AdminNotification = {
   href: string | null;
   readAt: string | null;
   createdAt: string;
+};
+
+type AdminNotificationFilter =
+  | "all"
+  | "unread"
+  | AdminNotification["type"];
+
+const filters: Array<{
+  key: AdminNotificationFilter;
+  label: string;
+}> = [
+  { key: "all", label: "Semua" },
+  { key: "unread", label: "Belum Dibaca" },
+  { key: "ORDER", label: "Order" },
+  { key: "PROMO", label: "Promo" },
+  { key: "REFUND", label: "Refund" },
+  { key: "SYSTEM", label: "Sistem" },
+];
+
+const notificationStyleByType: Record<
+  AdminNotification["type"],
+  {
+    icon: typeof ShoppingBag;
+    tone: NotificationTone;
+    label: string;
+  }
+> = {
+  ORDER: { icon: ShoppingBag, tone: "emerald", label: "Order" },
+  PROMO: { icon: Gift, tone: "amber", label: "Promo" },
+  REFUND: { icon: RefreshCcw, tone: "blue", label: "Refund" },
+  SYSTEM: { icon: ReceiptText, tone: "slate", label: "Sistem" },
 };
 
 function formatTime(value: string) {
@@ -29,42 +68,86 @@ export default function AdminNotificationsPage() {
   const [notifications, setNotifications] = useState<AdminNotification[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
+  const [activeFilter, setActiveFilter] =
+    useState<AdminNotificationFilter>("all");
 
   const unreadCount = useMemo(
     () => notifications.filter((item) => !item.readAt).length,
     [notifications],
   );
+  const filteredNotifications = useMemo(() => {
+    if (activeFilter === "all") {
+      return notifications;
+    }
 
-  const loadNotifications = useCallback(async () => {
-    setIsLoading(true);
+    if (activeFilter === "unread") {
+      return notifications.filter((item) => !item.readAt);
+    }
 
-    try {
-      const response = await fetch("/api/notifications", { cache: "no-store" });
-      const data = (await response.json()) as {
-        ok: boolean;
-        message?: string;
-        notifications?: AdminNotification[];
-      };
+    return notifications.filter((item) => item.type === activeFilter);
+  }, [activeFilter, notifications]);
+  const filterCounts = useMemo(
+    () =>
+      filters.reduce(
+        (counts, filter) => ({
+          ...counts,
+          [filter.key]:
+            filter.key === "all"
+              ? notifications.length
+              : filter.key === "unread"
+                ? unreadCount
+                : notifications.filter((item) => item.type === filter.key)
+                    .length,
+        }),
+        {} as Record<AdminNotificationFilter, number>,
+      ),
+    [notifications, unreadCount],
+  );
 
-      if (!response.ok || !data.ok) {
-        throw new Error(data.message || "Notifikasi gagal dimuat.");
+  const loadNotifications = useCallback(
+    async ({ silent = false }: { silent?: boolean } = {}) => {
+      if (!silent) {
+        setIsLoading(true);
       }
 
-      setNotifications(data.notifications ?? []);
-      emitUnreadNotificationsChanged();
-      setNotice(null);
-    } catch (error) {
-      setNotice(
-        error instanceof Error ? error.message : "Notifikasi gagal dimuat.",
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+      try {
+        const response = await fetch("/api/notifications", { cache: "no-store" });
+        const data = (await response.json()) as {
+          ok: boolean;
+          message?: string;
+          notifications?: AdminNotification[];
+        };
+
+        if (!response.ok || !data.ok) {
+          throw new Error(data.message || "Notifikasi gagal dimuat.");
+        }
+
+        setNotifications(data.notifications ?? []);
+        emitUnreadNotificationsChanged();
+        setNotice(null);
+      } catch (error) {
+        if (!silent) {
+          setNotice(
+            error instanceof Error ? error.message : "Notifikasi gagal dimuat.",
+          );
+        }
+      } finally {
+        if (!silent) {
+          setIsLoading(false);
+        }
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     void loadNotifications();
   }, [loadNotifications]);
+
+  useRealtimePolling({
+    intervalMs: 15000,
+    onPoll: () => loadNotifications({ silent: true }),
+  });
 
   const markAllAsRead = async () => {
     await fetch("/api/notifications", {
@@ -73,6 +156,26 @@ export default function AdminNotificationsPage() {
       body: JSON.stringify({ all: true }),
     });
     await loadNotifications();
+    emitUnreadNotificationsChanged();
+  };
+
+  const markAsRead = async (id: string) => {
+    const response = await fetch("/api/notifications", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+
+    if (!response.ok) {
+      setNotice("Notifikasi gagal diperbarui.");
+      return;
+    }
+
+    setNotifications((currentNotifications) =>
+      currentNotifications.map((item) =>
+        item.id === id ? { ...item, readAt: new Date().toISOString() } : item,
+      ),
+    );
     emitUnreadNotificationsChanged();
   };
 
@@ -87,102 +190,70 @@ export default function AdminNotificationsPage() {
   };
 
   return (
-    <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 p-5 md:p-8">
-      <header className="flex flex-col justify-between gap-4 rounded-[28px] border border-gray-100 bg-white p-6 shadow-sm md:flex-row md:items-center">
-        <div>
-          <p className="text-xs font-extrabold tracking-[0.2em] text-emerald-600 uppercase">
-            Admin
-          </p>
-          <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-gray-950">
-            Notifikasi
-          </h1>
-          <p className="mt-2 text-sm font-medium text-gray-500">
-            Semua data diambil dari tabel notifikasi admin yang sedang login.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={markAllAsRead}
-          disabled={unreadCount === 0}
-          className="inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-5 py-3 text-sm font-extrabold text-white disabled:bg-gray-300"
-        >
-          <CheckCircle2 size={18} />
-          Tandai Semua Dibaca
-        </button>
-      </header>
+    <div className="mx-auto w-full max-w-6xl">
+      <NotificationCenterHeader
+        eyebrow="Admin"
+        description="Pantau aktivitas order, promo, refund, dan informasi sistem dari satu tempat."
+        unreadCount={unreadCount}
+        onMarkAllRead={markAllAsRead}
+      />
 
       {notice ? (
-        <div className="rounded-2xl border border-red-100 bg-red-50 p-4 text-sm font-bold text-red-700">
-          {notice}
+        <div className="border-b border-gray-200 bg-white px-4 py-4 sm:px-6">
+          <InlineNotice variant="error" description={notice} />
         </div>
       ) : null}
 
-      <section className="rounded-[28px] border border-gray-100 bg-white p-4 shadow-sm md:p-6">
+      <NotificationFilterTabs
+        options={filters}
+        activeFilter={activeFilter}
+        counts={filterCounts}
+        onChange={setActiveFilter}
+      />
+
+      <section className="bg-gray-50 p-4 sm:p-6">
+        <NotificationListHeading />
         {isLoading ? (
-          <div className="py-12 text-center text-sm font-bold text-gray-500">
-            Memuat notifikasi...
-          </div>
-        ) : notifications.length === 0 ? (
-          <div className="py-12 text-center">
-            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-gray-100 text-gray-500">
-              <Bell size={26} />
-            </div>
-            <h2 className="text-lg font-extrabold text-gray-950">
-              Belum ada notifikasi
-            </h2>
-            <p className="mt-2 text-sm font-medium text-gray-500">
-              Notifikasi akan muncul setelah ada aktivitas baru.
-            </p>
-          </div>
+          <StateCard
+            title="Memuat notifikasi"
+            description="Mengambil notifikasi admin terbaru."
+            variant="loading"
+            size="sm"
+          />
+        ) : filteredNotifications.length === 0 ? (
+          <StateCard
+            title="Belum ada notifikasi"
+            description="Filter ini belum memiliki notifikasi. Coba kategori lain."
+            variant="empty"
+            size="sm"
+            action={
+              activeFilter === "all"
+                ? undefined
+                : {
+                    label: "Tampilkan Semua",
+                    onClick: () => setActiveFilter("all"),
+                  }
+            }
+          />
         ) : (
           <div className="space-y-3">
-            {notifications.map((item) => {
-              const content = (
-                <div className="min-w-0 flex-1">
-                  <div className="mb-1 flex items-center gap-2">
-                    <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-extrabold text-emerald-700">
-                      {item.type}
-                    </span>
-                    {!item.readAt ? (
-                      <span className="rounded-full bg-red-50 px-2.5 py-1 text-[10px] font-extrabold text-red-600">
-                        Baru
-                      </span>
-                    ) : null}
-                  </div>
-                  <h2 className="truncate text-sm font-extrabold text-gray-950">
-                    {item.title}
-                  </h2>
-                  <p className="mt-1 text-sm leading-6 font-medium text-gray-500">
-                    {item.body}
-                  </p>
-                  <p className="mt-2 flex items-center gap-1 text-xs font-bold text-gray-400">
-                    <Clock3 size={14} />
-                    {formatTime(item.createdAt)}
-                  </p>
-                </div>
-              );
+            {filteredNotifications.map((item) => {
+              const style = notificationStyleByType[item.type];
 
               return (
-                <article
+                <NotificationCard
                   key={item.id}
-                  className="flex items-start gap-4 rounded-2xl border border-gray-100 bg-gray-50 p-4"
-                >
-                  {item.href ? (
-                    <Link href={item.href} className="min-w-0 flex-1">
-                      {content}
-                    </Link>
-                  ) : (
-                    content
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => deleteNotification(item.id)}
-                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-gray-400 transition-colors hover:text-red-500"
-                    aria-label="Hapus notifikasi"
-                  >
-                    <Trash2 size={17} />
-                  </button>
-                </article>
+                  icon={style.icon}
+                  tone={style.tone}
+                  label={style.label}
+                  title={item.title}
+                  description={item.body}
+                  time={formatTime(item.createdAt)}
+                  unread={!item.readAt}
+                  href={item.href || undefined}
+                  onMarkRead={() => markAsRead(item.id)}
+                  onDelete={() => deleteNotification(item.id)}
+                />
               );
             })}
           </div>

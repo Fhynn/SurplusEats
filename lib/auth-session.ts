@@ -4,17 +4,22 @@ import { NextResponse } from "next/server";
 import type { UserRole, UserStatus } from "@prisma/client";
 
 export const sessionCookieName = "resqfood_session";
-const sessionMaxAgeSeconds = 60 * 60 * 24 * 7;
+export const sessionMaxAgeSeconds = 60 * 60 * 24 * 7;
+export const transientSessionMaxAgeSeconds = 60 * 60 * 8;
 
 export type OwnerAccessStatus = "NONE" | "PENDING" | "APPROVED" | "REJECTED";
 
 export type AuthSession = {
+  sessionId?: string;
   userId: string;
   email: string;
   name: string;
   role: UserRole;
   status: UserStatus;
   ownerStatus: OwnerAccessStatus;
+  impersonatedById?: string | null;
+  impersonatedByEmail?: string | null;
+  impersonatedByName?: string | null;
   exp: number;
 };
 
@@ -69,17 +74,26 @@ async function signPayload(payload: string) {
 export async function createSessionToken(
   session: Omit<AuthSession, "exp">,
   rememberMe = true,
+  maxAgeSeconds = getSessionMaxAgeSeconds(rememberMe),
 ) {
   const payload: AuthSession = {
     ...session,
-    exp:
-      Math.floor(Date.now() / 1000) +
-      (rememberMe ? sessionMaxAgeSeconds : 60 * 60 * 8),
+    exp: Math.floor(Date.now() / 1000) + maxAgeSeconds,
   };
   const encodedPayload = base64UrlEncode(JSON.stringify(payload));
   const signature = await signPayload(encodedPayload);
 
   return `${encodedPayload}.${signature}`;
+}
+
+export function getSessionMaxAgeSeconds(rememberMe = true) {
+  return rememberMe ? sessionMaxAgeSeconds : transientSessionMaxAgeSeconds;
+}
+
+export function getSessionExpiresAt(rememberMe = true, maxAgeSeconds?: number) {
+  return new Date(
+    Date.now() + (maxAgeSeconds ?? getSessionMaxAgeSeconds(rememberMe)) * 1000,
+  );
 }
 
 export async function verifySessionToken(token?: string) {
@@ -107,13 +121,17 @@ export async function verifySessionToken(token?: string) {
   }
 }
 
-export function setSessionCookie(response: NextResponse, token: string) {
+export function setSessionCookie(
+  response: NextResponse,
+  token: string,
+  maxAgeSeconds = sessionMaxAgeSeconds,
+) {
   response.cookies.set(sessionCookieName, token, {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
     path: "/",
-    maxAge: sessionMaxAgeSeconds,
+    maxAge: maxAgeSeconds,
   });
 }
 

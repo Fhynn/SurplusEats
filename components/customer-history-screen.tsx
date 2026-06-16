@@ -5,17 +5,21 @@ import {
   AlertCircle,
   CheckCircle2,
   ChevronLeft,
+  ImageIcon,
   MessageSquare,
   RefreshCcw,
   Search,
   ShoppingBag,
   Star,
   Store,
+  Trash2,
   X,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { useRealtimePolling } from "@/components/use-realtime-polling";
+import { InlineNotice, StateCard } from "@/components/ui-state";
 import { formatRp } from "@/lib/customer-data";
 import { apiOrderToCard, type ApiOrder } from "@/lib/order-mapper";
 import { showSweetError, showSweetToast } from "@/lib/sweet-alert";
@@ -36,6 +40,10 @@ type HistoryOrder = {
   note: string;
   reviewRating?: number;
   reviewComment?: string | null;
+  reviewImages?: Array<{
+    id: string;
+    url: string;
+  }>;
 };
 
 const statusClassNameByStatus: Record<HistoryOrderStatus, string> = {
@@ -73,6 +81,7 @@ function mapApiOrderToHistory(order: ApiOrder): HistoryOrder | null {
     foodId: card.foodId,
     reviewRating: card.reviewRating,
     reviewComment: card.reviewComment,
+    reviewImages: card.reviewImages,
     note:
       card.status === "completed"
         ? card.reviewRating
@@ -90,6 +99,8 @@ export function CustomerHistoryScreen() {
   const [reviewOrder, setReviewOrder] = useState<HistoryOrder | null>(null);
   const [rating, setRating] = useState(0);
   const [reviewComment, setReviewComment] = useState("");
+  const [reviewFiles, setReviewFiles] = useState<File[]>([]);
+  const [reviewPreviewUrls, setReviewPreviewUrls] = useState<string[]>([]);
   const [query, setQuery] = useState("");
   const [isLoadingOrders, setIsLoadingOrders] = useState(true);
   const [isSubmittingReview, setIsSubmittingReview] = useState(false);
@@ -98,43 +109,57 @@ export function CustomerHistoryScreen() {
     message: string;
   } | null>(null);
 
-  const loadOrders = useCallback(async () => {
-    setIsLoadingOrders(true);
-
-    try {
-      const response = await fetch("/api/orders", { cache: "no-store" });
-      const data = (await response.json()) as {
-        ok: boolean;
-        message?: string;
-        orders?: ApiOrder[];
-      };
-
-      if (!response.ok || !data.ok) {
-        throw new Error(data.message || "Riwayat pesanan gagal dimuat.");
+  const loadOrders = useCallback(
+    async ({ silent = false }: { silent?: boolean } = {}) => {
+      if (!silent) {
+        setIsLoadingOrders(true);
       }
 
-      setOrders(
-        (data.orders || [])
-          .map(mapApiOrderToHistory)
-          .filter((order): order is HistoryOrder => order !== null),
-      );
-      setNotice(null);
-    } catch (error) {
-      setNotice({
-        type: "error",
-        message:
-          error instanceof Error
-            ? error.message
-            : "Riwayat pesanan gagal dimuat.",
-      });
-    } finally {
-      setIsLoadingOrders(false);
-    }
-  }, []);
+      try {
+        const response = await fetch("/api/orders", { cache: "no-store" });
+        const data = (await response.json()) as {
+          ok: boolean;
+          message?: string;
+          orders?: ApiOrder[];
+        };
+
+        if (!response.ok || !data.ok) {
+          throw new Error(data.message || "Riwayat pesanan gagal dimuat.");
+        }
+
+        setOrders(
+          (data.orders || [])
+            .map(mapApiOrderToHistory)
+            .filter((order): order is HistoryOrder => order !== null),
+        );
+        setNotice(null);
+      } catch (error) {
+        if (!silent) {
+          setNotice({
+            type: "error",
+            message:
+              error instanceof Error
+                ? error.message
+                : "Riwayat pesanan gagal dimuat.",
+          });
+        }
+      } finally {
+        if (!silent) {
+          setIsLoadingOrders(false);
+        }
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     void loadOrders();
   }, [loadOrders]);
+
+  useRealtimePolling({
+    intervalMs: 15000,
+    onPoll: () => loadOrders({ silent: true }),
+  });
 
   const filteredOrders = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -152,15 +177,69 @@ export function CustomerHistoryScreen() {
   }, [orders, query]);
 
   const handleCloseReview = () => {
+    reviewPreviewUrls.forEach((url) => URL.revokeObjectURL(url));
     setReviewOrder(null);
     setRating(0);
     setReviewComment("");
+    setReviewFiles([]);
+    setReviewPreviewUrls([]);
   };
 
   const handleOpenReview = (order: HistoryOrder) => {
+    reviewPreviewUrls.forEach((url) => URL.revokeObjectURL(url));
     setReviewOrder(order);
     setRating(order.reviewRating ?? 0);
     setReviewComment(order.reviewComment ?? "");
+    setReviewFiles([]);
+    setReviewPreviewUrls([]);
+  };
+
+  const handleReviewFileChange = (files: FileList | null) => {
+    reviewPreviewUrls.forEach((url) => URL.revokeObjectURL(url));
+
+    const nextFiles = Array.from(files ?? [])
+      .filter((file) => file.type.startsWith("image/"))
+      .slice(0, 4);
+
+    setReviewFiles(nextFiles);
+    setReviewPreviewUrls(nextFiles.map((file) => URL.createObjectURL(file)));
+  };
+
+  const clearReviewFiles = () => {
+    reviewPreviewUrls.forEach((url) => URL.revokeObjectURL(url));
+    setReviewFiles([]);
+    setReviewPreviewUrls([]);
+  };
+
+  const uploadReviewImages = async () => {
+    const assetIds: string[] = [];
+
+    for (const file of reviewFiles) {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("folder", "review-images");
+      formData.append("entityType", "review");
+
+      const response = await fetch("/api/uploads", {
+        method: "POST",
+        body: formData,
+      });
+      const data = (await response.json()) as {
+        ok: boolean;
+        message?: string;
+        asset?: {
+          id: string;
+        };
+      };
+
+      if (!response.ok || !data.ok || !data.asset) {
+        throw new Error(data.message || "Foto ulasan gagal diupload.");
+      }
+
+      assetIds.push(data.asset.id);
+    }
+
+    return assetIds;
   };
 
   const handleSubmitReview = async () => {
@@ -171,6 +250,7 @@ export function CustomerHistoryScreen() {
     setIsSubmittingReview(true);
 
     try {
+      const assetIds = reviewFiles.length > 0 ? await uploadReviewImages() : undefined;
       const response = await fetch("/api/reviews", {
         method: "POST",
         headers: {
@@ -180,11 +260,22 @@ export function CustomerHistoryScreen() {
           orderCode: reviewOrder?.id,
           rating,
           comment: reviewComment,
+          assetIds,
         }),
       });
       const data = (await response.json()) as {
         ok: boolean;
         message?: string;
+        review?: {
+          rating: number;
+          comment: string | null;
+          images?: Array<{
+            asset: {
+              id: string;
+              url: string;
+            };
+          }>;
+        };
       };
 
       if (!response.ok || !data.ok) {
@@ -197,7 +288,12 @@ export function CustomerHistoryScreen() {
             ? {
                 ...order,
                 reviewRating: rating,
-                reviewComment: reviewComment.trim() || null,
+                reviewComment: data.review?.comment ?? (reviewComment.trim() || null),
+                reviewImages:
+                  data.review?.images?.map((image) => ({
+                    id: image.asset.id,
+                    url: image.asset.url,
+                  })) ?? order.reviewImages,
                 note: `Sudah diulas ${rating}/5.`,
               }
             : order,
@@ -268,27 +364,20 @@ export function CustomerHistoryScreen() {
 
       <main className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 pt-6 pb-28 [scrollbar-width:none] sm:px-6 md:mx-auto md:w-full md:max-w-6xl md:px-8 [&::-webkit-scrollbar]:hidden">
         {notice ? (
-          <div
-            className={`rounded-[24px] border p-4 text-sm font-bold ${
-              notice.type === "success"
-                ? "border-emerald-100 bg-emerald-50 text-emerald-700"
-                : "border-red-100 bg-red-50 text-red-700"
-            }`}
-          >
-            {notice.message}
-          </div>
+          <InlineNotice
+            variant={notice.type}
+            description={notice.message}
+            className="rounded-[24px]"
+          />
         ) : null}
 
         {isLoadingOrders ? (
-          <div className="rounded-[24px] border border-gray-100 bg-white p-6 text-center shadow-sm">
-            <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-emerald-100 border-t-emerald-500" />
-            <p className="text-sm font-extrabold text-gray-900">
-              Memuat riwayat pesanan
-            </p>
-            <p className="mt-1 text-xs font-medium text-gray-500">
-              Data diambil dari order akun customer.
-            </p>
-          </div>
+          <StateCard
+            title="Memuat riwayat pesanan"
+            description="Data diambil dari order akun customer."
+            variant="loading"
+            className="rounded-[24px]"
+          />
         ) : null}
 
         {!isLoadingOrders && filteredOrders.map((order) => (
@@ -413,14 +502,23 @@ export function CustomerHistoryScreen() {
         ))}
 
         {!isLoadingOrders && filteredOrders.length === 0 ? (
-          <div className="rounded-[24px] border border-gray-100 bg-white p-6 text-center shadow-sm">
-            <p className="text-sm font-extrabold text-gray-900">
-              Riwayat tidak ditemukan
-            </p>
-            <p className="mt-1 text-xs font-medium text-gray-500">
-              Coba kata kunci restoran, menu, atau ID lain.
-            </p>
-          </div>
+          <StateCard
+            title="Riwayat tidak ditemukan"
+            description="Coba kata kunci restoran, menu, atau ID lain."
+            variant="empty"
+            className="rounded-[24px]"
+            action={
+              query.trim()
+                ? {
+                    label: "Reset Pencarian",
+                    onClick: () => setQuery(""),
+                  }
+                : {
+                    label: "Cari Menu",
+                    href: "/browser",
+                  }
+            }
+          />
         ) : null}
       </main>
 
@@ -498,6 +596,75 @@ export function CustomerHistoryScreen() {
               rows={4}
               className="mb-5 w-full resize-none rounded-[24px] border border-gray-200 bg-gray-50 p-4 text-sm font-medium text-gray-900 outline-none transition-all placeholder:text-gray-400 focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-50"
             />
+
+            <div className="mb-5 rounded-[24px] border border-gray-100 bg-gray-50 p-4">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-extrabold text-gray-800">
+                    Foto Ulasan
+                  </p>
+                  <p className="mt-1 text-xs font-semibold text-gray-500">
+                    Maksimal 4 foto, format gambar.
+                  </p>
+                </div>
+                {reviewFiles.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={clearReviewFiles}
+                    className="inline-flex items-center gap-1.5 rounded-full bg-red-50 px-3 py-2 text-[11px] font-extrabold text-red-600"
+                  >
+                    <Trash2 size={13} />
+                    Hapus
+                  </button>
+                ) : null}
+              </div>
+              {reviewPreviewUrls.length > 0 ? (
+                <div className="mb-3 grid grid-cols-4 gap-2">
+                  {reviewPreviewUrls.map((url) => (
+                    <div
+                      key={url}
+                      className="relative aspect-square overflow-hidden rounded-xl bg-white"
+                    >
+                      <Image
+                        src={url}
+                        alt="Preview foto ulasan"
+                        fill
+                        sizes="96px"
+                        className="object-cover"
+                      />
+                    </div>
+                  ))}
+                </div>
+              ) : reviewOrder.reviewImages && reviewOrder.reviewImages.length > 0 ? (
+                <div className="mb-3 grid grid-cols-4 gap-2">
+                  {reviewOrder.reviewImages.map((image) => (
+                    <div
+                      key={image.id}
+                      className="relative aspect-square overflow-hidden rounded-xl bg-white"
+                    >
+                      <Image
+                        src={image.url}
+                        alt="Foto ulasan tersimpan"
+                        fill
+                        sizes="96px"
+                        className="object-cover"
+                      />
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+              <label className="flex cursor-pointer items-center justify-center gap-2 rounded-2xl border border-dashed border-gray-300 bg-white px-4 py-3 text-xs font-extrabold text-gray-600 transition-colors hover:border-emerald-300 hover:text-emerald-600">
+                <ImageIcon size={16} />
+                Pilih Foto
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={(event) => handleReviewFileChange(event.target.files)}
+                  className="sr-only"
+                />
+              </label>
+            </div>
 
             <button
               type="button"

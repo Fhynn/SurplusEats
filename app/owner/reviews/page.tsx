@@ -1,7 +1,18 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { MessageSquareText, Star, Store, UserRound } from "lucide-react";
+import {
+  Flag,
+  ImageIcon,
+  MessageSquareText,
+  Star,
+  Store,
+  ThumbsUp,
+  UserRound,
+} from "lucide-react";
+import Image from "next/image";
+
+import { StateCard } from "@/components/ui-state";
 
 type OwnerReview = {
   id: string;
@@ -20,7 +31,34 @@ type OwnerReview = {
   order: {
     orderCode: string;
   };
+  images: Array<{
+    id: string;
+    asset: {
+      url: string;
+    };
+  }>;
+  _count: {
+    helpfulVotes: number;
+    reports: number;
+  };
 };
+
+type ReviewSort = "latest" | "oldest" | "highest" | "lowest" | "helpful";
+type ReplyFilter = "all" | "replied" | "unreplied";
+
+const sortOptions: Array<{ id: ReviewSort; label: string }> = [
+  { id: "latest", label: "Terbaru" },
+  { id: "oldest", label: "Terlama" },
+  { id: "highest", label: "Rating tertinggi" },
+  { id: "lowest", label: "Rating terburuk" },
+  { id: "helpful", label: "Helpful" },
+];
+
+const replyFilterOptions: Array<{ id: ReplyFilter; label: string }> = [
+  { id: "all", label: "Semua" },
+  { id: "unreplied", label: "Belum dibalas" },
+  { id: "replied", label: "Sudah dibalas" },
+];
 
 function formatTime(value: string) {
   return new Intl.DateTimeFormat("id-ID", {
@@ -37,6 +75,10 @@ export default function OwnerReviewsPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
   const [submittingReplyId, setSubmittingReplyId] = useState<string | null>(null);
+  const [ratingFilter, setRatingFilter] = useState<number | "all">("all");
+  const [replyFilter, setReplyFilter] = useState<ReplyFilter>("all");
+  const [sort, setSort] = useState<ReviewSort>("latest");
+  const [showReportedOnly, setShowReportedOnly] = useState(false);
 
   useEffect(() => {
     let ignore = false;
@@ -45,7 +87,23 @@ export default function OwnerReviewsPage() {
       setIsLoading(true);
 
       try {
-        const response = await fetch("/api/owner/reviews", {
+        const params = new URLSearchParams();
+
+        if (ratingFilter !== "all") {
+          params.set("rating", String(ratingFilter));
+        }
+
+        if (replyFilter !== "all") {
+          params.set("reply", replyFilter);
+        }
+
+        if (showReportedOnly) {
+          params.set("filter", "reported");
+        }
+
+        params.set("sort", sort);
+
+        const response = await fetch(`/api/owner/reviews?${params.toString()}`, {
           cache: "no-store",
         });
         const data = (await response.json()) as {
@@ -78,7 +136,7 @@ export default function OwnerReviewsPage() {
     return () => {
       ignore = true;
     };
-  }, []);
+  }, [ratingFilter, replyFilter, showReportedOnly, sort]);
 
   const averageRating = useMemo(() => {
     if (reviews.length === 0) {
@@ -93,6 +151,11 @@ export default function OwnerReviewsPage() {
 
   const repliedCount = useMemo(
     () => reviews.filter((review) => review.ownerReply).length,
+    [reviews],
+  );
+  const reportedCount = useMemo(
+    () =>
+      reviews.reduce((total, review) => total + review._count.reports, 0),
     [reviews],
   );
 
@@ -160,7 +223,7 @@ export default function OwnerReviewsPage() {
         </div>
       ) : null}
 
-      <section className="grid gap-4 sm:grid-cols-3">
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-[28px] border border-gray-100 bg-white p-6 shadow-sm">
           <Star size={24} className="mb-4 fill-amber-400 text-amber-400" />
           <p className="text-xs font-extrabold tracking-wider text-gray-400 uppercase">
@@ -188,26 +251,90 @@ export default function OwnerReviewsPage() {
             {repliedCount}
           </p>
         </div>
+        <div className="rounded-[28px] border border-red-100 bg-red-50 p-6">
+          <Flag size={24} className="mb-4 text-red-600" />
+          <p className="text-xs font-extrabold tracking-wider text-red-700 uppercase">
+            Dilaporkan
+          </p>
+          <p className="mt-2 text-3xl font-extrabold text-red-950">
+            {reportedCount}
+          </p>
+        </div>
       </section>
 
       <section className="rounded-[28px] border border-gray-100 bg-white p-6 shadow-sm">
+        <div className="mb-5 grid gap-3 lg:grid-cols-[1fr_1fr_auto]">
+          <div className="flex gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {(["all", 5, 4, 3, 2, 1] as const).map((ratingValue) => (
+              <button
+                key={ratingValue}
+                type="button"
+                onClick={() => setRatingFilter(ratingValue)}
+                className={`min-h-11 shrink-0 rounded-full px-3 py-2 text-[11px] font-extrabold transition-colors ${
+                  ratingFilter === ratingValue
+                    ? "bg-gray-900 text-white"
+                    : "border border-gray-200 bg-gray-50 text-gray-600 hover:bg-white"
+                }`}
+              >
+                {ratingValue === "all" ? "Semua rating" : `${ratingValue} bintang`}
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {replyFilterOptions.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                onClick={() => setReplyFilter(option.id)}
+                className={`min-h-11 shrink-0 rounded-full px-3 py-2 text-[11px] font-extrabold transition-colors ${
+                  replyFilter === option.id
+                    ? "bg-emerald-500 text-white"
+                    : "border border-emerald-100 bg-emerald-50 text-emerald-700 hover:bg-white"
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <select
+              value={sort}
+              onChange={(event) => setSort(event.target.value as ReviewSort)}
+              className="min-h-11 rounded-full border border-gray-200 bg-gray-50 px-3 text-[11px] font-extrabold text-gray-700 outline-none focus:border-emerald-500"
+            >
+              {sortOptions.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => setShowReportedOnly((current) => !current)}
+              className={`inline-flex min-h-11 items-center gap-1.5 rounded-full px-3 text-[11px] font-extrabold transition-colors ${
+                showReportedOnly
+                  ? "bg-red-500 text-white"
+                  : "border border-red-100 bg-red-50 text-red-600 hover:bg-white"
+              }`}
+            >
+              <Flag size={13} />
+              Report
+            </button>
+          </div>
+        </div>
+
         {isLoading ? (
-          <div className="py-10 text-center text-sm font-bold text-gray-500">
-            Memuat ulasan...
-          </div>
+          <StateCard
+            title="Memuat ulasan"
+            description="Mengambil rating, foto, report, dan balasan owner."
+            variant="loading"
+          />
         ) : reviews.length === 0 ? (
-          <div className="py-10 text-center">
-            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-gray-100 text-gray-500">
-              <Star size={26} />
-            </div>
-            <h2 className="text-lg font-extrabold text-gray-950">
-              Belum ada ulasan
-            </h2>
-            <p className="mt-2 text-sm font-medium text-gray-500">
-              Ulasan akan muncul setelah customer menyelesaikan order dan
-              memberikan rating.
-            </p>
-          </div>
+          <StateCard
+            title="Belum ada ulasan"
+            description="Ulasan akan muncul setelah customer menyelesaikan order dan memberikan rating."
+            variant="empty"
+          />
         ) : (
           <div className="space-y-3">
             {reviews.map((review) => (
@@ -234,6 +361,46 @@ export default function OwnerReviewsPage() {
                 <p className="text-sm leading-6 font-medium text-gray-600">
                   {review.comment || "Customer tidak menulis komentar."}
                 </p>
+                {review.images.length > 0 ? (
+                  <div className="mt-4 grid grid-cols-4 gap-2 sm:grid-cols-6">
+                    {review.images.map((image) => (
+                      <div
+                        key={image.id}
+                        className="relative aspect-square overflow-hidden rounded-xl bg-gray-100"
+                      >
+                        <Image
+                          src={image.asset.url}
+                          alt={`Foto ulasan ${review.user.name}`}
+                          fill
+                          sizes="96px"
+                          className="object-cover"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-[11px] font-extrabold text-gray-600">
+                    <ThumbsUp size={13} />
+                    {review._count.helpfulVotes} helpful
+                  </span>
+                  <span
+                    className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-extrabold ${
+                      review._count.reports > 0
+                        ? "bg-red-50 text-red-600"
+                        : "bg-white text-gray-500"
+                    }`}
+                  >
+                    <Flag size={13} />
+                    {review._count.reports} laporan
+                  </span>
+                  {review.images.length > 0 ? (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-[11px] font-extrabold text-gray-600">
+                      <ImageIcon size={13} />
+                      {review.images.length} foto
+                    </span>
+                  ) : null}
+                </div>
                 {review.ownerReply ? (
                   <div className="mt-4 rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
                     <p className="text-xs font-extrabold text-emerald-800">

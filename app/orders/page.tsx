@@ -6,6 +6,7 @@ import {
   CalendarClock,
   ChevronRight,
   Clock3,
+  ImageIcon,
   MessageSquare,
   Navigation,
   PackageCheck,
@@ -15,13 +16,16 @@ import {
   ShoppingBag,
   Star,
   Store,
+  Trash2,
   X,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useCustomerApp } from "@/components/customer-app-provider";
 import { MobileDeviceFrame } from "@/components/mobile-device-frame";
+import { InlineNotice, StateCard } from "@/components/ui-state";
+import { useRealtimePolling } from "@/components/use-realtime-polling";
 import {
   apiOrderToCard,
   type ApiOrder,
@@ -53,6 +57,8 @@ export default function CustomerOrdersPage() {
   const [reviewOrder, setReviewOrder] = useState<CustomerOrderCard | null>(null);
   const [rating, setRating] = useState(0);
   const [reviewComment, setReviewComment] = useState("");
+  const [reviewFiles, setReviewFiles] = useState<File[]>([]);
+  const [reviewPreviewUrls, setReviewPreviewUrls] = useState<string[]>([]);
   const [apiOrders, setApiOrders] = useState<ApiOrder[]>([]);
   const [isLoadingOrders, setIsLoadingOrders] = useState(true);
   const [isSubmittingReview, setIsSubmittingReview] = useState(false);
@@ -101,11 +107,11 @@ export default function CustomerOrdersPage() {
     (order) => order.status === "preparing",
   ).length;
 
-  useEffect(() => {
-    let ignore = false;
-
-    async function loadOrders() {
-      setIsLoadingOrders(true);
+  const loadOrders = useCallback(
+    async ({ silent = false }: { silent?: boolean } = {}) => {
+      if (!silent) {
+        setIsLoadingOrders(true);
+      }
 
       try {
         const response = await fetch("/api/orders", { cache: "no-store" });
@@ -119,11 +125,10 @@ export default function CustomerOrdersPage() {
           throw new Error(result.message || "Pesanan gagal dimuat.");
         }
 
-        if (!ignore) {
-          setApiOrders(result.orders ?? []);
-        }
+        setApiOrders(result.orders ?? []);
+        setNotice(null);
       } catch {
-        if (!ignore) {
+        if (!silent) {
           setApiOrders([]);
           setNotice({
             type: "error",
@@ -131,18 +136,22 @@ export default function CustomerOrdersPage() {
           });
         }
       } finally {
-        if (!ignore) {
+        if (!silent) {
           setIsLoadingOrders(false);
         }
       }
-    }
+    },
+    [],
+  );
 
-    loadOrders();
+  useEffect(() => {
+    void loadOrders();
+  }, [loadOrders]);
 
-    return () => {
-      ignore = true;
-    };
-  }, []);
+  useRealtimePolling({
+    intervalMs: 10000,
+    onPoll: () => loadOrders({ silent: true }),
+  });
 
   const handleOpenOrder = (order: CustomerOrderCard) => {
     if (order.status === "ready" || order.status === "preparing") {
@@ -151,15 +160,69 @@ export default function CustomerOrdersPage() {
   };
 
   const handleCloseReview = () => {
+    reviewPreviewUrls.forEach((url) => URL.revokeObjectURL(url));
     setReviewOrder(null);
     setRating(0);
     setReviewComment("");
+    setReviewFiles([]);
+    setReviewPreviewUrls([]);
   };
 
   const handleOpenReview = (order: CustomerOrderCard) => {
+    reviewPreviewUrls.forEach((url) => URL.revokeObjectURL(url));
     setReviewOrder(order);
     setRating(order.reviewRating ?? 0);
     setReviewComment(order.reviewComment ?? "");
+    setReviewFiles([]);
+    setReviewPreviewUrls([]);
+  };
+
+  const handleReviewFileChange = (files: FileList | null) => {
+    reviewPreviewUrls.forEach((url) => URL.revokeObjectURL(url));
+
+    const nextFiles = Array.from(files ?? [])
+      .filter((file) => file.type.startsWith("image/"))
+      .slice(0, 4);
+
+    setReviewFiles(nextFiles);
+    setReviewPreviewUrls(nextFiles.map((file) => URL.createObjectURL(file)));
+  };
+
+  const clearReviewFiles = () => {
+    reviewPreviewUrls.forEach((url) => URL.revokeObjectURL(url));
+    setReviewFiles([]);
+    setReviewPreviewUrls([]);
+  };
+
+  const uploadReviewImages = async () => {
+    const assetIds: string[] = [];
+
+    for (const file of reviewFiles) {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("folder", "review-images");
+      formData.append("entityType", "review");
+
+      const response = await fetch("/api/uploads", {
+        method: "POST",
+        body: formData,
+      });
+      const data = (await response.json()) as {
+        ok: boolean;
+        message?: string;
+        asset?: {
+          id: string;
+        };
+      };
+
+      if (!response.ok || !data.ok || !data.asset) {
+        throw new Error(data.message || "Foto ulasan gagal diupload.");
+      }
+
+      assetIds.push(data.asset.id);
+    }
+
+    return assetIds;
   };
 
   const handleSubmitReview = async () => {
@@ -170,6 +233,7 @@ export default function CustomerOrdersPage() {
     setIsSubmittingReview(true);
 
     try {
+      const assetIds = reviewFiles.length > 0 ? await uploadReviewImages() : undefined;
       const response = await fetch("/api/reviews", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -177,11 +241,22 @@ export default function CustomerOrdersPage() {
           orderCode: reviewOrder.id,
           rating,
           comment: reviewComment.trim() || undefined,
+          assetIds,
         }),
       });
       const data = (await response.json()) as {
         ok: boolean;
         message?: string;
+        review?: {
+          rating: number;
+          comment: string | null;
+          images?: Array<{
+            asset: {
+              id: string;
+              url: string;
+            };
+          }>;
+        };
       };
 
       if (!response.ok || !data.ok) {
@@ -194,8 +269,9 @@ export default function CustomerOrdersPage() {
             ? {
                 ...order,
                 review: {
-                  rating,
-                  comment: reviewComment.trim() || null,
+                  rating: data.review?.rating ?? rating,
+                  comment: data.review?.comment ?? (reviewComment.trim() || null),
+                  images: data.review?.images ?? order.review?.images ?? [],
                 },
               }
             : order,
@@ -257,7 +333,7 @@ export default function CustomerOrdersPage() {
                 setActiveTab("aktif");
                 setQuery("");
               }}
-              className={`relative pb-3 text-sm font-bold transition-all ${
+              className={`relative flex min-h-11 items-center pb-3 text-sm font-bold transition-all ${
                 activeTab === "aktif" ? "text-emerald-600" : "text-gray-400"
               }`}
             >
@@ -272,7 +348,7 @@ export default function CustomerOrdersPage() {
                 setActiveTab("selesai");
                 setQuery("");
               }}
-              className={`relative pb-3 text-sm font-bold transition-all ${
+              className={`relative flex min-h-11 items-center pb-3 text-sm font-bold transition-all ${
                 activeTab === "selesai" ? "text-gray-900" : "text-gray-400"
               }`}
             >
@@ -354,26 +430,19 @@ export default function CustomerOrdersPage() {
           )}
 
           {isLoadingOrders ? (
-            <div className="rounded-[28px] border border-gray-100 bg-white p-8 text-center shadow-sm">
-              <h2 className="text-base font-extrabold text-gray-950">
-                Memuat pesanan...
-              </h2>
-              <p className="mt-2 text-sm leading-6 font-medium text-gray-500">
-                Riwayat akan muncul sesuai session akun yang sedang login.
-              </p>
-            </div>
+            <StateCard
+              title="Memuat pesanan"
+              description="Riwayat akan muncul sesuai session akun yang sedang login."
+              variant="loading"
+            />
           ) : null}
 
           {notice ? (
-            <div
-              className={`rounded-[24px] border p-4 text-sm font-bold ${
-                notice.type === "success"
-                  ? "border-emerald-100 bg-emerald-50 text-emerald-700"
-                  : "border-red-100 bg-red-50 text-red-700"
-              }`}
-            >
-              {notice.message}
-            </div>
+            <InlineNotice
+              variant={notice.type}
+              description={notice.message}
+              className="rounded-[24px]"
+            />
           ) : null}
 
           {visibleOrders.map((order) => {
@@ -658,6 +727,75 @@ export default function CustomerOrdersPage() {
                 rows={4}
                 className="mb-5 w-full resize-none rounded-[24px] border border-gray-200 bg-gray-50 p-4 text-sm font-medium text-gray-900 outline-none transition-all placeholder:text-gray-400 focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-50"
               />
+
+              <div className="mb-5 rounded-[24px] border border-gray-100 bg-gray-50 p-4">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-extrabold text-gray-800">
+                      Foto Ulasan
+                    </p>
+                    <p className="mt-1 text-xs font-semibold text-gray-500">
+                      Maksimal 4 foto, format gambar.
+                    </p>
+                  </div>
+                  {reviewFiles.length > 0 ? (
+                    <button
+                      type="button"
+                      onClick={clearReviewFiles}
+                      className="inline-flex items-center gap-1.5 rounded-full bg-red-50 px-3 py-2 text-[11px] font-extrabold text-red-600"
+                    >
+                      <Trash2 size={13} />
+                      Hapus
+                    </button>
+                  ) : null}
+                </div>
+                {reviewPreviewUrls.length > 0 ? (
+                  <div className="mb-3 grid grid-cols-4 gap-2">
+                    {reviewPreviewUrls.map((url) => (
+                      <div
+                        key={url}
+                        className="relative aspect-square overflow-hidden rounded-xl bg-white"
+                      >
+                        <Image
+                          src={url}
+                          alt="Preview foto ulasan"
+                          fill
+                          sizes="96px"
+                          className="object-cover"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                ) : reviewOrder.reviewImages && reviewOrder.reviewImages.length > 0 ? (
+                  <div className="mb-3 grid grid-cols-4 gap-2">
+                    {reviewOrder.reviewImages.map((image) => (
+                      <div
+                        key={image.id}
+                        className="relative aspect-square overflow-hidden rounded-xl bg-white"
+                      >
+                        <Image
+                          src={image.url}
+                          alt="Foto ulasan tersimpan"
+                          fill
+                          sizes="96px"
+                          className="object-cover"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+                <label className="flex cursor-pointer items-center justify-center gap-2 rounded-2xl border border-dashed border-gray-300 bg-white px-4 py-3 text-xs font-extrabold text-gray-600 transition-colors hover:border-emerald-300 hover:text-emerald-600">
+                  <ImageIcon size={16} />
+                  Pilih Foto
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    onChange={(event) => handleReviewFileChange(event.target.files)}
+                    className="sr-only"
+                  />
+                </label>
+              </div>
 
               <button
                 type="button"

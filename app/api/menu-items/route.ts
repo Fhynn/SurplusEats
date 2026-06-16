@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { getCurrentSession } from "@/lib/auth-session";
 import { slugify } from "@/lib/backend-utils";
+import { deriveMenuStatus, reconcileMenuLifecycle } from "@/lib/menu-lifecycle";
 import { prisma } from "@/lib/prisma";
 import { notifyRestaurantFollowers } from "@/lib/restaurant-follower-notifications";
 
@@ -23,6 +24,9 @@ const createMenuItemSchema = z
     imageUrl: z.string().url().optional().or(z.literal("")),
     pickupStart: z.string().optional(),
     pickupEnd: z.string().optional(),
+    publishAt: z.string().trim().nullable().optional(),
+    expiresAt: z.string().trim().nullable().optional(),
+    status: z.nativeEnum(MenuItemStatus).optional(),
   })
   .superRefine((data, ctx) => {
     if (data.discountedPrice > data.originalPrice) {
@@ -34,13 +38,30 @@ const createMenuItemSchema = z
     }
   });
 
+function parseOptionalDate(value: string | null | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    throw new Error("Tanggal menu tidak valid.");
+  }
+
+  return date;
+}
+
 export async function GET(request: Request) {
+  await reconcileMenuLifecycle();
+
   const url = new URL(request.url);
   const session = await getCurrentSession();
   const query = url.searchParams.get("q")?.trim();
   const category = url.searchParams.get("category")?.trim();
   const restaurantId = url.searchParams.get("restaurantId")?.trim();
   const scope = url.searchParams.get("scope");
+  const includeArchived = url.searchParams.get("includeArchived") === "true";
   const isOwnerScope = scope === "owner";
 
   if (
@@ -60,7 +81,11 @@ export async function GET(request: Request) {
         restaurantId && (!isOwnerScope || session?.role === UserRole.ADMIN)
           ? restaurantId
           : undefined,
-      status: isOwnerScope ? undefined : MenuItemStatus.ACTIVE,
+      status: isOwnerScope
+        ? includeArchived
+          ? undefined
+          : { not: MenuItemStatus.ARCHIVED }
+        : MenuItemStatus.ACTIVE,
       restaurant: isOwnerScope
         ? session?.role === UserRole.OWNER
           ? { ownerId: session.userId }
@@ -110,6 +135,23 @@ export async function POST(request: Request) {
   }
 
   const data = parsed.data;
+  const publishAt = parseOptionalDate(data.publishAt);
+  const expiresAt = parseOptionalDate(data.expiresAt);
+
+  if (publishAt && expiresAt && publishAt >= expiresAt) {
+    return NextResponse.json(
+      { ok: false, message: "Jadwal publish harus sebelum waktu expired." },
+      { status: 400 },
+    );
+  }
+
+  if (data.status === MenuItemStatus.SCHEDULED && !publishAt) {
+    return NextResponse.json(
+      { ok: false, message: "Jadwal publish wajib diisi untuk menu terjadwal." },
+      { status: 400 },
+    );
+  }
+
   const restaurant = await prisma.restaurant.findFirst({
     where: {
       id: data.restaurantId || undefined,
@@ -130,6 +172,11 @@ export async function POST(request: Request) {
 
   const baseSlug = slugify(data.name);
   const slug = `${baseSlug}-${Date.now().toString(36)}`;
+  const status = deriveMenuStatus({
+    requestedStatus: data.status,
+    stock: data.stock,
+    publishAt,
+  });
   const menuItem = await prisma.menuItem.create({
     data: {
       restaurantId: restaurant.id,
@@ -143,7 +190,10 @@ export async function POST(request: Request) {
       imageUrl: data.imageUrl || null,
       pickupStart: data.pickupStart || restaurant.pickupStart,
       pickupEnd: data.pickupEnd || restaurant.pickupEnd,
-      status: data.stock > 0 ? MenuItemStatus.ACTIVE : MenuItemStatus.SOLD_OUT,
+      publishAt,
+      expiresAt,
+      archivedAt: status === MenuItemStatus.ARCHIVED ? new Date() : null,
+      status,
     },
     include: {
       restaurant: true,

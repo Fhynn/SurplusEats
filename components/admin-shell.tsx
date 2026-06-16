@@ -19,6 +19,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { ReactNode } from "react";
 import { useState } from "react";
 
+import { NotificationBellLink } from "@/components/notification-bell-link";
 import { useUnreadNotificationCount } from "@/components/use-unread-notification-count";
 
 const adminNavItems = [
@@ -261,7 +262,7 @@ export function AdminShell({ children }: Readonly<{ children: ReactNode }>) {
             <div className="flex items-center justify-between gap-3">
               <Link
                 href="/admin/dashboard"
-                className="flex items-center gap-2 text-sm font-extrabold text-gray-950"
+                className="flex min-h-11 items-center gap-2 text-sm font-extrabold text-gray-950"
               >
                 <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gray-950 text-emerald-300">
                   <ShieldCheck size={19} />
@@ -269,23 +270,17 @@ export function AdminShell({ children }: Readonly<{ children: ReactNode }>) {
                 ResQfood admin
               </Link>
               <div className="flex items-center gap-2">
-                <Link
+                <NotificationBellLink
                   href="/admin/notifications"
-                  className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-500"
-                  aria-label="Buka notifikasi admin"
-                >
-                  <Bell size={18} />
-                  {unreadNotificationCount > 0 ? (
-                    <span className="absolute -top-1 -right-1 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-white bg-red-500 px-1 text-[9px] font-extrabold text-white">
-                      {unreadNotificationCount > 9 ? "9+" : unreadNotificationCount}
-                    </span>
-                  ) : null}
-                </Link>
+                  unreadCount={unreadNotificationCount}
+                  active={pathname === "/admin/notifications"}
+                  ariaLabel="Buka notifikasi admin"
+                />
                 <button
                   type="button"
                   onClick={handleLogout}
                   disabled={isLoggingOut}
-                  className="flex h-10 w-10 items-center justify-center rounded-xl border border-red-100 bg-red-50 text-red-600 disabled:cursor-not-allowed disabled:text-red-300"
+                  className="flex h-11 w-11 items-center justify-center rounded-xl border border-red-100 bg-red-50 text-red-600 disabled:cursor-not-allowed disabled:text-red-300"
                   aria-label="Keluar akun admin"
                 >
                   <LogOut size={18} />
@@ -297,7 +292,7 @@ export function AdminShell({ children }: Readonly<{ children: ReactNode }>) {
                 <Link
                   key={label}
                   href={href}
-                  className={`motion-press shrink-0 rounded-xl px-3 py-2 text-xs font-extrabold ${
+                  className={`motion-press flex min-h-11 shrink-0 items-center rounded-xl px-3 py-2 text-xs font-extrabold ${
                     match(pathname, dashboardTab)
                       ? "bg-emerald-500 text-white"
                       : "bg-gray-100 text-gray-600"

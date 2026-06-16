@@ -5,11 +5,12 @@ import {
   AlertTriangle,
   ArrowUpRight,
   BarChart3,
-  Bell,
   Building2,
   CheckCircle2,
   Clock3,
+  Download,
   FileBadge2,
+  History,
   LayoutDashboard,
   Leaf,
   PieChart,
@@ -30,6 +31,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import type { FormEvent } from "react";
 import { useCallback, useEffect, useState } from "react";
 
+import { NotificationBellLink } from "@/components/notification-bell-link";
+import { useRealtimePolling } from "@/components/use-realtime-polling";
 import { useUnreadNotificationCount } from "@/components/use-unread-notification-count";
 
 type AdminTab =
@@ -50,6 +53,9 @@ type VerificationStore = {
   address: string;
   latitude: number | null;
   longitude: number | null;
+  status: "pending" | "approved" | "rejected";
+  statusLabel: string;
+  documentCount: number;
 };
 
 type AdminUser = {
@@ -77,11 +83,13 @@ type RecentTransaction = {
 };
 
 type RefundDispute = {
+  id: string;
   orderId: string;
   customer: string;
   resto: string;
   reason: string;
   total: string;
+  status: string;
 };
 
 type WeeklySale = {
@@ -94,6 +102,58 @@ type FoodDistributionItem = {
   value: number;
   className: string;
   textClassName: string;
+};
+
+type GlobalSearchResult = {
+  id: string;
+  type: string;
+  title: string;
+  subtitle: string;
+  status: string;
+  href: string;
+  meta: string;
+};
+
+type AdminAuditLog = {
+  id: string;
+  action: string;
+  targetType: string;
+  targetId: string | null;
+  createdAt: string;
+  admin: {
+    id: string;
+    name: string;
+    email: string;
+  } | null;
+  metadata: unknown;
+};
+
+type DashboardFilters = {
+  role: "all" | "customer" | "owner";
+  userStatus: "all" | "active" | "banned";
+  applicationStatus: "all" | "pending" | "approved" | "rejected";
+  orderStatus:
+    | "all"
+    | "pending"
+    | "payment_failed"
+    | "paid"
+    | "confirmed"
+    | "preparing"
+    | "ready"
+    | "completed"
+    | "no_show"
+    | "cancelled"
+    | "refunded";
+  refundStatus:
+    | "needs_review"
+    | "all"
+    | "pending"
+    | "reviewing"
+    | "approved"
+    | "rejected"
+    | "paid";
+  dateFrom: string;
+  dateTo: string;
 };
 
 type AdminDashboardData = {
@@ -110,6 +170,8 @@ type AdminDashboardData = {
   attentionItems: AttentionItem[];
   weeklySales: WeeklySale[];
   foodDistribution: FoodDistributionItem[];
+  globalSearchResults: GlobalSearchResult[];
+  auditLogs: AdminAuditLog[];
 };
 
 const emptyDashboardData: AdminDashboardData = {
@@ -126,6 +188,18 @@ const emptyDashboardData: AdminDashboardData = {
   attentionItems: [],
   weeklySales: [],
   foodDistribution: [],
+  globalSearchResults: [],
+  auditLogs: [],
+};
+
+const defaultDashboardFilters: DashboardFilters = {
+  role: "all",
+  userStatus: "all",
+  applicationStatus: "pending",
+  orderStatus: "all",
+  refundStatus: "needs_review",
+  dateFrom: "",
+  dateTo: "",
 };
 
 function getMapsUrl(latitude: number, longitude: number) {
@@ -160,11 +234,61 @@ const navItems = [
   },
 ] as const;
 
-function StatusBadge() {
+function formatAuditTime(value: string) {
+  return new Intl.DateTimeFormat("id-ID", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
+function getSearchTypeLabel(type: string) {
+  const labels: Record<string, string> = {
+    application: "Ajuan Mitra",
+    audit: "Audit",
+    menu: "Menu",
+    order: "Order",
+    refund: "Refund",
+    restaurant: "Restoran",
+    support: "Support",
+    user: "User",
+    voucher: "Voucher",
+  };
+
+  return labels[type] || type;
+}
+
+function ApplicationStatusBadge({
+  status,
+  label,
+}: {
+  status: VerificationStore["status"];
+  label: string;
+}) {
+  if (status === "approved") {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-extrabold text-emerald-700">
+        <CheckCircle2 size={13} />
+        {label}
+      </span>
+    );
+  }
+
+  if (status === "rejected") {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs font-extrabold text-red-700">
+        <XCircle size={13} />
+        {label}
+      </span>
+    );
+  }
+
   return (
     <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-extrabold text-amber-700">
       <Clock3 size={13} />
-      Menunggu
+      {label}
     </span>
   );
 }
@@ -238,6 +362,17 @@ function AdminDashboardPage() {
     useState<AdminUser | null>(null);
   const [banReason, setBanReason] = useState("");
   const [globalSearchQuery, setGlobalSearchQuery] = useState("");
+  const [appliedSearchQuery, setAppliedSearchQuery] = useState("");
+  const [draftFilters, setDraftFilters] = useState<DashboardFilters>(
+    defaultDashboardFilters,
+  );
+  const [dashboardFilters, setDashboardFilters] = useState<DashboardFilters>(
+    defaultDashboardFilters,
+  );
+  const [isExporting, setIsExporting] = useState(false);
+  const [selectedAuditLog, setSelectedAuditLog] = useState<AdminAuditLog | null>(
+    null,
+  );
   const adminUsers = dashboardData.users;
   const verificationStores = dashboardData.verificationStores;
   const recentTransactions = dashboardData.recentTransactions;
@@ -245,6 +380,11 @@ function AdminDashboardPage() {
   const attentionItems = dashboardData.attentionItems;
   const weeklySales = dashboardData.weeklySales;
   const foodDistribution = dashboardData.foodDistribution;
+  const globalSearchResults = dashboardData.globalSearchResults;
+  const auditLogs = dashboardData.auditLogs;
+  const hasActiveFilters =
+    JSON.stringify(dashboardFilters) !== JSON.stringify(defaultDashboardFilters) ||
+    Boolean(appliedSearchQuery);
   const stats = [
     {
       label: "Total Pengguna",
@@ -280,48 +420,102 @@ function AdminDashboardPage() {
     },
   ] as const;
 
-  const loadDashboardData = useCallback(async () => {
-    setIsLoadingDashboard(true);
-
-    try {
-      const response = await fetch("/api/admin/dashboard", {
-        cache: "no-store",
-      });
-      const data = (await response.json()) as
-        | ({ ok: true } & AdminDashboardData)
-        | { ok: false; message?: string };
-
-      if (!response.ok || !data.ok) {
-        throw new Error(
-          "message" in data ? data.message : "Dashboard admin gagal dimuat.",
-        );
+  const loadDashboardData = useCallback(
+    async ({ silent = false }: { silent?: boolean } = {}) => {
+      if (!silent) {
+        setIsLoadingDashboard(true);
       }
 
-      setDashboardData({
-        metrics: data.metrics,
-        users: data.users,
-        verificationStores: data.verificationStores,
-        recentTransactions: data.recentTransactions,
-        refundDisputes: data.refundDisputes,
-        attentionItems: data.attentionItems,
-        weeklySales: data.weeklySales,
-        foodDistribution: data.foodDistribution,
-      });
-      setDashboardNotice(null);
-    } catch (error) {
-      setDashboardNotice(
-        error instanceof Error
-          ? error.message
-          : "Dashboard admin gagal dimuat.",
-      );
-    } finally {
-      setIsLoadingDashboard(false);
-    }
-  }, []);
+      try {
+        const params = new URLSearchParams();
+
+        if (appliedSearchQuery) {
+          params.set("q", appliedSearchQuery);
+        }
+
+        if (dashboardFilters.role !== "all") {
+          params.set("role", dashboardFilters.role);
+        }
+
+        if (dashboardFilters.userStatus !== "all") {
+          params.set("userStatus", dashboardFilters.userStatus);
+        }
+
+        if (dashboardFilters.applicationStatus !== "all") {
+          params.set("applicationStatus", dashboardFilters.applicationStatus);
+        }
+
+        if (dashboardFilters.orderStatus !== "all") {
+          params.set("orderStatus", dashboardFilters.orderStatus);
+        }
+
+        if (dashboardFilters.refundStatus !== "needs_review") {
+          params.set("refundStatus", dashboardFilters.refundStatus);
+        }
+
+        if (dashboardFilters.dateFrom) {
+          params.set("dateFrom", dashboardFilters.dateFrom);
+        }
+
+        if (dashboardFilters.dateTo) {
+          params.set("dateTo", dashboardFilters.dateTo);
+        }
+
+        const queryString = params.toString();
+        const response = await fetch(
+          `/api/admin/dashboard${queryString ? `?${queryString}` : ""}`,
+          {
+            cache: "no-store",
+          },
+        );
+        const data = (await response.json()) as
+          | ({ ok: true } & AdminDashboardData)
+          | { ok: false; message?: string };
+
+        if (!response.ok || !data.ok) {
+          throw new Error(
+            "message" in data ? data.message : "Dashboard admin gagal dimuat.",
+          );
+        }
+
+        setDashboardData({
+          metrics: data.metrics,
+          users: data.users,
+          verificationStores: data.verificationStores,
+          recentTransactions: data.recentTransactions,
+          refundDisputes: data.refundDisputes,
+          attentionItems: data.attentionItems,
+          weeklySales: data.weeklySales,
+          foodDistribution: data.foodDistribution,
+          globalSearchResults: data.globalSearchResults,
+          auditLogs: data.auditLogs,
+        });
+        setDashboardNotice(null);
+      } catch (error) {
+        if (!silent) {
+          setDashboardNotice(
+            error instanceof Error
+              ? error.message
+              : "Dashboard admin gagal dimuat.",
+          );
+        }
+      } finally {
+        if (!silent) {
+          setIsLoadingDashboard(false);
+        }
+      }
+    },
+    [appliedSearchQuery, dashboardFilters],
+  );
 
   useEffect(() => {
     void loadDashboardData();
   }, [loadDashboardData]);
+
+  useRealtimePolling({
+    intervalMs: activeTab === "transactions" ? 10000 : 15000,
+    onPoll: () => loadDashboardData({ silent: true }),
+  });
 
   const filteredAdminUsers = adminUsers.filter((user) => {
     const normalizedQuery = userSearchQuery.trim().toLowerCase();
@@ -352,58 +546,93 @@ function AdminDashboardPage() {
 
     const trimmedQuery = globalSearchQuery.trim();
 
-    if (!trimmedQuery) {
-      return;
-    }
-
-    const normalizedQuery = trimmedQuery.toLowerCase();
-    const matchesUser = adminUsers.some((user) =>
-      [user.id, user.name, user.email, user.role, user.status]
-        .join(" ")
-        .toLowerCase()
-        .includes(normalizedQuery),
-    );
-    const matchesVerification = verificationStores.some((store) =>
-      [store.id, store.storeName, store.category, store.owner, store.email]
-        .join(" ")
-        .toLowerCase()
-        .includes(normalizedQuery),
-    );
-    const matchesTransaction = recentTransactions.some((transaction) =>
-      [
-        transaction.id,
-        transaction.customer,
-        transaction.store,
-        transaction.status,
-      ]
-        .join(" ")
-        .toLowerCase()
-        .includes(normalizedQuery),
-    );
-    const matchesRefund = refundDisputes.some((dispute) =>
-      [dispute.orderId, dispute.customer, dispute.resto, dispute.reason]
-        .join(" ")
-        .toLowerCase()
-        .includes(normalizedQuery),
-    );
-
-    if (matchesUser) {
-      setUserSearchQuery(trimmedQuery);
-      handleChangeTab("users");
-      return;
-    }
-
-    if (matchesVerification) {
-      handleChangeTab("verification");
-      return;
-    }
-
-    if (matchesTransaction || matchesRefund) {
-      handleChangeTab("transactions");
-      return;
-    }
-
+    setAppliedSearchQuery(trimmedQuery);
+    setUserSearchQuery(trimmedQuery);
     handleChangeTab("dashboard");
+  };
+
+  const handleClearGlobalSearch = () => {
+    setGlobalSearchQuery("");
+    setAppliedSearchQuery("");
+    setUserSearchQuery("");
+  };
+
+  const handleApplyFilters = () => {
+    setDashboardFilters(draftFilters);
+  };
+
+  const handleResetFilters = () => {
+    setDraftFilters(defaultDashboardFilters);
+    setDashboardFilters(defaultDashboardFilters);
+    handleClearGlobalSearch();
+  };
+
+  const handleExportDashboard = async () => {
+    setIsExporting(true);
+
+    try {
+      const params = new URLSearchParams();
+      params.set("format", "csv");
+
+      if (appliedSearchQuery) {
+        params.set("q", appliedSearchQuery);
+      }
+
+      if (dashboardFilters.role !== "all") {
+        params.set("role", dashboardFilters.role);
+      }
+
+      if (dashboardFilters.userStatus !== "all") {
+        params.set("userStatus", dashboardFilters.userStatus);
+      }
+
+      if (dashboardFilters.applicationStatus !== "all") {
+        params.set("applicationStatus", dashboardFilters.applicationStatus);
+      }
+
+      if (dashboardFilters.orderStatus !== "all") {
+        params.set("orderStatus", dashboardFilters.orderStatus);
+      }
+
+      if (dashboardFilters.refundStatus !== "needs_review") {
+        params.set("refundStatus", dashboardFilters.refundStatus);
+      }
+
+      if (dashboardFilters.dateFrom) {
+        params.set("dateFrom", dashboardFilters.dateFrom);
+      }
+
+      if (dashboardFilters.dateTo) {
+        params.set("dateTo", dashboardFilters.dateTo);
+      }
+
+      const response = await fetch(`/api/admin/dashboard?${params.toString()}`, {
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        const data = (await response.json().catch(() => null)) as
+          | { message?: string }
+          | null;
+        throw new Error(data?.message || "Export CSV gagal dibuat.");
+      }
+
+      const blob = await response.blob();
+      const objectUrl = window.URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = `resqfood-admin-export-${Date.now()}.csv`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.URL.revokeObjectURL(objectUrl);
+    } catch (error) {
+      setDashboardNotice(
+        error instanceof Error ? error.message : "Export CSV gagal dibuat.",
+      );
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const handleCloseBanModal = () => {
@@ -465,48 +694,8 @@ function AdminDashboardPage() {
     }
   };
 
-  const handleReviewApplication = async (
-    status: "APPROVED" | "REJECTED",
-  ) => {
-    if (!selectedStore) {
-      return;
-    }
-
-    try {
-      const response = await fetch("/api/restaurant-applications", {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          applicationId: selectedStore.id,
-          status,
-          adminNote:
-            status === "APPROVED"
-              ? "Ajuan disetujui oleh admin."
-              : "Ajuan ditolak oleh admin.",
-        }),
-      });
-      const data = (await response.json()) as {
-        ok: boolean;
-        message?: string;
-      };
-
-      if (!response.ok || !data.ok) {
-        throw new Error(data.message || "Review ajuan gagal disimpan.");
-      }
-
-      setSelectedStore(null);
-      await loadDashboardData();
-    } catch (error) {
-      setDashboardNotice(
-        error instanceof Error ? error.message : "Review ajuan gagal disimpan.",
-      );
-    }
-  };
-
   useEffect(() => {
-    if (!selectedStore && !selectedUserForBan) {
+    if (!selectedStore && !selectedUserForBan && !selectedAuditLog) {
       return undefined;
     }
 
@@ -516,6 +705,7 @@ function AdminDashboardPage() {
       if (event.key === "Escape") {
         setSelectedStore(null);
         setSelectedUserForBan(null);
+        setSelectedAuditLog(null);
         setBanReason("");
       }
     };
@@ -527,7 +717,7 @@ function AdminDashboardPage() {
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [selectedStore, selectedUserForBan]);
+  }, [selectedStore, selectedUserForBan, selectedAuditLog]);
 
   return (
     <div className="min-h-screen bg-gray-50 font-[family-name:var(--font-plus-jakarta-sans)] text-gray-900 selection:bg-emerald-200">
@@ -603,22 +793,26 @@ function AdminDashboardPage() {
                   type="text"
                   value={globalSearchQuery}
                   onChange={(event) => setGlobalSearchQuery(event.target.value)}
-                  placeholder="Cari pengguna, restoran, transaksi..."
-                  className="h-12 w-full rounded-2xl border border-gray-200 bg-gray-50 pr-4 pl-12 text-sm font-semibold text-gray-900 outline-none transition-all placeholder:text-gray-400 focus:border-emerald-300 focus:bg-white focus:ring-4 focus:ring-emerald-500/10"
+                  placeholder="Cari pengguna, restoran, transaksi, voucher, audit..."
+                  className="h-12 w-full rounded-2xl border border-gray-200 bg-gray-50 pr-12 pl-12 text-sm font-semibold text-gray-900 outline-none transition-all placeholder:text-gray-400 focus:border-emerald-300 focus:bg-white focus:ring-4 focus:ring-emerald-500/10"
                 />
-              </form>
-              <Link
-                href="/admin/notifications"
-                className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-gray-200 bg-white text-gray-500 shadow-sm transition-colors hover:bg-gray-50"
-                title="Notifikasi"
-              >
-                <Bell size={20} />
-                {unreadNotificationCount > 0 ? (
-                  <span className="absolute -top-1 -right-1 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-white bg-red-500 px-1 text-[9px] font-extrabold text-white">
-                    {unreadNotificationCount > 9 ? "9+" : unreadNotificationCount}
-                  </span>
+                {globalSearchQuery ? (
+                  <button
+                    type="button"
+                    onClick={handleClearGlobalSearch}
+                    className="absolute top-1/2 right-3 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700"
+                    title="Bersihkan pencarian"
+                  >
+                    <X size={16} />
+                  </button>
                 ) : null}
-              </Link>
+              </form>
+              <NotificationBellLink
+                href="/admin/notifications"
+                unreadCount={unreadNotificationCount}
+                ariaLabel="Buka notifikasi admin"
+                className="h-12 w-12 rounded-2xl shadow-sm"
+              />
               <Link
                 href="/admin/settings"
                 className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-gray-200 bg-white text-gray-500 shadow-sm transition-colors hover:bg-gray-50"
@@ -660,6 +854,265 @@ function AdminDashboardPage() {
                   </p>
                 </div>
               ) : null}
+
+              {appliedSearchQuery ? (
+                <section className="mb-6 overflow-hidden rounded-[24px] border border-emerald-100 bg-white shadow-[0_4px_20px_rgba(0,0,0,0.03)]">
+                  <div className="flex flex-col gap-3 border-b border-gray-100 p-5 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <p className="text-xs font-extrabold tracking-wider text-emerald-600 uppercase">
+                        Global Search
+                      </p>
+                      <h2 className="mt-1 text-lg font-extrabold text-gray-950">
+                        Hasil untuk “{appliedSearchQuery}”
+                      </h2>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleClearGlobalSearch}
+                      className="inline-flex w-fit items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-extrabold text-gray-700 transition-colors hover:bg-gray-50"
+                    >
+                      <X size={16} />
+                      Bersihkan
+                    </button>
+                  </div>
+
+                  {globalSearchResults.length > 0 ? (
+                    <div className="grid gap-3 p-5 md:grid-cols-2 xl:grid-cols-3">
+                      {globalSearchResults.map((result) => (
+                        <Link
+                          key={`${result.type}-${result.id}`}
+                          href={result.href}
+                          className="group rounded-2xl border border-gray-100 bg-gray-50 p-4 transition-all hover:border-emerald-100 hover:bg-emerald-50/60"
+                        >
+                          <div className="mb-3 flex items-start justify-between gap-3">
+                            <span className="rounded-full bg-white px-3 py-1 text-[11px] font-extrabold text-gray-500 shadow-sm">
+                              {getSearchTypeLabel(result.type)}
+                            </span>
+                            <ArrowUpRight
+                              size={16}
+                              className="shrink-0 text-gray-400 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-emerald-600"
+                            />
+                          </div>
+                          <p className="truncate text-sm font-extrabold text-gray-950">
+                            {result.title}
+                          </p>
+                          <p className="mt-1 line-clamp-2 text-xs leading-5 font-semibold text-gray-500">
+                            {result.subtitle}
+                          </p>
+                          <div className="mt-3 flex flex-wrap items-center gap-2">
+                            <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-extrabold text-emerald-700">
+                              {result.status}
+                            </span>
+                            <span className="text-[11px] font-bold text-gray-400">
+                              {result.meta}
+                            </span>
+                          </div>
+                        </Link>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="p-5">
+                      <p className="rounded-2xl bg-gray-50 p-5 text-sm font-bold text-gray-500">
+                        Tidak ada hasil di user, restoran, menu, order, refund,
+                        voucher, support, atau audit log.
+                      </p>
+                    </div>
+                  )}
+                </section>
+              ) : null}
+
+              <section className="mb-6 rounded-[24px] border border-gray-100 bg-white p-5 shadow-[0_4px_20px_rgba(0,0,0,0.03)]">
+                <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <p className="text-xs font-extrabold tracking-wider text-gray-400 uppercase">
+                      Filter Advanced
+                    </p>
+                    <h2 className="mt-1 flex items-center gap-2 text-lg font-extrabold text-gray-950">
+                      <Search size={18} className="text-emerald-600" />
+                      Query dashboard admin
+                    </h2>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={handleApplyFilters}
+                      className="inline-flex items-center justify-center rounded-2xl bg-gray-950 px-4 py-2.5 text-sm font-extrabold text-white transition-colors hover:bg-emerald-600"
+                    >
+                      Terapkan Filter
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleResetFilters}
+                      disabled={!hasActiveFilters}
+                      className="inline-flex items-center justify-center rounded-2xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-extrabold text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-300"
+                    >
+                      Reset
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleExportDashboard()}
+                      disabled={isExporting}
+                      className="inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-4 py-2.5 text-sm font-extrabold text-white shadow-[0_8px_20px_rgba(16,185,129,0.18)] transition-colors hover:bg-emerald-600 disabled:cursor-wait disabled:bg-emerald-300"
+                    >
+                      <Download size={16} />
+                      {isExporting ? "Export..." : "Export CSV"}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                  <label className="block">
+                    <span className="mb-1.5 block text-xs font-extrabold tracking-wider text-gray-400 uppercase">
+                      Role user
+                    </span>
+                    <select
+                      value={draftFilters.role}
+                      onChange={(event) =>
+                        setDraftFilters((current) => ({
+                          ...current,
+                          role: event.target.value as DashboardFilters["role"],
+                        }))
+                      }
+                      className="h-12 w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 text-sm font-bold text-gray-900 outline-none transition-all focus:border-emerald-300 focus:bg-white focus:ring-4 focus:ring-emerald-500/10"
+                    >
+                      <option value="all">Semua role</option>
+                      <option value="customer">Customer</option>
+                      <option value="owner">Owner</option>
+                    </select>
+                  </label>
+
+                  <label className="block">
+                    <span className="mb-1.5 block text-xs font-extrabold tracking-wider text-gray-400 uppercase">
+                      Status user
+                    </span>
+                    <select
+                      value={draftFilters.userStatus}
+                      onChange={(event) =>
+                        setDraftFilters((current) => ({
+                          ...current,
+                          userStatus:
+                            event.target.value as DashboardFilters["userStatus"],
+                        }))
+                      }
+                      className="h-12 w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 text-sm font-bold text-gray-900 outline-none transition-all focus:border-emerald-300 focus:bg-white focus:ring-4 focus:ring-emerald-500/10"
+                    >
+                      <option value="all">Semua status</option>
+                      <option value="active">Aktif</option>
+                      <option value="banned">Banned</option>
+                    </select>
+                  </label>
+
+                  <label className="block">
+                    <span className="mb-1.5 block text-xs font-extrabold tracking-wider text-gray-400 uppercase">
+                      Ajuan mitra
+                    </span>
+                    <select
+                      value={draftFilters.applicationStatus}
+                      onChange={(event) =>
+                        setDraftFilters((current) => ({
+                          ...current,
+                          applicationStatus:
+                            event.target.value as DashboardFilters["applicationStatus"],
+                        }))
+                      }
+                      className="h-12 w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 text-sm font-bold text-gray-900 outline-none transition-all focus:border-emerald-300 focus:bg-white focus:ring-4 focus:ring-emerald-500/10"
+                    >
+                      <option value="pending">Menunggu</option>
+                      <option value="all">Semua ajuan</option>
+                      <option value="approved">Disetujui</option>
+                      <option value="rejected">Ditolak</option>
+                    </select>
+                  </label>
+
+                  <label className="block">
+                    <span className="mb-1.5 block text-xs font-extrabold tracking-wider text-gray-400 uppercase">
+                      Status order
+                    </span>
+                    <select
+                      value={draftFilters.orderStatus}
+                      onChange={(event) =>
+                        setDraftFilters((current) => ({
+                          ...current,
+                          orderStatus:
+                            event.target.value as DashboardFilters["orderStatus"],
+                        }))
+                      }
+                      className="h-12 w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 text-sm font-bold text-gray-900 outline-none transition-all focus:border-emerald-300 focus:bg-white focus:ring-4 focus:ring-emerald-500/10"
+                    >
+                      <option value="all">Semua order</option>
+                      <option value="pending">Pending</option>
+                      <option value="paid">Dibayar</option>
+                      <option value="confirmed">Dikonfirmasi</option>
+                      <option value="preparing">Disiapkan</option>
+                      <option value="ready">Pickup</option>
+                      <option value="completed">Selesai</option>
+                      <option value="cancelled">Dibatalkan</option>
+                      <option value="refunded">Refunded</option>
+                      <option value="no_show">Tidak diambil</option>
+                      <option value="payment_failed">Payment gagal</option>
+                    </select>
+                  </label>
+
+                  <label className="block">
+                    <span className="mb-1.5 block text-xs font-extrabold tracking-wider text-gray-400 uppercase">
+                      Status refund
+                    </span>
+                    <select
+                      value={draftFilters.refundStatus}
+                      onChange={(event) =>
+                        setDraftFilters((current) => ({
+                          ...current,
+                          refundStatus:
+                            event.target.value as DashboardFilters["refundStatus"],
+                        }))
+                      }
+                      className="h-12 w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 text-sm font-bold text-gray-900 outline-none transition-all focus:border-emerald-300 focus:bg-white focus:ring-4 focus:ring-emerald-500/10"
+                    >
+                      <option value="needs_review">Pending + reviewing</option>
+                      <option value="all">Semua refund</option>
+                      <option value="pending">Pending</option>
+                      <option value="reviewing">Reviewing</option>
+                      <option value="approved">Approved</option>
+                      <option value="rejected">Rejected</option>
+                      <option value="paid">Paid</option>
+                    </select>
+                  </label>
+
+                  <label className="block">
+                    <span className="mb-1.5 block text-xs font-extrabold tracking-wider text-gray-400 uppercase">
+                      Dari tanggal
+                    </span>
+                    <input
+                      type="date"
+                      value={draftFilters.dateFrom}
+                      onChange={(event) =>
+                        setDraftFilters((current) => ({
+                          ...current,
+                          dateFrom: event.target.value,
+                        }))
+                      }
+                      className="h-12 w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 text-sm font-bold text-gray-900 outline-none transition-all focus:border-emerald-300 focus:bg-white focus:ring-4 focus:ring-emerald-500/10"
+                    />
+                  </label>
+
+                  <label className="block">
+                    <span className="mb-1.5 block text-xs font-extrabold tracking-wider text-gray-400 uppercase">
+                      Sampai tanggal
+                    </span>
+                    <input
+                      type="date"
+                      value={draftFilters.dateTo}
+                      onChange={(event) =>
+                        setDraftFilters((current) => ({
+                          ...current,
+                          dateTo: event.target.value,
+                        }))
+                      }
+                      className="h-12 w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 text-sm font-bold text-gray-900 outline-none transition-all focus:border-emerald-300 focus:bg-white focus:ring-4 focus:ring-emerald-500/10"
+                    />
+                  </label>
+                </div>
+              </section>
 
               <div className="mb-8 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                 <div className="flex min-w-max gap-2 rounded-[24px] border border-gray-100 bg-white p-2 shadow-[0_4px_20px_rgba(0,0,0,0.03)]">
@@ -804,7 +1257,7 @@ function AdminDashboardPage() {
                                 <td className="px-6 py-4 text-right">
                                   <Link
                                     href={`/admin/transactions/${transaction.id}`}
-                                    className="inline-flex items-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-extrabold text-gray-700 transition-colors hover:bg-gray-50"
+                                    className="inline-flex min-h-11 items-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-extrabold text-gray-700 transition-colors hover:bg-gray-50"
                                   >
                                     Detail
                                     <ArrowUpRight size={16} />
@@ -817,6 +1270,64 @@ function AdminDashboardPage() {
                       </div>
                     </section>
                   </div>
+
+                  <section className="overflow-hidden rounded-[24px] border border-gray-100 bg-white shadow-[0_4px_20px_rgba(0,0,0,0.03)]">
+                    <div className="flex flex-col gap-3 border-b border-gray-100 p-6 md:flex-row md:items-center md:justify-between">
+                      <div>
+                        <h2 className="flex items-center gap-2 text-lg font-extrabold text-gray-950">
+                          <History size={20} className="text-emerald-600" />
+                          Audit Trail
+                        </h2>
+                        <p className="mt-1 text-sm font-medium text-gray-500">
+                          Aktivitas admin terbaru, bisa dibuka untuk detail metadata.
+                        </p>
+                      </div>
+                      <Link
+                        href="/admin/settings"
+                        className="inline-flex min-h-11 w-fit items-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-extrabold text-gray-700 transition-colors hover:bg-gray-50"
+                      >
+                        Semua log
+                        <ArrowUpRight size={16} />
+                      </Link>
+                    </div>
+
+                    {auditLogs.length > 0 ? (
+                      <div className="divide-y divide-gray-100">
+                        {auditLogs.slice(0, 8).map((log) => (
+                          <button
+                            key={log.id}
+                            type="button"
+                            onClick={() => setSelectedAuditLog(log)}
+                            className="flex w-full flex-col gap-3 px-6 py-4 text-left transition-colors hover:bg-gray-50 md:flex-row md:items-center md:justify-between"
+                          >
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-extrabold text-gray-950">
+                                {log.action}
+                              </p>
+                              <p className="mt-1 text-xs font-bold text-gray-500">
+                                {log.targetType}
+                                {log.targetId ? ` - ${log.targetId}` : ""}
+                              </p>
+                            </div>
+                            <div className="flex shrink-0 flex-wrap items-center gap-2">
+                              <span className="rounded-full bg-gray-50 px-3 py-1 text-xs font-extrabold text-gray-600">
+                                {log.admin?.name || "System"}
+                              </span>
+                              <span className="text-xs font-bold text-gray-400">
+                                {formatAuditTime(log.createdAt)}
+                              </span>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="p-6">
+                        <p className="rounded-2xl bg-gray-50 p-5 text-sm font-bold text-gray-500">
+                          Belum ada audit log pada filter saat ini.
+                        </p>
+                      </div>
+                    )}
+                  </section>
                 </div>
               ) : null}
 
@@ -891,7 +1402,7 @@ function AdminDashboardPage() {
                               <div className="flex justify-end gap-2">
                                 <Link
                                   href={`/admin/users/${user.id}`}
-                                  className="inline-flex items-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-extrabold text-gray-700 transition-colors hover:bg-gray-50"
+                                  className="inline-flex min-h-11 items-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-extrabold text-gray-700 transition-colors hover:bg-gray-50"
                                 >
                                   Detail
                                   <ArrowUpRight size={16} />
@@ -937,7 +1448,12 @@ function AdminDashboardPage() {
                       </p>
                     </div>
                     <span className="w-fit rounded-full bg-amber-50 px-4 py-2 text-sm font-extrabold text-amber-700">
-                      {verificationStores.length} Menunggu
+                      {
+                        verificationStores.filter(
+                          (store) => store.status === "pending",
+                        ).length
+                      }{" "}
+                      Menunggu
                     </span>
                   </div>
 
@@ -993,13 +1509,16 @@ function AdminDashboardPage() {
                               </p>
                             </td>
                             <td className="px-6 py-5">
-                              <StatusBadge />
+                              <ApplicationStatusBadge
+                                status={store.status}
+                                label={store.statusLabel}
+                              />
                             </td>
                             <td className="px-6 py-5 text-right">
                               <div className="flex justify-end gap-2">
                                 <Link
                                   href={`/admin/verifications/${store.id}`}
-                                  className="inline-flex items-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-extrabold text-gray-700 transition-colors hover:bg-gray-50"
+                                    className="inline-flex min-h-11 items-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-extrabold text-gray-700 transition-colors hover:bg-gray-50"
                                 >
                                   Detail
                                   <ArrowUpRight size={16} />
@@ -1052,7 +1571,7 @@ function AdminDashboardPage() {
                       <tbody className="divide-y divide-gray-100">
                         {refundDisputes.map((dispute) => (
                           <tr
-                            key={dispute.orderId}
+                            key={dispute.id}
                             className="transition-colors hover:bg-gray-50/70"
                           >
                             <td className="px-6 py-5 font-mono text-sm font-extrabold text-gray-900">
@@ -1077,14 +1596,14 @@ function AdminDashboardPage() {
                             <td className="px-6 py-5">
                               <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-extrabold text-amber-700">
                                 <Clock3 size={13} />
-                                Investigasi
+                                {dispute.status}
                               </span>
                             </td>
                             <td className="px-6 py-5">
                               <div className="flex justify-end gap-2">
                                 <button
                                   type="button"
-                                  className="flex h-10 w-10 items-center justify-center rounded-2xl border border-red-100 bg-red-50 text-red-600 transition-colors hover:bg-red-500 hover:text-white"
+                                  className="flex h-11 w-11 items-center justify-center rounded-2xl border border-red-100 bg-red-50 text-red-600 transition-colors hover:bg-red-500 hover:text-white"
                                   title="Tolak Refund"
                                 >
                                   <X size={17} />
@@ -1215,7 +1734,7 @@ function AdminDashboardPage() {
               <button
                 type="button"
                 onClick={() => setSelectedStore(null)}
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-50 text-red-500 transition-colors hover:bg-red-500 hover:text-white"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-red-50 text-red-500 transition-colors hover:bg-red-500 hover:text-white"
                 title="Tutup modal"
               >
                 <X size={19} />
@@ -1283,28 +1802,28 @@ function AdminDashboardPage() {
                   Dokumen Lampiran
                 </h3>
                 <div className="rounded-2xl border border-dashed border-gray-200 bg-white p-5 text-sm font-semibold text-gray-500">
-                  Belum ada dokumen terunggah untuk ajuan ini.
+                  {selectedStore.documentCount > 0
+                    ? `${selectedStore.documentCount} dokumen tersedia. Buka review lengkap untuk preview dan checklist.`
+                    : "Belum ada dokumen terunggah untuk ajuan ini."}
                 </div>
               </section>
             </div>
 
-            <div className="flex flex-col gap-3 border-t border-gray-100 bg-white p-6 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-col gap-3 border-t border-gray-100 bg-white p-6 sm:flex-row sm:items-center sm:justify-end">
               <button
                 type="button"
-                onClick={() => void handleReviewApplication("REJECTED")}
-                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-red-50 px-5 py-3 text-sm font-extrabold text-red-600 transition-colors hover:bg-red-500 hover:text-white"
+                onClick={() => setSelectedStore(null)}
+                className="inline-flex items-center justify-center rounded-2xl border border-gray-200 bg-white px-5 py-3 text-sm font-extrabold text-gray-600 transition-colors hover:bg-gray-50"
               >
-                <XCircle size={18} />
-                Tolak Ajuan
+                Tutup
               </button>
-              <button
-                type="button"
-                onClick={() => void handleReviewApplication("APPROVED")}
+              <Link
+                href={`/admin/verifications/${selectedStore.id}`}
                 className="inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-5 py-3 text-sm font-extrabold text-white shadow-[0_8px_20px_rgba(16,185,129,0.25)] transition-colors hover:bg-emerald-600"
               >
-                <CheckCircle2 size={18} />
-                Approve & Aktifkan
-              </button>
+                <FileBadge2 size={18} />
+                Buka Review Lengkap
+              </Link>
             </div>
           </div>
         </div>
@@ -1359,6 +1878,85 @@ function AdminDashboardPage() {
                 <UserX size={17} />
                 Konfirmasi Ban
               </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {selectedAuditLog ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/35 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-2xl overflow-hidden rounded-[24px] border border-white/70 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.22)]">
+            <div className="flex items-start justify-between gap-4 border-b border-gray-100 p-6">
+              <div>
+                <p className="text-sm font-extrabold text-emerald-600">
+                  {selectedAuditLog.id}
+                </p>
+                <h2 className="mt-1 text-xl font-extrabold tracking-tight text-gray-950">
+                  Detail Audit Log
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedAuditLog(null)}
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-red-50 text-red-500 transition-colors hover:bg-red-500 hover:text-white"
+                title="Tutup modal"
+              >
+                <X size={19} />
+              </button>
+            </div>
+
+            <div className="max-h-[70vh] overflow-y-auto p-6">
+              <dl className="grid gap-4 md:grid-cols-2">
+                <div className="rounded-2xl bg-gray-50 p-4">
+                  <dt className="text-xs font-extrabold tracking-wider text-gray-400 uppercase">
+                    Action
+                  </dt>
+                  <dd className="mt-1 text-sm font-extrabold text-gray-950">
+                    {selectedAuditLog.action}
+                  </dd>
+                </div>
+                <div className="rounded-2xl bg-gray-50 p-4">
+                  <dt className="text-xs font-extrabold tracking-wider text-gray-400 uppercase">
+                    Admin
+                  </dt>
+                  <dd className="mt-1 text-sm font-extrabold text-gray-950">
+                    {selectedAuditLog.admin?.name || "System"}
+                  </dd>
+                  <p className="mt-1 text-xs font-bold text-gray-500">
+                    {selectedAuditLog.admin?.email || "-"}
+                  </p>
+                </div>
+                <div className="rounded-2xl bg-gray-50 p-4">
+                  <dt className="text-xs font-extrabold tracking-wider text-gray-400 uppercase">
+                    Target
+                  </dt>
+                  <dd className="mt-1 text-sm font-extrabold text-gray-950">
+                    {selectedAuditLog.targetType}
+                  </dd>
+                  <p className="mt-1 break-all font-mono text-xs font-bold text-gray-500">
+                    {selectedAuditLog.targetId || "-"}
+                  </p>
+                </div>
+                <div className="rounded-2xl bg-gray-50 p-4">
+                  <dt className="text-xs font-extrabold tracking-wider text-gray-400 uppercase">
+                    Waktu
+                  </dt>
+                  <dd className="mt-1 text-sm font-extrabold text-gray-950">
+                    {formatAuditTime(selectedAuditLog.createdAt)}
+                  </dd>
+                </div>
+              </dl>
+
+              <section className="mt-5 rounded-2xl border border-gray-100 bg-gray-950 p-4">
+                <h3 className="mb-3 text-sm font-extrabold text-white">
+                  Metadata
+                </h3>
+                <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-xl bg-white/5 p-4 text-xs leading-6 font-semibold text-emerald-100">
+                  {selectedAuditLog.metadata
+                    ? JSON.stringify(selectedAuditLog.metadata, null, 2)
+                    : "Tidak ada metadata tambahan."}
+                </pre>
+              </section>
             </div>
           </div>
         </div>

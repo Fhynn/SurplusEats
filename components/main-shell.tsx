@@ -5,6 +5,7 @@ import { Bot, Home, Leaf, ShoppingBag, User } from "lucide-react";
 import { usePathname } from "next/navigation";
 
 import { useCustomerApp } from "@/components/customer-app-provider";
+import { ImpersonationBanner } from "@/components/impersonation-banner";
 import { MobileDeviceFrame } from "@/components/mobile-device-frame";
 
 const NAV_ITEMS = [
@@ -49,6 +50,7 @@ export function MainShell({
 
   return (
     <MobileDeviceFrame backgroundClassName="bg-gray-50">
+      <ImpersonationBanner />
       <div className="flex h-full min-h-0 w-full bg-gray-50 font-sans text-gray-900">
         <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col border-r border-gray-100 bg-white lg:flex">
           <Link href="/home" className="flex items-center gap-3 p-6">
@@ -69,6 +71,9 @@ export function MainShell({
                 <Link
                   key={item.href}
                   href={item.href}
+                  data-customer-cart-target={
+                    item.href === "/cart" ? "desktop" : undefined
+                  }
                   className={`flex items-center gap-3 rounded-xl px-4 py-3 font-bold transition-colors ${
                     isActive
                       ? "bg-emerald-50 text-emerald-700"
@@ -106,6 +111,9 @@ export function MainShell({
               <Link
                 key={item.href}
                 href={item.href}
+                data-customer-cart-target={
+                  item.href === "/cart" ? "mobile" : undefined
+                }
                 className={`relative flex w-16 flex-col items-center gap-1 p-2 transition-colors ${
                   isActive
                     ? "text-emerald-600"

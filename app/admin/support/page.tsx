@@ -6,16 +6,55 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   CheckCircle2,
   Clock3,
+  AlertTriangle,
   LifeBuoy,
   Mail,
   MessageSquareText,
   PackageCheck,
+  Paperclip,
   RefreshCcw,
   Search,
+  Send,
+  UserCheck,
   UserRound,
 } from "lucide-react";
 
+import { StateCard } from "@/components/ui-state";
+import { useRealtimePolling } from "@/components/use-realtime-polling";
+
 type SupportTicketStatus = "OPEN" | "IN_REVIEW" | "RESOLVED" | "CLOSED";
+type SupportPriority = "LOW" | "NORMAL" | "HIGH" | "URGENT";
+
+type SupportAdmin = {
+  id: string;
+  name: string;
+  email: string;
+};
+
+type SupportAttachment = {
+  id: string;
+  label: string | null;
+  asset: {
+    id: string;
+    url: string;
+    pathname: string;
+    contentType: string | null;
+    size: number | null;
+  };
+};
+
+type SupportThreadMessage = {
+  id: string;
+  senderRole: "CUSTOMER" | "OWNER" | "ADMIN";
+  body: string;
+  createdAt: string;
+  sender: {
+    name: string;
+    email: string;
+    role: string;
+  } | null;
+  attachments: SupportAttachment[];
+};
 
 type SupportTicket = {
   id: string;
@@ -23,10 +62,19 @@ type SupportTicket = {
   subject: string;
   message: string;
   status: SupportTicketStatus;
+  priority: SupportPriority;
   adminNote: string | null;
   orderCode: string | null;
+  assignedAdminId: string | null;
+  slaState: string;
+  firstResponseDueAt: string | null;
+  resolutionDueAt: string | null;
+  firstRespondedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  assignee: SupportAdmin | null;
+  attachments: SupportAttachment[];
+  messages: SupportThreadMessage[];
   user: {
     name: string;
     email: string;
@@ -47,6 +95,9 @@ type SupportMetrics = {
   open: number;
   inReview: number;
   resolved: number;
+  urgent: number;
+  overdue: number;
+  unassigned: number;
 };
 
 const categoryLabel: Record<string, string> = {
@@ -69,6 +120,36 @@ const statusClassName: Record<SupportTicketStatus, string> = {
   IN_REVIEW: "bg-amber-50 text-amber-700",
   OPEN: "bg-blue-50 text-blue-700",
   RESOLVED: "bg-emerald-50 text-emerald-700",
+};
+
+const priorityLabel: Record<SupportPriority, string> = {
+  HIGH: "Tinggi",
+  LOW: "Rendah",
+  NORMAL: "Normal",
+  URGENT: "Urgent",
+};
+
+const priorityClassName: Record<SupportPriority, string> = {
+  HIGH: "bg-orange-50 text-orange-700",
+  LOW: "bg-gray-100 text-gray-600",
+  NORMAL: "bg-blue-50 text-blue-700",
+  URGENT: "bg-red-50 text-red-700",
+};
+
+const slaLabel: Record<string, string> = {
+  DONE: "Selesai",
+  FIRST_RESPONSE_OVERDUE: "Respons terlambat",
+  IN_SLA: "Dalam SLA",
+  RESOLUTION_OVERDUE: "Penyelesaian terlambat",
+  WAITING_FIRST_RESPONSE: "Menunggu respons",
+};
+
+const slaClassName: Record<string, string> = {
+  DONE: "bg-emerald-50 text-emerald-700",
+  FIRST_RESPONSE_OVERDUE: "bg-red-50 text-red-700",
+  IN_SLA: "bg-blue-50 text-blue-700",
+  RESOLUTION_OVERDUE: "bg-red-50 text-red-700",
+  WAITING_FIRST_RESPONSE: "bg-amber-50 text-amber-700",
 };
 
 const formatTime = (value: string) =>
@@ -96,15 +177,28 @@ export default function AdminSupportPage() {
     open: 0,
     inReview: 0,
     resolved: 0,
+    urgent: 0,
+    overdue: 0,
+    unassigned: 0,
   });
+  const [admins, setAdmins] = useState<SupportAdmin[]>([]);
   const [selectedTicketId, setSelectedTicketId] = useState("");
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"ALL" | SupportTicketStatus>(
     "ALL",
   );
+  const [priorityFilter, setPriorityFilter] = useState<"ALL" | SupportPriority>(
+    "ALL",
+  );
   const [adminNote, setAdminNote] = useState("");
+  const [selectedPriority, setSelectedPriority] =
+    useState<SupportPriority>("NORMAL");
+  const [selectedAssigneeId, setSelectedAssigneeId] = useState("");
+  const [replyMessage, setReplyMessage] = useState("");
+  const [replyFiles, setReplyFiles] = useState<File[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isReplying, setIsReplying] = useState(false);
   const [notice, setNotice] = useState<{
     type: "success" | "error";
     message: string;
@@ -120,6 +214,7 @@ export default function AdminSupportPage() {
         message?: string;
         tickets?: SupportTicket[];
         metrics?: SupportMetrics;
+        admins?: SupportAdmin[];
       };
 
       if (!response.ok || !data.ok) {
@@ -127,17 +222,22 @@ export default function AdminSupportPage() {
       }
 
       setTickets(data.tickets ?? []);
+      setAdmins(data.admins ?? []);
       setMetrics(
         data.metrics ?? {
           total: 0,
           open: 0,
           inReview: 0,
           resolved: 0,
+          urgent: 0,
+          overdue: 0,
+          unassigned: 0,
         },
       );
       setNotice(null);
     } catch (error) {
       setTickets([]);
+      setAdmins([]);
       setNotice({
         type: "error",
         message:
@@ -151,6 +251,12 @@ export default function AdminSupportPage() {
   useEffect(() => {
     void loadTickets();
   }, [loadTickets]);
+
+  useRealtimePolling({
+    enabled: true,
+    intervalMs: 9000,
+    onPoll: loadTickets,
+  });
 
   useEffect(() => {
     if (tickets.length === 0) {
@@ -174,6 +280,8 @@ export default function AdminSupportPage() {
     return tickets.filter((ticket) => {
       const matchesStatus =
         statusFilter === "ALL" || ticket.status === statusFilter;
+      const matchesPriority =
+        priorityFilter === "ALL" || ticket.priority === priorityFilter;
       const matchesQuery =
         !normalizedQuery ||
         [
@@ -189,9 +297,9 @@ export default function AdminSupportPage() {
           .toLowerCase()
           .includes(normalizedQuery);
 
-      return matchesStatus && matchesQuery;
+      return matchesStatus && matchesPriority && matchesQuery;
     });
-  }, [query, statusFilter, tickets]);
+  }, [priorityFilter, query, statusFilter, tickets]);
 
   const selectedTicket =
     tickets.find((ticket) => ticket.id === selectedTicketId) ??
@@ -200,9 +308,48 @@ export default function AdminSupportPage() {
 
   useEffect(() => {
     setAdminNote(selectedTicket?.adminNote ?? "");
-  }, [selectedTicket?.adminNote, selectedTicket?.id]);
+    setSelectedPriority(selectedTicket?.priority ?? "NORMAL");
+    setSelectedAssigneeId(selectedTicket?.assignedAdminId ?? "");
+    setReplyMessage("");
+    setReplyFiles([]);
+  }, [
+    selectedTicket?.adminNote,
+    selectedTicket?.assignedAdminId,
+    selectedTicket?.id,
+    selectedTicket?.priority,
+  ]);
 
-  const updateTicket = async (status: SupportTicketStatus) => {
+  const uploadSupportFiles = async (files: File[], ticketId: string) => {
+    const uploadedAssetIds: string[] = [];
+
+    for (const file of files) {
+      const formData = new FormData();
+      formData.set("file", file);
+      formData.set("folder", "support");
+      formData.set("entityType", "support_ticket");
+      formData.set("entityId", ticketId);
+
+      const response = await fetch("/api/uploads", {
+        method: "POST",
+        body: formData,
+      });
+      const data = (await response.json()) as {
+        ok: boolean;
+        message?: string;
+        asset?: { id: string };
+      };
+
+      if (!response.ok || !data.ok || !data.asset) {
+        throw new Error(data.message || "Upload lampiran gagal.");
+      }
+
+      uploadedAssetIds.push(data.asset.id);
+    }
+
+    return uploadedAssetIds;
+  };
+
+  const updateTicket = async (status?: SupportTicketStatus) => {
     if (!selectedTicket || isUpdating) {
       return;
     }
@@ -216,6 +363,8 @@ export default function AdminSupportPage() {
         body: JSON.stringify({
           id: selectedTicket.id,
           status,
+          priority: selectedPriority,
+          assignedAdminId: selectedAssigneeId || null,
           adminNote: adminNote.trim() || undefined,
         }),
       });
@@ -240,6 +389,57 @@ export default function AdminSupportPage() {
       });
     } finally {
       setIsUpdating(false);
+    }
+  };
+
+  const sendReply = async () => {
+    if (!selectedTicket || replyMessage.trim().length < 2 || isReplying) {
+      return;
+    }
+
+    setIsReplying(true);
+
+    try {
+      const attachmentAssetIds = replyFiles.length
+        ? await uploadSupportFiles(replyFiles, selectedTicket.id)
+        : [];
+      const response = await fetch(
+        `/api/support/${selectedTicket.id}/messages`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            body: replyMessage.trim(),
+            attachmentAssetIds,
+          }),
+        },
+      );
+      const data = (await response.json()) as {
+        ok: boolean;
+        message?: string;
+        ticket?: SupportTicket;
+      };
+
+      if (!response.ok || !data.ok || !data.ticket) {
+        throw new Error(data.message || "Balasan gagal dikirim.");
+      }
+
+      setTickets((currentTickets) =>
+        currentTickets.map((ticket) =>
+          ticket.id === data.ticket!.id ? data.ticket! : ticket,
+        ),
+      );
+      setReplyMessage("");
+      setReplyFiles([]);
+      setNotice({ type: "success", message: "Balasan admin terkirim." });
+    } catch (error) {
+      setNotice({
+        type: "error",
+        message:
+          error instanceof Error ? error.message : "Balasan gagal dikirim.",
+      });
+    } finally {
+      setIsReplying(false);
     }
   };
 
@@ -287,12 +487,15 @@ export default function AdminSupportPage() {
         </div>
       ) : null}
 
-      <section className="grid gap-4 md:grid-cols-4">
+      <section className="grid gap-4 md:grid-cols-4 xl:grid-cols-7">
         {[
           { label: "Total Tiket", value: metrics.total, icon: LifeBuoy },
           { label: "Baru", value: metrics.open, icon: Mail },
           { label: "Ditinjau", value: metrics.inReview, icon: Clock3 },
           { label: "Selesai", value: metrics.resolved, icon: CheckCircle2 },
+          { label: "Urgent", value: metrics.urgent, icon: AlertTriangle },
+          { label: "Overdue", value: metrics.overdue, icon: Clock3 },
+          { label: "Unassigned", value: metrics.unassigned, icon: UserCheck },
         ].map(({ label, value, icon: Icon }) => (
           <article
             key={label}
@@ -309,7 +512,7 @@ export default function AdminSupportPage() {
 
       <section className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
         <div className="rounded-[28px] border border-gray-100 bg-white p-5 shadow-sm">
-          <div className="grid gap-3 md:grid-cols-[1fr_auto]">
+          <div className="grid gap-3 md:grid-cols-[1fr_auto_auto]">
             <div className="relative">
               <Search
                 size={17}
@@ -335,17 +538,36 @@ export default function AdminSupportPage() {
               <option value="RESOLVED">Selesai</option>
               <option value="CLOSED">Ditutup</option>
             </select>
+            <select
+              value={priorityFilter}
+              onChange={(event) =>
+                setPriorityFilter(event.target.value as typeof priorityFilter)
+              }
+              className="h-12 rounded-2xl border border-gray-200 bg-gray-50 px-4 text-sm font-bold text-gray-900 outline-none focus:border-emerald-400 focus:bg-white"
+            >
+              <option value="ALL">Semua Prioritas</option>
+              <option value="URGENT">Urgent</option>
+              <option value="HIGH">Tinggi</option>
+              <option value="NORMAL">Normal</option>
+              <option value="LOW">Rendah</option>
+            </select>
           </div>
 
           <div className="mt-5 space-y-3">
             {isLoading ? (
-              <div className="rounded-2xl bg-gray-50 p-6 text-center text-sm font-bold text-gray-500">
-                Memuat tiket support...
-              </div>
+              <StateCard
+                title="Memuat tiket support"
+                description="Mengambil tiket terbaru, SLA, assignee, dan lampiran."
+                variant="loading"
+                size="sm"
+              />
             ) : filteredTickets.length === 0 ? (
-              <div className="rounded-2xl bg-gray-50 p-6 text-center text-sm font-bold text-gray-500">
-                Tidak ada tiket support.
-              </div>
+              <StateCard
+                title="Tidak ada tiket support"
+                description="Coba ubah filter status, prioritas, atau kata kunci tiket."
+                variant="empty"
+                size="sm"
+              />
             ) : (
               filteredTickets.map((ticket) => {
                 const isSelected = selectedTicket?.id === ticket.id;
@@ -380,6 +602,23 @@ export default function AdminSupportPage() {
                     <p className="mt-3 line-clamp-2 text-xs leading-5 font-medium text-gray-500">
                       {ticket.message}
                     </p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <span
+                        className={`rounded-full px-2.5 py-1 text-[10px] font-extrabold ${priorityClassName[ticket.priority]}`}
+                      >
+                        {priorityLabel[ticket.priority]}
+                      </span>
+                      <span
+                        className={`rounded-full px-2.5 py-1 text-[10px] font-extrabold ${
+                          slaClassName[ticket.slaState] ?? "bg-gray-100 text-gray-600"
+                        }`}
+                      >
+                        {slaLabel[ticket.slaState] ?? ticket.slaState}
+                      </span>
+                      <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-extrabold text-gray-500">
+                        {ticket.assignee?.name ?? "Unassigned"}
+                      </span>
+                    </div>
                   </button>
                 );
               })
@@ -397,11 +636,34 @@ export default function AdminSupportPage() {
                   >
                     {statusLabel[selectedTicket.status]}
                   </span>
+                  <span
+                    className={`ml-2 inline-flex rounded-full px-3 py-1 text-xs font-extrabold ${priorityClassName[selectedTicket.priority]}`}
+                  >
+                    {priorityLabel[selectedTicket.priority]}
+                  </span>
+                  <span
+                    className={`mt-2 inline-flex rounded-full px-3 py-1 text-xs font-extrabold ${
+                      slaClassName[selectedTicket.slaState] ??
+                      "bg-gray-100 text-gray-600"
+                    }`}
+                  >
+                    {slaLabel[selectedTicket.slaState] ?? selectedTicket.slaState}
+                  </span>
                   <h2 className="mt-3 text-2xl font-extrabold tracking-tight text-gray-950">
                     {selectedTicket.subject}
                   </h2>
                   <p className="mt-2 text-xs font-bold text-gray-400">
                     {formatTime(selectedTicket.createdAt)}
+                  </p>
+                  <p className="mt-1 text-xs font-bold text-gray-400">
+                    Respons:{" "}
+                    {selectedTicket.firstResponseDueAt
+                      ? formatTime(selectedTicket.firstResponseDueAt)
+                      : "-"}{" "}
+                    | Resolusi:{" "}
+                    {selectedTicket.resolutionDueAt
+                      ? formatTime(selectedTicket.resolutionDueAt)
+                      : "-"}
                   </p>
                 </div>
                 {selectedTicket.order ? (
@@ -456,6 +718,42 @@ export default function AdminSupportPage() {
                 </p>
               </div>
 
+              <div className="mt-5 grid gap-4 md:grid-cols-2">
+                <label className="block text-sm font-extrabold text-gray-700">
+                  Admin assignee
+                  <select
+                    value={selectedAssigneeId}
+                    onChange={(event) =>
+                      setSelectedAssigneeId(event.target.value)
+                    }
+                    className="mt-2 h-12 w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 text-sm font-bold text-gray-900 outline-none focus:border-emerald-400 focus:bg-white"
+                  >
+                    <option value="">Belum ditugaskan</option>
+                    {admins.map((admin) => (
+                      <option key={admin.id} value={admin.id}>
+                        {admin.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="block text-sm font-extrabold text-gray-700">
+                  Prioritas
+                  <select
+                    value={selectedPriority}
+                    onChange={(event) =>
+                      setSelectedPriority(event.target.value as SupportPriority)
+                    }
+                    className="mt-2 h-12 w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 text-sm font-bold text-gray-900 outline-none focus:border-emerald-400 focus:bg-white"
+                  >
+                    <option value="LOW">Rendah</option>
+                    <option value="NORMAL">Normal</option>
+                    <option value="HIGH">Tinggi</option>
+                    <option value="URGENT">Urgent</option>
+                  </select>
+                </label>
+              </div>
+
               <label className="mt-5 block text-sm font-extrabold text-gray-700">
                 Catatan admin untuk customer
                 <textarea
@@ -466,7 +764,121 @@ export default function AdminSupportPage() {
                 />
               </label>
 
+              <div className="mt-5 rounded-[24px] border border-gray-100 bg-gray-50 p-4">
+                <div className="mb-4 flex items-center gap-2">
+                  <MessageSquareText size={18} className="text-emerald-600" />
+                  <h3 className="text-sm font-extrabold text-gray-950">
+                    Thread Support
+                  </h3>
+                </div>
+
+                <div className="space-y-3">
+                  {selectedTicket.messages.map((threadMessage) => {
+                    const isAdmin = threadMessage.senderRole === "ADMIN";
+
+                    return (
+                      <article
+                        key={threadMessage.id}
+                        className={`flex ${isAdmin ? "justify-end" : "justify-start"}`}
+                      >
+                        <div
+                          className={`max-w-[88%] rounded-[22px] p-4 ${
+                            isAdmin
+                              ? "rounded-br-md bg-emerald-500 text-white"
+                              : "rounded-bl-md bg-white text-gray-900"
+                          }`}
+                        >
+                          <div className="mb-2 flex items-center justify-between gap-3">
+                            <p className="text-xs font-extrabold">
+                              {isAdmin
+                                ? threadMessage.sender?.name ?? "Admin"
+                                : selectedTicket.user.name}
+                            </p>
+                            <p
+                              className={`text-[10px] font-bold ${
+                                isAdmin ? "text-emerald-50" : "text-gray-400"
+                              }`}
+                            >
+                              {formatTime(threadMessage.createdAt)}
+                            </p>
+                          </div>
+                          <p className="whitespace-pre-wrap text-sm leading-6 font-medium">
+                            {threadMessage.body}
+                          </p>
+                          {threadMessage.attachments.length > 0 ? (
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              {threadMessage.attachments.map((attachment) => (
+                                <a
+                                  key={attachment.id}
+                                  href={attachment.asset.url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-extrabold ${
+                                    isAdmin
+                                      ? "bg-white/15 text-white"
+                                      : "bg-gray-50 text-gray-600"
+                                  }`}
+                                >
+                                  <Paperclip size={12} />
+                                  Lampiran
+                                </a>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+
+                {selectedTicket.status !== "CLOSED" ? (
+                  <div className="mt-4 space-y-3">
+                    <textarea
+                      value={replyMessage}
+                      onChange={(event) => setReplyMessage(event.target.value)}
+                      placeholder="Balas customer..."
+                      className="min-h-28 w-full resize-none rounded-2xl border border-gray-200 bg-white p-4 text-sm leading-6 font-semibold text-gray-900 outline-none focus:border-emerald-400"
+                    />
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <input
+                        type="file"
+                        multiple
+                        accept="image/jpeg,image/png,image/webp,image/gif,application/pdf"
+                        onChange={(event) =>
+                          setReplyFiles(
+                            Array.from(event.target.files ?? []).slice(0, 5),
+                          )
+                        }
+                        className="text-xs font-semibold text-gray-500 file:mr-3 file:rounded-xl file:border-0 file:bg-white file:px-3 file:py-2 file:text-xs file:font-extrabold file:text-gray-700"
+                      />
+                      <button
+                        type="button"
+                        onClick={sendReply}
+                        disabled={replyMessage.trim().length < 2 || isReplying}
+                        className="inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-5 py-3 text-sm font-extrabold text-white disabled:bg-gray-300"
+                      >
+                        <Send size={17} />
+                        {isReplying ? "Mengirim..." : "Kirim Balasan"}
+                      </button>
+                    </div>
+                    {replyFiles.length > 0 ? (
+                      <p className="text-xs font-bold text-gray-500">
+                        {replyFiles.length} lampiran siap dikirim.
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+
               <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => updateTicket()}
+                  disabled={isUpdating}
+                  className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-extrabold text-emerald-700 disabled:text-gray-300"
+                >
+                  Simpan Assignment
+                </button>
                 <button
                   type="button"
                   onClick={() => updateTicket("IN_REVIEW")}

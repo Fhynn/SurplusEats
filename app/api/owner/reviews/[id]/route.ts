@@ -90,9 +90,20 @@ export async function PATCH(request: Request, { params }: OwnerReviewRouteProps)
         ownerRepliedAt: new Date(),
       },
       include: {
+        images: {
+          include: {
+            asset: true,
+          },
+        },
         order: true,
         restaurant: true,
         user: true,
+        _count: {
+          select: {
+            helpfulVotes: true,
+            reports: true,
+          },
+        },
       },
     });
 

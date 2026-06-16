@@ -14,7 +14,6 @@ import {
   Store,
   TicketPercent,
   Wallet,
-  type LucideIcon,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -51,37 +50,94 @@ const pickupOptions = [
   },
 ] as const;
 
-const paymentOptions: {
-  id: "gopay" | "qris" | "va";
-  title: string;
-  subtitle: string;
-  icon: LucideIcon;
-  iconClassName: string;
-}[] = [
-  {
-    id: "gopay",
-    title: "GoPay",
-    subtitle: "Bebas biaya admin",
-    icon: Wallet,
-    iconClassName: "bg-emerald-100/60 text-emerald-600",
-  },
-  {
-    id: "qris",
-    title: "QRIS",
-    subtitle: "OVO, DANA, ShopeePay",
-    icon: CreditCard,
-    iconClassName: "bg-blue-100/60 text-blue-600",
-  },
-  {
-    id: "va",
-    title: "Virtual Account",
-    subtitle: "BCA, Mandiri, BRI",
-    icon: Banknote,
-    iconClassName: "bg-amber-100/60 text-amber-600",
-  },
+const preferredPaymentChannelCodes = [
+  "QRIS",
+  "QRIS2",
+  "QRISC",
+  "DANA",
+  "OVO",
+  "SHOPEEPAY",
+  "BRIVA",
+  "MANDIRIVA",
+  "BNIVA",
+  "BCAVA",
 ];
 
-const serviceFee = 2000;
+type CheckoutPaymentChannel = {
+  group: string;
+  code: string;
+  name: string;
+  type: string;
+  minimumAmount: number;
+  maximumAmount: number;
+  feeMerchant: {
+    flat: number;
+    percent: number;
+  };
+  feeCustomer: {
+    flat: number;
+    percent: number;
+  };
+  totalFee: {
+    flat: number;
+    percent: number;
+  };
+};
+
+type CheckoutFeePreview = {
+  serviceFee: number;
+  taxFee: number;
+  customerFeeTotal: number;
+};
+
+const fallbackFeePreview: CheckoutFeePreview = {
+  serviceFee: 2000,
+  taxFee: 0,
+  customerFeeTotal: 2000,
+};
+
+function sortPaymentChannels(channels: CheckoutPaymentChannel[]) {
+  return [...channels].sort((first, second) => {
+    const firstPriority = preferredPaymentChannelCodes.indexOf(first.code);
+    const secondPriority = preferredPaymentChannelCodes.indexOf(second.code);
+
+    return (
+      (firstPriority === -1 ? Number.MAX_SAFE_INTEGER : firstPriority) -
+        (secondPriority === -1 ? Number.MAX_SAFE_INTEGER : secondPriority) ||
+      first.name.localeCompare(second.name)
+    );
+  });
+}
+
+function getPaymentChannelPresentation(channel: CheckoutPaymentChannel) {
+  const normalizedGroup = channel.group.toLowerCase();
+  const normalizedName = channel.name.toLowerCase();
+
+  if (
+    normalizedName.includes("qris") ||
+    normalizedGroup.includes("qr")
+  ) {
+    return {
+      Icon: CreditCard,
+      iconClassName: "bg-blue-100/60 text-blue-600",
+    };
+  }
+
+  if (
+    normalizedGroup.includes("e-wallet") ||
+    normalizedGroup.includes("wallet")
+  ) {
+    return {
+      Icon: Wallet,
+      iconClassName: "bg-emerald-100/60 text-emerald-600",
+    };
+  }
+
+  return {
+    Icon: Banknote,
+    iconClassName: "bg-amber-100/60 text-amber-600",
+  };
+}
 
 function createCheckoutIdempotencyKey() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -97,6 +153,9 @@ type CheckoutVoucher = {
   minSpendAmount: number;
   status: "available" | "used" | "expired";
   title: string;
+  restaurantId?: string | null;
+  restaurantName?: string | null;
+  category?: string | null;
 };
 
 type CheckoutPickupStore = {
@@ -155,6 +214,40 @@ function getCheckoutPickupStores(cart: CartItem[]) {
   return Array.from(stores.values());
 }
 
+function normalizeVoucherCategory(value: string | null | undefined) {
+  return (value || "").trim().toLowerCase();
+}
+
+function getVoucherScopeText(voucher: CheckoutVoucher) {
+  const labels: string[] = [];
+
+  if (voucher.restaurantName) {
+    labels.push(`toko ${voucher.restaurantName}`);
+  }
+
+  if (voucher.category) {
+    labels.push(`kategori ${voucher.category}`);
+  }
+
+  return labels.length > 0 ? labels.join(" dan ") : "semua menu";
+}
+
+function getVoucherEligibleSubtotal(voucher: CheckoutVoucher, cart: CartItem[]) {
+  const category = normalizeVoucherCategory(voucher.category);
+
+  return cart.reduce((total, item) => {
+    if (voucher.restaurantId && item.restaurantId !== voucher.restaurantId) {
+      return total;
+    }
+
+    if (category && normalizeVoucherCategory(item.category) !== category) {
+      return total;
+    }
+
+    return total + item.price * item.qty;
+  }, 0);
+}
+
 export function CustomerCheckoutScreen() {
   const router = useRouter();
   const {
@@ -163,15 +256,21 @@ export function CustomerCheckoutScreen() {
     cartTotal,
     originalTotal,
     totalSaved,
-    clearCart,
     customerLocation,
     isCustomerLocationLoading,
     setCustomerLocation,
   } = useCustomerApp();
   const [pickupTime, setPickupTime] =
     useState<(typeof pickupOptions)[number]["id"]>("early");
-  const [paymentMethod, setPaymentMethod] =
-    useState<(typeof paymentOptions)[number]["id"]>("gopay");
+  const [paymentMethod, setPaymentMethod] = useState("");
+  const [paymentChannels, setPaymentChannels] = useState<
+    CheckoutPaymentChannel[]
+  >([]);
+  const [isPaymentChannelsLoading, setIsPaymentChannelsLoading] =
+    useState(true);
+  const [paymentChannelsError, setPaymentChannelsError] = useState<
+    string | null
+  >(null);
   const [notes, setNotes] = useState("");
   const [agreePickup, setAgreePickup] = useState(true);
   const [isSubmittingOrder, setIsSubmittingOrder] = useState(false);
@@ -182,12 +281,39 @@ export function CustomerCheckoutScreen() {
   );
   const [voucherNotice, setVoucherNotice] = useState<string | null>(null);
   const [isLoadingVoucher, setIsLoadingVoucher] = useState(false);
+  const [feePreview, setFeePreview] =
+    useState<CheckoutFeePreview>(fallbackFeePreview);
   const checkoutIdempotencyKeyRef = useRef(createCheckoutIdempotencyKey());
 
-  const voucherDiscount = activeVoucher
-    ? Math.min(activeVoucher.discount, cartTotal)
+  const voucherEligibleSubtotal = activeVoucher
+    ? getVoucherEligibleSubtotal(activeVoucher, cart)
     : 0;
-  const grandTotal = Math.max(0, cartTotal - voucherDiscount) + serviceFee;
+  const voucherDiscount = activeVoucher
+    ? Math.min(activeVoucher.discount, voucherEligibleSubtotal)
+    : 0;
+  const checkoutNetSubtotal = Math.max(0, cartTotal - voucherDiscount);
+  const grandTotal = checkoutNetSubtotal + feePreview.customerFeeTotal;
+  const compatiblePaymentChannels = useMemo(
+    () =>
+      sortPaymentChannels(
+        paymentChannels.filter(
+          (channel) =>
+            grandTotal >= channel.minimumAmount &&
+            grandTotal <= channel.maximumAmount,
+        ),
+      ),
+    [grandTotal, paymentChannels],
+  );
+  const selectedPaymentChannel =
+    compatiblePaymentChannels.find((channel) => channel.code === paymentMethod) ??
+    null;
+  const selectedPaymentCustomerFee = selectedPaymentChannel
+    ? selectedPaymentChannel.feeCustomer.flat +
+      Math.ceil(
+        (grandTotal * selectedPaymentChannel.feeCustomer.percent) / 100,
+      )
+    : 0;
+  const totalPaymentAmount = grandTotal + selectedPaymentCustomerFee;
   const selectedPickup = pickupOptions.find((item) => item.id === pickupTime);
   const hasCustomerCoordinates = Boolean(customerLocation.coordinates);
   const pickupStores = useMemo(() => getCheckoutPickupStores(cart), [cart]);
@@ -203,17 +329,126 @@ export function CustomerCheckoutScreen() {
     agreePickup &&
     !isSubmittingOrder &&
     !isCustomerLocationLoading &&
+    !isPaymentChannelsLoading &&
+    Boolean(selectedPaymentChannel) &&
     !locationIssue;
   const paymentBlockNotice =
     checkoutNotice ||
     locationIssue ||
+    paymentChannelsError ||
+    (isPaymentChannelsLoading
+      ? "Memuat metode pembayaran Tripay..."
+      : compatiblePaymentChannels.length === 0
+        ? "Tidak ada metode Tripay yang mendukung nominal pembayaran ini."
+        : !selectedPaymentChannel
+          ? "Pilih metode pembayaran sebelum melanjutkan."
+          : null) ||
     (!agreePickup
       ? "Centang ketentuan pickup dulu sebelum melanjutkan pembayaran."
       : null);
 
+  useEffect(() => {
+    let ignore = false;
+
+    async function loadFeePreview() {
+      try {
+        const response = await fetch(
+          `/api/checkout/fees?amount=${checkoutNetSubtotal}`,
+          { cache: "no-store" },
+        );
+        const data = (await response.json()) as {
+          ok: boolean;
+          fees?: CheckoutFeePreview;
+        };
+
+        if (!ignore && response.ok && data.ok && data.fees) {
+          setFeePreview(data.fees);
+        }
+      } catch {
+        if (!ignore) {
+          setFeePreview(fallbackFeePreview);
+        }
+      }
+    }
+
+    void loadFeePreview();
+
+    return () => {
+      ignore = true;
+    };
+  }, [checkoutNetSubtotal]);
+
   const handleLocationChange = (nextLocation: CustomerLocation) => {
     setCustomerLocation(nextLocation);
   };
+
+  useEffect(() => {
+    let ignore = false;
+
+    async function loadPaymentChannels() {
+      setIsPaymentChannelsLoading(true);
+      setPaymentChannelsError(null);
+
+      try {
+        const response = await fetch("/api/payments/tripay/channels", {
+          cache: "no-store",
+        });
+        const data = (await response.json()) as {
+          ok: boolean;
+          message?: string;
+          channels?: CheckoutPaymentChannel[];
+        };
+
+        if (!response.ok || !data.ok) {
+          throw new Error(
+            data.message || "Metode pembayaran Tripay gagal dimuat.",
+          );
+        }
+
+        if (!ignore) {
+          const channels = sortPaymentChannels(data.channels ?? []);
+
+          setPaymentChannels(channels);
+          setPaymentMethod((currentMethod) =>
+            channels.some((channel) => channel.code === currentMethod)
+              ? currentMethod
+              : channels[0]?.code || "",
+          );
+        }
+      } catch (error) {
+        if (!ignore) {
+          setPaymentChannels([]);
+          setPaymentMethod("");
+          setPaymentChannelsError(
+            error instanceof Error
+              ? error.message
+              : "Metode pembayaran Tripay gagal dimuat.",
+          );
+        }
+      } finally {
+        if (!ignore) {
+          setIsPaymentChannelsLoading(false);
+        }
+      }
+    }
+
+    void loadPaymentChannels();
+
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (
+      compatiblePaymentChannels.length > 0 &&
+      !compatiblePaymentChannels.some(
+        (channel) => channel.code === paymentMethod,
+      )
+    ) {
+      setPaymentMethod(compatiblePaymentChannels[0].code);
+    }
+  }, [compatiblePaymentChannels, paymentMethod]);
 
   useEffect(() => {
     if (cart.length === 0) {
@@ -266,11 +501,24 @@ export function CustomerCheckoutScreen() {
           return;
         }
 
-        if (cartTotal < voucher.minSpendAmount) {
+        const eligibleSubtotal = getVoucherEligibleSubtotal(voucher, cart);
+
+        if (eligibleSubtotal <= 0) {
           if (!ignore) {
             setActiveVoucher(null);
             setVoucherNotice(
-              `Minimum transaksi voucher ${formatRp(voucher.minSpendAmount)}.`,
+              `Voucher hanya berlaku untuk ${getVoucherScopeText(voucher)}.`,
+            );
+          }
+
+          return;
+        }
+
+        if (eligibleSubtotal < voucher.minSpendAmount) {
+          if (!ignore) {
+            setActiveVoucher(null);
+            setVoucherNotice(
+              `Minimum transaksi voucher ${formatRp(voucher.minSpendAmount)} untuk ${getVoucherScopeText(voucher)}.`,
             );
           }
 
@@ -300,7 +548,7 @@ export function CustomerCheckoutScreen() {
     return () => {
       ignore = true;
     };
-  }, [cart.length, cartTotal]);
+  }, [cart, cart.length]);
 
   const handlePaymentSuccess = async () => {
     if (cart.length === 0 || isSubmittingOrder) {
@@ -312,6 +560,19 @@ export function CustomerCheckoutScreen() {
       void showSweetWarning({
         title: "Lokasi belum siap",
         text: locationIssue,
+      });
+      return;
+    }
+
+    if (!selectedPaymentChannel) {
+      const message =
+        paymentChannelsError ||
+        "Pilih metode pembayaran Tripay sebelum melanjutkan.";
+
+      setCheckoutNotice(message);
+      void showSweetWarning({
+        title: "Metode pembayaran belum siap",
+        text: message,
       });
       return;
     }
@@ -333,6 +594,7 @@ export function CustomerCheckoutScreen() {
             quantity: item.qty,
           })),
           note: notes.trim() || undefined,
+          paymentMethod: selectedPaymentChannel.code,
           voucherCode: activeVoucher?.code,
         }),
       });
@@ -345,31 +607,49 @@ export function CustomerCheckoutScreen() {
         orders?: Array<{
           orderCode: string;
         }>;
+        payment?: {
+          attemptId: string;
+          reference: string | null;
+          status: string | null;
+          checkoutUrl: string | null;
+          expiresAt: string | null;
+        };
       };
 
       const orderCodes =
         data.orders?.map((order) => order.orderCode).filter(Boolean) ??
         (data.order ? [data.order.orderCode] : []);
 
-      if (!response.ok || !data.ok || orderCodes.length === 0) {
+      if (
+        !response.ok ||
+        !data.ok ||
+        orderCodes.length === 0 ||
+        !data.payment
+      ) {
         throw new Error(data.message || "Checkout gagal.");
       }
 
-      await clearCart();
+      if (data.payment.status === "PAID" && !data.payment.checkoutUrl) {
+        router.push(
+          `/payment-success?orders=${encodeURIComponent(orderCodes.join(","))}`,
+        );
+        return;
+      }
+
+      if (!data.payment.checkoutUrl) {
+        throw new Error("URL pembayaran Tripay tidak tersedia.");
+      }
+
       await showSweetSuccess({
-        title: "Order berhasil dibuat",
-        text:
-          orderCodes.length > 1
-            ? `${orderCodes.length} order tersimpan. Kamu bisa lanjut melihat struk dan rute pickup.`
-            : "Order tersimpan. Kamu bisa lanjut melihat struk dan rute pickup.",
-        confirmButtonText: "Lihat struk",
+        title: "Lanjut ke pembayaran",
+        text: `${orderCodes.length} order menunggu pembayaran melalui ${selectedPaymentChannel.name}.`,
+        confirmButtonText: "Buka Tripay",
       });
-      router.push(
-        `/payment-success?orders=${encodeURIComponent(orderCodes.join(","))}`,
-      );
+      window.location.assign(data.payment.checkoutUrl);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Checkout gagal.";
 
+      checkoutIdempotencyKeyRef.current = createCheckoutIdempotencyKey();
       setCheckoutNotice(message);
       void showSweetError({
         title: "Checkout gagal",
@@ -387,7 +667,7 @@ export function CustomerCheckoutScreen() {
           <button
             type="button"
             onClick={() => router.push("/cart")}
-            className="-ml-2 rounded-full p-2 transition-colors hover:bg-gray-100"
+            className="-ml-2 flex h-11 w-11 items-center justify-center rounded-full transition-colors hover:bg-gray-100"
             aria-label="Kembali ke keranjang"
           >
             <ChevronLeft size={24} className="text-gray-800" />
@@ -713,6 +993,9 @@ export function CustomerCheckoutScreen() {
                       <span>{activeVoucher.code}</span>
                       <span>- {formatRp(voucherDiscount)}</span>
                     </div>
+                    <p className="mt-2 text-[11px] font-bold text-emerald-700">
+                      Berlaku untuk {getVoucherScopeText(activeVoucher)}.
+                    </p>
                   </div>
                 ) : (
                   <div className="space-y-3">
@@ -743,15 +1026,32 @@ export function CustomerCheckoutScreen() {
                   </h2>
                 </div>
                 <div className="space-y-3">
-                  {paymentOptions.map((option) => {
-                    const isActive = paymentMethod === option.id;
-                    const Icon = option.icon;
+                  {isPaymentChannelsLoading ? (
+                    <div className="rounded-[22px] border border-gray-100 bg-gray-50 p-4">
+                      <div className="h-4 w-40 animate-pulse rounded bg-gray-200" />
+                      <div className="mt-2 h-3 w-28 animate-pulse rounded bg-gray-200" />
+                    </div>
+                  ) : null}
+                  {!isPaymentChannelsLoading && paymentChannelsError ? (
+                    <div className="rounded-[22px] border border-red-100 bg-red-50 p-4 text-xs leading-5 font-bold text-red-700">
+                      {paymentChannelsError}
+                    </div>
+                  ) : null}
+                  {compatiblePaymentChannels.map((channel) => {
+                    const isActive = paymentMethod === channel.code;
+                    const { Icon, iconClassName } =
+                      getPaymentChannelPresentation(channel);
+                    const customerFee =
+                      channel.feeCustomer.flat +
+                      Math.ceil(
+                        (grandTotal * channel.feeCustomer.percent) / 100,
+                      );
 
                     return (
                       <button
-                        key={option.id}
+                        key={channel.code}
                         type="button"
-                        onClick={() => setPaymentMethod(option.id)}
+                        onClick={() => setPaymentMethod(channel.code)}
                         className={`flex w-full items-center justify-between rounded-[22px] border bg-white p-4 text-left transition-all ${
                           isActive
                             ? "border-emerald-200 ring-4 ring-emerald-500/10"
@@ -759,15 +1059,18 @@ export function CustomerCheckoutScreen() {
                         }`}
                       >
                         <span className="flex min-w-0 items-center gap-3">
-                          <span className={`rounded-xl p-2.5 ${option.iconClassName}`}>
+                          <span className={`rounded-xl p-2.5 ${iconClassName}`}>
                             <Icon size={20} />
                           </span>
                           <span className="min-w-0">
                             <span className="block text-sm font-extrabold text-gray-900">
-                              {option.title}
+                              {channel.name}
                             </span>
                             <span className="text-[11px] font-medium text-gray-400">
-                              {option.subtitle}
+                              {channel.group}
+                              {customerFee > 0
+                                ? ` - biaya ${formatRp(customerFee)}`
+                                : " - tanpa biaya customer"}
                             </span>
                           </span>
                         </span>
@@ -808,12 +1111,24 @@ export function CustomerCheckoutScreen() {
                   ) : null}
                   <div className="flex justify-between px-1 text-gray-600">
                     <span>Biaya Layanan</span>
-                    <span>{formatRp(serviceFee)}</span>
+                    <span>{formatRp(feePreview.serviceFee)}</span>
                   </div>
+                  {feePreview.taxFee > 0 ? (
+                    <div className="flex justify-between px-1 text-gray-600">
+                      <span>Pajak Platform</span>
+                      <span>{formatRp(feePreview.taxFee)}</span>
+                    </div>
+                  ) : null}
+                  {selectedPaymentChannel ? (
+                    <div className="flex justify-between px-1 text-gray-600">
+                      <span>Biaya {selectedPaymentChannel.name}</span>
+                      <span>{formatRp(selectedPaymentCustomerFee)}</span>
+                    </div>
+                  ) : null}
                   <div className="my-2 h-px w-full bg-gray-100" />
                   <div className="flex justify-between px-1 text-lg font-extrabold text-gray-900">
                     <span>Total</span>
-                    <span>{formatRp(grandTotal)}</span>
+                    <span>{formatRp(totalPaymentAmount)}</span>
                   </div>
                 </div>
                 {paymentBlockNotice ? (
@@ -827,7 +1142,9 @@ export function CustomerCheckoutScreen() {
                   onClick={handlePaymentSuccess}
                   className="mt-5 hidden w-full rounded-2xl bg-gray-900 py-4 text-sm font-extrabold text-white shadow-[0_12px_26px_rgba(15,23,42,0.14)] transition-all duration-300 hover:bg-emerald-500 active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-gray-300 disabled:shadow-none lg:block"
                 >
-                  {isSubmittingOrder ? "Memproses..." : "Bayar Sekarang"}
+                  {isSubmittingOrder
+                    ? "Membuat transaksi..."
+                    : "Lanjut ke Tripay"}
                 </button>
               </section>
 
@@ -860,7 +1177,7 @@ export function CustomerCheckoutScreen() {
                   Total Pembayaran
                 </p>
                 <p className="mt-1 text-xl font-extrabold tracking-tight text-gray-900">
-                  {formatRp(grandTotal)}
+                  {formatRp(totalPaymentAmount)}
                 </p>
               </div>
               <div className="text-right">
@@ -878,7 +1195,9 @@ export function CustomerCheckoutScreen() {
               onClick={handlePaymentSuccess}
               className="w-full rounded-2xl bg-gray-900 py-4 text-sm font-extrabold text-white shadow-[0_12px_26px_rgba(15,23,42,0.14)] transition-all duration-300 hover:bg-emerald-500 active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-gray-300 disabled:shadow-none"
             >
-              {isSubmittingOrder ? "Memproses..." : "Bayar Sekarang"}
+              {isSubmittingOrder
+                ? "Membuat transaksi..."
+                : "Lanjut ke Tripay"}
             </button>
           </div>
         ) : null}

@@ -3,6 +3,7 @@
 import Image from "next/image";
 import {
   Bot,
+  Check,
   ChevronRight,
   Loader2,
   Plus,
@@ -11,8 +12,19 @@ import {
   Sparkles,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type FormEvent,
+  type MouseEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
+import {
+  CartFlyItem,
+  useCartInteractionFeedback,
+} from "@/components/cart-interaction-feedback";
 import { useCustomerApp } from "@/components/customer-app-provider";
 import { formatRp, type Food } from "@/lib/customer-data";
 import { normalizeFoodCategory } from "@/lib/food-mapper";
@@ -48,6 +60,15 @@ type AiMessage = {
   recommendations?: AiRecommendation[];
   checkoutReady?: boolean;
   quickReplies?: string[];
+  degraded?: boolean;
+  fallbackReason?: string;
+  checkout?: {
+    ready: boolean;
+    blockers: string[];
+    itemCount: number;
+    totalText: string;
+    restaurants: string[];
+  };
 };
 
 type AiChatResponse = {
@@ -57,6 +78,9 @@ type AiChatResponse = {
   checkoutReady?: boolean;
   quickReplies?: string[];
   recommendations?: AiRecommendation[];
+  degraded?: boolean;
+  fallbackReason?: string;
+  checkout?: AiMessage["checkout"];
 };
 
 const starterPrompts = [
@@ -109,6 +133,15 @@ export function CustomerAiAssistantScreen() {
   ]);
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);
+  const [addingRecommendationId, setAddingRecommendationId] =
+    useState<string | null>(null);
+  const {
+    addedFoodId,
+    cartToast,
+    flyingCartItem,
+    showAddedToCart,
+    showCartError,
+  } = useCartInteractionFeedback();
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollContainerRef = useRef<HTMLElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -200,6 +233,9 @@ export function CustomerAiAssistantScreen() {
           checkoutReady: data.checkoutReady,
           quickReplies: data.quickReplies || [],
           recommendations: data.recommendations || [],
+          degraded: data.degraded,
+          fallbackReason: data.fallbackReason,
+          checkout: data.checkout,
         },
       ]);
     } catch (error) {
@@ -226,8 +262,27 @@ export function CustomerAiAssistantScreen() {
     void sendMessage(input);
   };
 
-  const handleAddRecommendation = (item: AiRecommendation) => {
-    addToCart(recommendationToFood(item, customerLocation.coordinates));
+  const handleAddRecommendation = async (
+    item: AiRecommendation,
+    event: MouseEvent<HTMLButtonElement>,
+  ) => {
+    if (addingRecommendationId === item.id) {
+      return;
+    }
+
+    const food = recommendationToFood(item, customerLocation.coordinates);
+    const sourceElement = event.currentTarget;
+
+    setAddingRecommendationId(item.id);
+    const added = await addToCart(food);
+    setAddingRecommendationId(null);
+
+    if (!added) {
+      showCartError();
+      return;
+    }
+
+    showAddedToCart(food, sourceElement);
   };
 
   return (
@@ -260,7 +315,7 @@ export function CustomerAiAssistantScreen() {
             <button
               type="button"
               onClick={() => router.push(cartCount > 0 ? "/checkout" : "/cart")}
-              className="motion-press flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500 text-white"
+              className="motion-press flex h-11 w-11 items-center justify-center rounded-full bg-emerald-500 text-white"
               aria-label={cartCount > 0 ? "Buka checkout" : "Buka keranjang"}
             >
               <ShoppingBag size={18} />
@@ -318,9 +373,34 @@ export function CustomerAiAssistantScreen() {
                       {message.content}
                     </p>
 
+                    {!isUser && message.degraded ? (
+                      <div className="mt-3 inline-flex rounded-full bg-amber-50 px-3 py-1 text-[10px] font-extrabold text-amber-700">
+                        Mode fallback lokal
+                      </div>
+                    ) : null}
+
+                    {!isUser &&
+                    message.checkout &&
+                    !message.checkout.ready &&
+                    message.checkout.blockers.length > 0 ? (
+                      <div className="mt-3 rounded-2xl border border-amber-100 bg-amber-50 p-3">
+                        <p className="text-[11px] font-extrabold tracking-wide text-amber-800 uppercase">
+                          Checkout belum siap
+                        </p>
+                        <ul className="mt-2 space-y-1 text-xs font-bold text-amber-700">
+                          {message.checkout.blockers.map((blocker) => (
+                            <li key={blocker}>{blocker}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+
                     {message.recommendations?.length ? (
                       <div className="mt-4 grid gap-3 md:grid-cols-2">
                         {message.recommendations.map((item) => {
+                          const isAddingThisItem =
+                            addingRecommendationId === item.id;
+                          const isAddedThisItem = addedFoodId === item.id;
                           const discount = Math.max(
                             0,
                             Math.round(
@@ -372,11 +452,24 @@ export function CustomerAiAssistantScreen() {
                                     </div>
                                     <button
                                       type="button"
-                                      onClick={() => handleAddRecommendation(item)}
-                                      className="motion-press flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500 text-white"
+                                      onClick={(event) =>
+                                        void handleAddRecommendation(item, event)
+                                      }
+                                      disabled={isAddingThisItem}
+                                      className={`motion-press flex h-9 w-9 items-center justify-center rounded-xl text-white disabled:cursor-wait ${
+                                        isAddedThisItem
+                                          ? "bg-emerald-600 shadow-[0_10px_22px_rgba(16,185,129,0.24)]"
+                                          : "bg-emerald-500 hover:bg-emerald-600 disabled:bg-gray-300"
+                                      }`}
                                       aria-label={`Tambah ${item.name}`}
                                     >
-                                      <Plus size={16} />
+                                      {isAddingThisItem ? (
+                                        <Loader2 size={16} className="animate-spin" />
+                                      ) : isAddedThisItem ? (
+                                        <Check size={16} strokeWidth={3} />
+                                      ) : (
+                                        <Plus size={16} />
+                                      )}
                                     </button>
                                   </div>
                                 </div>
@@ -414,7 +507,7 @@ export function CustomerAiAssistantScreen() {
                             type="button"
                             onClick={() => void sendMessage(reply)}
                             disabled={isSending}
-                            className="max-w-full rounded-full border border-emerald-100 bg-emerald-50 px-3 py-2 text-left text-[13px] leading-5 font-extrabold break-words text-emerald-700 disabled:opacity-60 md:text-xs"
+                            className="min-h-11 max-w-full rounded-full border border-emerald-100 bg-emerald-50 px-3 py-2 text-left text-[13px] leading-5 font-extrabold break-words text-emerald-700 disabled:opacity-60 md:text-xs"
                           >
                             {reply}
                           </button>
@@ -462,6 +555,22 @@ export function CustomerAiAssistantScreen() {
           </button>
         </div>
       </form>
+      {cartToast ? (
+        <div className="cart-add-toast fixed right-4 bottom-40 z-[80] flex max-w-[calc(100vw-2rem)] items-center gap-3 rounded-2xl border border-emerald-100 bg-white px-4 py-3 text-xs font-extrabold text-gray-800 shadow-[0_18px_44px_rgba(15,23,42,0.14)] md:bottom-24 lg:right-8 lg:bottom-8">
+          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
+            <Check size={17} strokeWidth={3} />
+          </span>
+          <span className="line-clamp-2">{cartToast}</span>
+          <button
+            type="button"
+            onClick={() => router.push("/cart")}
+            className="ml-1 rounded-full bg-emerald-600 px-3 py-1.5 text-[11px] font-extrabold text-white transition-colors hover:bg-emerald-700"
+          >
+            Lihat
+          </button>
+        </div>
+      ) : null}
+      <CartFlyItem item={flyingCartItem} />
     </div>
   );
 }

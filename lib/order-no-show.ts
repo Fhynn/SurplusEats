@@ -5,6 +5,10 @@ import {
   WalletTransactionType,
 } from "@prisma/client";
 
+import {
+  deliverNotifications,
+  type NotificationDeliveryPayload,
+} from "@/lib/notification-delivery";
 import { prisma } from "@/lib/prisma";
 
 const defaultNoShowGraceMinutes = 15;
@@ -63,6 +67,7 @@ export async function expireNoShowOrders(now = new Date()) {
   }
 
   const expiredOrders: ExpireNoShowOrdersResult["expiredOrders"] = [];
+  const notificationPayloads: NotificationDeliveryPayload[] = [];
 
   await prisma.$transaction(async (tx) => {
     for (const order of readyExpiredOrders) {
@@ -93,28 +98,32 @@ export async function expireNoShowOrders(now = new Date()) {
         },
         data: {
           status: WalletTransactionStatus.COMPLETED,
+          processedAt: now,
           description: `Order ${order.orderCode} no-show pickup`,
         },
       });
 
+      const orderNotifications = [
+        {
+          userId: order.customerId,
+          type: NotificationType.ORDER,
+          title: "Pesanan tidak diambil",
+          body: `${order.orderCode} melewati batas pickup dan ditandai no-show.`,
+          href: `/orders/${order.orderCode}`,
+        },
+        {
+          userId: order.restaurant.ownerId,
+          type: NotificationType.ORDER,
+          title: "Order no-show",
+          body: `${order.customer.name} tidak mengambil ${order.orderCode} sampai batas pickup.`,
+          href: `/owner/orders/${order.orderCode}`,
+        },
+      ];
+
       await tx.notification.createMany({
-        data: [
-          {
-            userId: order.customerId,
-            type: NotificationType.ORDER,
-            title: "Pesanan tidak diambil",
-            body: `${order.orderCode} melewati batas pickup dan ditandai no-show.`,
-            href: `/orders/${order.orderCode}`,
-          },
-          {
-            userId: order.restaurant.ownerId,
-            type: NotificationType.ORDER,
-            title: "Order no-show",
-            body: `${order.customer.name} tidak mengambil ${order.orderCode} sampai batas pickup.`,
-            href: `/owner/orders/${order.orderCode}`,
-          },
-        ],
+        data: orderNotifications,
       });
+      notificationPayloads.push(...orderNotifications);
 
       expiredOrders.push({
         orderCode: order.orderCode,
@@ -123,6 +132,8 @@ export async function expireNoShowOrders(now = new Date()) {
       });
     }
   });
+
+  await deliverNotifications(notificationPayloads);
 
   return {
     expiredCount: expiredOrders.length,

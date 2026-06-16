@@ -11,6 +11,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { getCurrentSession } from "@/lib/auth-session";
+import { notifyFavoriteMenuItemsAvailableByIds } from "@/lib/favorite-menu-notifications";
+import { deliverNotifications } from "@/lib/notification-delivery";
 import { prisma, type PrismaTransactionClient } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -26,7 +28,6 @@ const cancelOrderSchema = z.object({
 });
 
 const cancellableStatuses = new Set<OrderStatus>([
-  OrderStatus.PENDING,
   OrderStatus.PAID,
   OrderStatus.CONFIRMED,
   OrderStatus.PREPARING,
@@ -36,6 +37,8 @@ async function restoreOrderStock(
   tx: PrismaTransactionClient,
   items: Array<{ menuItemId: string | null; quantity: number }>,
 ) {
+  const restoredAvailableMenuItemIds: string[] = [];
+
   for (const item of items) {
     if (!item.menuItemId) {
       continue;
@@ -53,6 +56,10 @@ async function restoreOrderStock(
       continue;
     }
 
+    if (menuItem.status === MenuItemStatus.SOLD_OUT) {
+      restoredAvailableMenuItemIds.push(item.menuItemId);
+    }
+
     await tx.menuItem.update({
       where: { id: item.menuItemId },
       data: {
@@ -65,6 +72,8 @@ async function restoreOrderStock(
       },
     });
   }
+
+  return restoredAvailableMenuItemIds;
 }
 
 export async function POST(request: Request, { params }: CancelOrderRouteProps) {
@@ -92,6 +101,11 @@ export async function POST(request: Request, { params }: CancelOrderRouteProps) 
   }
 
   try {
+    const cancellationDetail = parsed.data.note
+      ? `${parsed.data.reason}. Catatan: ${parsed.data.note}`
+      : parsed.data.reason;
+
+    let restoredAvailableMenuItemIds: string[] = [];
     const updatedOrder = await prisma.$transaction(
       async (tx: PrismaTransactionClient) => {
         const order = await tx.order.findFirst({
@@ -116,13 +130,15 @@ export async function POST(request: Request, { params }: CancelOrderRouteProps) 
 
         if (!cancellableStatuses.has(order.status)) {
           throw new Error(
-            order.status === OrderStatus.READY
+            order.status === OrderStatus.PENDING
+              ? "Pembayaran masih menunggu konfirmasi Tripay dan belum dapat dibatalkan dari order."
+              : order.status === OrderStatus.READY
               ? "Pesanan sudah siap diambil. Ajukan refund manual dari halaman refund."
               : "Pesanan tidak bisa dibatalkan pada status ini.",
           );
         }
 
-        await restoreOrderStock(tx, order.items);
+        restoredAvailableMenuItemIds = await restoreOrderStock(tx, order.items);
 
         const nextOrder = await tx.order.update({
           where: { id: order.id },
@@ -147,7 +163,15 @@ export async function POST(request: Request, { params }: CancelOrderRouteProps) 
                 owner: true,
               },
             },
-            review: true,
+            review: {
+              include: {
+                images: {
+                  include: {
+                    asset: true,
+                  },
+                },
+              },
+            },
           },
         });
 
@@ -159,13 +183,10 @@ export async function POST(request: Request, { params }: CancelOrderRouteProps) 
           },
           data: {
             status: WalletTransactionStatus.FAILED,
+            processedAt: new Date(),
             description: `Order ${order.orderCode} dibatalkan customer`,
           },
         });
-
-        const cancellationDetail = parsed.data.note
-          ? `${parsed.data.reason}. Catatan: ${parsed.data.note}`
-          : parsed.data.reason;
 
         await tx.notification.createMany({
           data: [
@@ -189,6 +210,31 @@ export async function POST(request: Request, { params }: CancelOrderRouteProps) 
         return nextOrder;
       },
     );
+
+    await deliverNotifications([
+      {
+        userId: updatedOrder.customerId,
+        type: NotificationType.ORDER,
+        title: "Pesanan dibatalkan",
+        body: `${updatedOrder.orderCode} berhasil dibatalkan. Alasan: ${cancellationDetail}.`,
+        href: `/orders/${updatedOrder.orderCode}`,
+      },
+      {
+        userId: updatedOrder.restaurant.ownerId,
+        type: NotificationType.ORDER,
+        title: "Order dibatalkan customer",
+        body: `${updatedOrder.customer.name} membatalkan ${updatedOrder.orderCode}. Alasan: ${cancellationDetail}.`,
+        href: `/owner/orders/${updatedOrder.orderCode}`,
+      },
+    ]);
+
+    if (restoredAvailableMenuItemIds.length > 0) {
+      await notifyFavoriteMenuItemsAvailableByIds(
+        restoredAvailableMenuItemIds,
+      ).catch((error: unknown) => {
+        console.warn("Customer cancel favorite restock notification failed", error);
+      });
+    }
 
     return NextResponse.json({ ok: true, order: updatedOrder });
   } catch (error) {

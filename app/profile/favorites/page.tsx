@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import {
+  BellRing,
   ChevronLeft,
   Clock3,
   Heart,
@@ -10,6 +11,7 @@ import {
   Plus,
   Search,
   ShoppingBag,
+  Sparkles,
   Star,
   Store,
   Trash2,
@@ -19,6 +21,7 @@ import { useRouter } from "next/navigation";
 
 import { useCustomerApp } from "@/components/customer-app-provider";
 import { MobileDeviceFrame } from "@/components/mobile-device-frame";
+import { InlineNotice, StateCard } from "@/components/ui-state";
 import {
   CATEGORIES,
   formatRatingSummary,
@@ -58,14 +61,18 @@ type ApiFavoriteRestaurant = {
       menuItems: number;
     };
     menuItems: Array<{
+      id: string;
       name: string;
       imageUrl: string | null;
       discountedPrice: number;
+      createdAt: string;
     }>;
   };
 };
 
 type FavoriteTab = "menus" | "stores";
+type MenuFavoriteSort = "nearby" | "price" | "rating";
+type StoreFavoriteSort = "latest" | "rating" | "menus" | "followers";
 
 type FavoriteStore = {
   id: string;
@@ -80,6 +87,11 @@ type FavoriteStore = {
   menuCount: number;
   pickupWindow: string;
   previewText: string;
+  latestMenuId: string | null;
+  latestMenuName: string | null;
+  latestMenuImage: string | null;
+  latestMenuPrice: number | null;
+  latestMenuCreatedAt: string | null;
 };
 
 function mapFavoriteRestaurant(favorite: ApiFavoriteRestaurant): FavoriteStore {
@@ -107,7 +119,25 @@ function mapFavoriteRestaurant(favorite: ApiFavoriteRestaurant): FavoriteStore {
     previewText:
       restaurant.menuItems.map((menuItem) => menuItem.name).join(", ") ||
       "Belum ada menu aktif",
+    latestMenuId: firstMenu?.id ?? null,
+    latestMenuName: firstMenu?.name ?? null,
+    latestMenuImage: firstMenu?.imageUrl ?? null,
+    latestMenuPrice: firstMenu?.discountedPrice ?? null,
+    latestMenuCreatedAt: firstMenu?.createdAt ?? null,
   };
+}
+
+function formatFavoriteDate(value: string | null) {
+  if (!value) {
+    return "Belum ada menu baru";
+  }
+
+  return new Intl.DateTimeFormat("id-ID", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
 }
 
 export default function CustomerFavoritesPage() {
@@ -119,6 +149,8 @@ export default function CustomerFavoritesPage() {
   const [activeCategory, setActiveCategory] =
     useState<(typeof CATEGORIES)[number]>("Semua");
   const [activeTab, setActiveTab] = useState<FavoriteTab>("menus");
+  const [menuSort, setMenuSort] = useState<MenuFavoriteSort>("nearby");
+  const [storeSort, setStoreSort] = useState<StoreFavoriteSort>("latest");
   const [isLoadingFavorites, setIsLoadingFavorites] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -192,23 +224,59 @@ export default function CustomerFavoritesPage() {
       );
     }
 
+    if (menuSort === "price") {
+      return nextFavorites.sort(
+        (firstFood, secondFood) => firstFood.price - secondFood.price,
+      );
+    }
+
+    if (menuSort === "rating") {
+      return nextFavorites.sort(
+        (firstFood, secondFood) => secondFood.rating - firstFood.rating,
+      );
+    }
+
     return nextFavorites;
-  }, [activeCategory, customerLocation.coordinates, favorites, query]);
+  }, [activeCategory, customerLocation.coordinates, favorites, menuSort, query]);
 
   const visibleFavoriteStores = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
+    let nextStores = [...favoriteStores];
 
-    if (!normalizedQuery) {
-      return favoriteStores;
+    if (normalizedQuery) {
+      nextStores = nextStores.filter((store) =>
+        [store.name, store.city, store.address, store.previewText]
+          .join(" ")
+          .toLowerCase()
+          .includes(normalizedQuery),
+      );
     }
 
-    return favoriteStores.filter((store) =>
-      [store.name, store.city, store.address, store.previewText]
-        .join(" ")
-        .toLowerCase()
-        .includes(normalizedQuery),
+    if (storeSort === "rating") {
+      return nextStores.sort(
+        (firstStore, secondStore) => secondStore.rating - firstStore.rating,
+      );
+    }
+
+    if (storeSort === "menus") {
+      return nextStores.sort(
+        (firstStore, secondStore) => secondStore.menuCount - firstStore.menuCount,
+      );
+    }
+
+    if (storeSort === "followers") {
+      return nextStores.sort(
+        (firstStore, secondStore) =>
+          secondStore.followerCount - firstStore.followerCount,
+      );
+    }
+
+    return nextStores.sort(
+      (firstStore, secondStore) =>
+        new Date(secondStore.latestMenuCreatedAt ?? 0).getTime() -
+        new Date(firstStore.latestMenuCreatedAt ?? 0).getTime(),
     );
-  }, [favoriteStores, query]);
+  }, [favoriteStores, query, storeSort]);
 
   const handleRemoveFavorite = async (foodId: string) => {
     const food = favorites.find((item) => item.id === foodId);
@@ -315,7 +383,7 @@ export default function CustomerFavoritesPage() {
             <div className="flex min-w-0 items-center">
               <Link
                 href="/profile"
-                className="-ml-2 rounded-full p-2 transition-colors hover:bg-gray-100"
+                className="-ml-2 flex h-11 w-11 items-center justify-center rounded-full transition-colors hover:bg-gray-100"
                 aria-label="Kembali ke profil"
               >
                 <ChevronLeft size={24} className="text-gray-800" />
@@ -378,6 +446,84 @@ export default function CustomerFavoritesPage() {
             ))}
           </section>
 
+          <section className="mb-4 grid gap-3 sm:grid-cols-3">
+            <div className="rounded-[22px] border border-red-100 bg-red-50 p-4">
+              <Heart size={18} className="mb-2 fill-red-500 text-red-500" />
+              <p className="text-xs font-extrabold text-red-700">Menu favorit</p>
+              <p className="mt-1 text-2xl font-extrabold text-red-950">
+                {favorites.length}
+              </p>
+            </div>
+            <div className="rounded-[22px] border border-emerald-100 bg-emerald-50 p-4">
+              <BellRing size={18} className="mb-2 text-emerald-600" />
+              <p className="text-xs font-extrabold text-emerald-700">
+                Toko diikuti
+              </p>
+              <p className="mt-1 text-2xl font-extrabold text-emerald-950">
+                {favoriteStores.length}
+              </p>
+            </div>
+            <div className="rounded-[22px] border border-amber-100 bg-amber-50 p-4">
+              <Sparkles size={18} className="mb-2 text-amber-600" />
+              <p className="text-xs font-extrabold text-amber-700">
+                Menu baru
+              </p>
+              <p className="mt-1 text-2xl font-extrabold text-amber-950">
+                {
+                  favoriteStores.filter((store) => store.latestMenuId !== null)
+                    .length
+                }
+              </p>
+            </div>
+          </section>
+
+          <section className="mb-5 rounded-[22px] border border-gray-100 bg-white p-3 shadow-sm">
+            {activeTab === "menus" ? (
+              <div className="flex gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                {[
+                  { id: "nearby" as const, label: "Terdekat" },
+                  { id: "price" as const, label: "Termurah" },
+                  { id: "rating" as const, label: "Rating" },
+                ].map((option) => (
+                  <button
+                    key={option.id}
+                    type="button"
+                    onClick={() => setMenuSort(option.id)}
+                    className={`min-h-11 shrink-0 rounded-full px-4 py-2 text-xs font-extrabold transition-colors ${
+                      menuSort === option.id
+                        ? "bg-gray-900 text-white"
+                        : "bg-gray-50 text-gray-600 hover:bg-emerald-50 hover:text-emerald-700"
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="flex gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                {[
+                  { id: "latest" as const, label: "Menu terbaru" },
+                  { id: "rating" as const, label: "Rating" },
+                  { id: "menus" as const, label: "Menu terbanyak" },
+                  { id: "followers" as const, label: "Pengikut" },
+                ].map((option) => (
+                  <button
+                    key={option.id}
+                    type="button"
+                    onClick={() => setStoreSort(option.id)}
+                    className={`min-h-11 shrink-0 rounded-full px-4 py-2 text-xs font-extrabold transition-colors ${
+                      storeSort === option.id
+                        ? "bg-emerald-500 text-white"
+                        : "bg-emerald-50 text-emerald-700 hover:bg-white"
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
+
           {activeTab === "menus" ? (
             <section className="mb-5 flex gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {CATEGORIES.map((category) => (
@@ -398,18 +544,19 @@ export default function CustomerFavoritesPage() {
           ) : null}
 
           {notice ? (
-            <div className="mb-5 rounded-2xl border border-red-100 bg-red-50 p-4 text-sm font-bold text-red-700">
-              {notice}
-            </div>
+            <InlineNotice
+              variant="error"
+              description={notice}
+              className="mb-5"
+            />
           ) : null}
 
           {isLoadingFavorites ? (
-            <section className="rounded-[28px] border border-gray-100 bg-white p-8 text-center shadow-sm">
-              <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-emerald-100 border-t-emerald-500" />
-              <h2 className="text-lg font-extrabold text-gray-950">
-                Memuat favorit...
-              </h2>
-            </section>
+            <StateCard
+              title="Memuat favorit"
+              description="Mengambil menu dan toko yang kamu simpan."
+              variant="loading"
+            />
           ) : activeTab === "stores" ? (
             visibleFavoriteStores.length > 0 ? (
               <section className="space-y-4 md:grid md:grid-cols-2 md:gap-4 md:space-y-0">
@@ -467,6 +614,33 @@ export default function CustomerFavoritesPage() {
                       <p className="line-clamp-2 text-xs leading-5 font-medium text-gray-600">
                         {store.previewText}
                       </p>
+                      {store.latestMenuId ? (
+                        <div className="mt-4 flex gap-3 rounded-2xl border border-emerald-100 bg-emerald-50 p-3">
+                          <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-xl bg-white">
+                            <Image
+                              src={store.latestMenuImage || store.image}
+                              alt={store.latestMenuName || store.name}
+                              fill
+                              sizes="56px"
+                              className="object-cover"
+                            />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="flex items-center gap-1 text-[10px] font-extrabold text-emerald-700">
+                              <BellRing size={11} />
+                              Menu terbaru
+                            </p>
+                            <p className="mt-1 truncate text-xs font-extrabold text-gray-950">
+                              {store.latestMenuName}
+                            </p>
+                            <p className="mt-1 text-[11px] font-bold text-emerald-700">
+                              {store.latestMenuPrice
+                                ? formatRp(store.latestMenuPrice)
+                                : formatFavoriteDate(store.latestMenuCreatedAt)}
+                            </p>
+                          </div>
+                        </div>
+                      ) : null}
                       <div className="mt-3 flex flex-wrap gap-2 text-[10px] font-bold text-gray-500">
                         <span className="flex items-center gap-1 rounded bg-amber-50 px-1.5 py-0.5 text-amber-700">
                           <Star size={10} className="fill-amber-500 text-amber-500" />
@@ -488,12 +662,16 @@ export default function CustomerFavoritesPage() {
                         type="button"
                         onClick={(event) => {
                           event.stopPropagation();
-                          router.push(storeRoute);
+                          router.push(
+                            store.latestMenuId
+                              ? `/detail/${store.latestMenuId}`
+                              : storeRoute,
+                          );
                         }}
                         className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-gray-900 px-4 py-3 text-xs font-extrabold text-white transition-colors hover:bg-emerald-500"
                       >
                         <ShoppingBag size={15} />
-                        Lihat Toko
+                        {store.latestMenuId ? "Lihat Menu Baru" : "Lihat Toko"}
                       </button>
                     </div>
                     </article>
@@ -501,24 +679,15 @@ export default function CustomerFavoritesPage() {
                 })}
               </section>
             ) : (
-              <section className="rounded-[28px] border border-dashed border-gray-200 bg-white p-8 text-center">
-                <div className="mx-auto mb-5 flex h-20 w-20 items-center justify-center rounded-[26px] bg-gray-50 text-gray-400">
-                  <Store size={32} />
-                </div>
-                <h2 className="text-lg font-extrabold text-gray-950">
-                  Belum ada toko diikuti
-                </h2>
-                <p className="mx-auto mt-2 max-w-xs text-sm leading-6 font-medium text-gray-500">
-                  Ikuti toko dari halaman toko agar lebih cepat menemukan menu barunya.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => router.push("/browse")}
-                  className="mt-6 rounded-2xl bg-emerald-500 px-5 py-3 text-sm font-extrabold text-white"
-                >
-                  Cari Toko
-                </button>
-              </section>
+              <StateCard
+                title="Belum ada toko diikuti"
+                description="Ikuti toko dari halaman toko agar lebih cepat menemukan menu barunya."
+                variant="empty"
+                action={{
+                  label: "Cari Toko",
+                  href: "/browser",
+                }}
+              />
             )
           ) : visibleFavorites.length > 0 ? (
             <section className="space-y-4 md:grid md:grid-cols-2 md:gap-4 md:space-y-0">
@@ -608,24 +777,15 @@ export default function CustomerFavoritesPage() {
               })}
             </section>
           ) : (
-            <section className="rounded-[28px] border border-dashed border-gray-200 bg-white p-8 text-center">
-              <div className="mx-auto mb-5 flex h-20 w-20 items-center justify-center rounded-[26px] bg-gray-50 text-gray-400">
-                <ShoppingBag size={32} />
-              </div>
-              <h2 className="text-lg font-extrabold text-gray-950">
-                Belum ada favorit
-              </h2>
-              <p className="mx-auto mt-2 max-w-xs text-sm leading-6 font-medium text-gray-500">
-                Simpan menu dari halaman detail produk untuk belanja ulang lebih cepat.
-              </p>
-              <button
-                type="button"
-                onClick={() => router.push("/home")}
-                className="mt-6 rounded-2xl bg-emerald-500 px-5 py-3 text-sm font-extrabold text-white"
-              >
-                Cari Menu
-              </button>
-            </section>
+            <StateCard
+              title="Belum ada favorit"
+              description="Simpan menu dari halaman detail produk untuk belanja ulang lebih cepat."
+              variant="empty"
+              action={{
+                label: "Cari Menu",
+                href: "/home",
+              }}
+            />
           )}
         </div>
       </div>

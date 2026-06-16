@@ -11,6 +11,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { getCurrentSession } from "@/lib/auth-session";
+import { deliverNotifications } from "@/lib/notification-delivery";
 import { prisma, type PrismaTransactionClient } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -282,6 +283,38 @@ export async function PATCH(
 
     return updatedRefund;
   });
+
+  await deliverNotifications([
+    {
+      userId: refund.customerId,
+      type: NotificationType.REFUND,
+      title:
+        parsed.data.status === RefundStatus.PAID
+          ? "Refund sudah dibayarkan"
+          : parsed.data.status === RefundStatus.APPROVED
+            ? "Refund disetujui"
+            : parsed.data.status === RefundStatus.REJECTED
+              ? "Refund ditolak"
+              : "Refund sedang ditinjau",
+      body:
+        parsed.data.status === RefundStatus.PAID
+          ? `${refund.order.orderCode} sudah ditandai refund dibayarkan.`
+          : parsed.data.adminNote ||
+            `Status refund ${refund.order.orderCode}: ${parsed.data.status}.`,
+      href: `/orders/${refund.order.orderCode}/refund`,
+    },
+    ...(parsed.data.status === RefundStatus.PAID
+      ? [
+          {
+            userId: refund.order.restaurant.ownerId,
+            type: NotificationType.REFUND,
+            title: "Wallet terkena refund",
+            body: `Refund ${refund.order.orderCode} dibayarkan. Saldo wallet akan disesuaikan.`,
+            href: "/owner/wallet",
+          },
+        ]
+      : []),
+  ]);
 
   return NextResponse.json({ ok: true, refund });
 }

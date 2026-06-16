@@ -60,6 +60,24 @@ export async function POST(request: Request) {
       formData.get("visibility") === AssetVisibility.PRIVATE
         ? AssetVisibility.PRIVATE
         : AssetVisibility.PUBLIC;
+
+    if (
+      entityType === "menu_item" &&
+      !["image/jpeg", "image/png", "image/webp"].includes(file.type)
+    ) {
+      return NextResponse.json(
+        { ok: false, message: "Gambar menu harus JPG, PNG, atau WEBP." },
+        { status: 400 },
+      );
+    }
+
+    if (entityType === "menu_item" && file.size > 4 * 1024 * 1024) {
+      return NextResponse.json(
+        { ok: false, message: "Ukuran gambar menu maksimal 4MB." },
+        { status: 400 },
+      );
+    }
+
     const extension = file.name.split(".").pop() || "bin";
     const filename = `${slugify(file.name.replace(/\.[^.]+$/, "")) || "file"}-${crypto.randomUUID()}.${extension}`;
     const pathname = `${slugify(folder) || "uploads"}/${filename}`;

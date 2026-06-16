@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { getCurrentSession } from "@/lib/auth-session";
-import { prisma } from "@/lib/prisma";
+import { prisma, type PrismaTransactionClient } from "@/lib/prisma";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,6 +11,16 @@ export const dynamic = "force-dynamic";
 interface AdminUserRouteProps {
   params: Promise<{ id: string }>;
 }
+
+type ActivityTone = "emerald" | "blue" | "amber" | "red" | "gray";
+
+type ActivityItem = {
+  id: string;
+  title: string;
+  description: string;
+  createdAt: Date;
+  tone: ActivityTone;
+};
 
 const updateUserSchema = z.object({
   status: z.enum([UserStatus.ACTIVE, UserStatus.SUSPENDED]),
@@ -32,36 +42,98 @@ const formatRp = (amount: number) =>
     maximumFractionDigits: 0,
   }).format(amount);
 
-export async function GET(_request: Request, { params }: AdminUserRouteProps) {
+function getOrderTone(status: string): ActivityTone {
+  if (status === "CANCELLED" || status === "REFUNDED") {
+    return "red";
+  }
+
+  if (status === "NO_SHOW") {
+    return "amber";
+  }
+
+  if (status === "COMPLETED") {
+    return "emerald";
+  }
+
+  return "blue";
+}
+
+async function requireAdmin() {
   const session = await getCurrentSession();
 
   if (session?.role !== UserRole.ADMIN) {
-    return NextResponse.json(
-      { ok: false, message: "Akses admin diperlukan." },
-      { status: session ? 403 : 401 },
-    );
+    return {
+      session,
+      response: NextResponse.json(
+        { ok: false, message: "Akses admin diperlukan." },
+        { status: session ? 403 : 401 },
+      ),
+    };
+  }
+
+  return { session, response: null };
+}
+
+export async function GET(_request: Request, { params }: AdminUserRouteProps) {
+  const adminCheck = await requireAdmin();
+
+  if (adminCheck.response) {
+    return adminCheck.response;
   }
 
   const { id } = await params;
-  const user = await prisma.user.findUnique({
-    where: { id },
-    include: {
-      addresses: { orderBy: [{ isPrimary: "desc" }, { createdAt: "desc" }] },
-      applications: { orderBy: { submittedAt: "desc" } },
-      orders: {
-        orderBy: { createdAt: "desc" },
-        include: { restaurant: true, items: true, refundRequest: true, review: true },
-      },
-      ownedRestaurants: {
-        include: {
-          menuItems: true,
-          orders: { include: { refundRequest: true } },
-          reviews: true,
+  const [user, adminLogs, sessions] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id },
+      include: {
+        addresses: { orderBy: [{ isPrimary: "desc" }, { createdAt: "desc" }] },
+        applications: { orderBy: { submittedAt: "desc" } },
+        orders: {
+          orderBy: { createdAt: "desc" },
+          include: {
+            restaurant: true,
+            items: true,
+            refundRequest: true,
+            review: true,
+          },
+        },
+        ownedRestaurants: {
+          include: {
+            menuItems: true,
+            orders: { include: { refundRequest: true } },
+            reviews: true,
+          },
+        },
+        refunds: true,
+        reviews: {
+          orderBy: { createdAt: "desc" },
+          take: 8,
+          include: { restaurant: true },
+        },
+        supportTickets: {
+          orderBy: { updatedAt: "desc" },
+          take: 8,
         },
       },
-      refunds: true,
-    },
-  });
+    }),
+    prisma.adminActionLog.findMany({
+      where: { targetType: "user", targetId: id },
+      orderBy: { createdAt: "desc" },
+      take: 12,
+      include: {
+        admin: { select: { id: true, name: true, email: true } },
+      },
+    }),
+    prisma.userSession.findMany({
+      where: { userId: id },
+      orderBy: { lastSeenAt: "desc" },
+      take: 12,
+      include: {
+        impersonatedBy: { select: { id: true, name: true, email: true } },
+        revokedBy: { select: { id: true, name: true, email: true } },
+      },
+    }),
+  ]);
 
   if (!user || user.role === UserRole.ADMIN) {
     return NextResponse.json(
@@ -72,6 +144,11 @@ export async function GET(_request: Request, { params }: AdminUserRouteProps) {
 
   const ownedOrders = user.ownedRestaurants.flatMap(
     (restaurant) => restaurant.orders,
+  );
+  const restaurantNameByOrderId = new Map(
+    user.ownedRestaurants.flatMap((restaurant) =>
+      restaurant.orders.map((order) => [order.id, restaurant.name] as const),
+    ),
   );
   const relevantOrders = user.role === UserRole.OWNER ? ownedOrders : user.orders;
   const totalSpent =
@@ -92,6 +169,118 @@ export async function GET(_request: Request, { params }: AdminUserRouteProps) {
   const latestApplication = user.applications[0];
   const primaryAddress = user.addresses[0];
   const linkedStore = user.ownedRestaurants[0];
+  const latestSession = sessions[0];
+
+  const orderActivities: ActivityItem[] =
+    user.role === UserRole.OWNER
+      ? ownedOrders.slice(0, 8).map((order) => ({
+          id: `order-${order.id}`,
+          title: `Order ${order.orderCode}`,
+          description: `${order.status} - ${formatRp(order.total)} - ${
+            restaurantNameByOrderId.get(order.id) ?? "Restoran"
+          }`,
+          createdAt: order.updatedAt,
+          tone: getOrderTone(order.status),
+        }))
+      : user.orders.slice(0, 8).map((order) => ({
+          id: `order-${order.id}`,
+          title: `Order ${order.orderCode}`,
+          description: `${order.status} - ${formatRp(order.total)} - ${
+            order.restaurant.name
+          }`,
+          createdAt: order.updatedAt,
+          tone: getOrderTone(order.status),
+        }));
+
+  const refundActivities: ActivityItem[] =
+    user.role === UserRole.OWNER
+      ? ownedOrders
+          .filter((order) => order.refundRequest)
+          .slice(0, 6)
+          .map((order) => ({
+            id: `refund-${order.refundRequest!.id}`,
+            title: `Refund ${order.orderCode}`,
+            description: `${order.refundRequest!.status} - ${formatRp(order.refundRequest!.amount)}`,
+            createdAt: order.refundRequest!.updatedAt,
+            tone:
+              order.refundRequest!.status === "REJECTED"
+                ? "red"
+                : order.refundRequest!.status === "PAID"
+                  ? "emerald"
+                  : "amber",
+          }))
+      : user.refunds.slice(0, 6).map((refund) => ({
+          id: `refund-${refund.id}`,
+          title: "Pengajuan refund",
+          description: `${refund.status} - ${formatRp(refund.amount)} - ${refund.reason}`,
+          createdAt: refund.updatedAt,
+          tone:
+            refund.status === "REJECTED"
+              ? "red"
+              : refund.status === "PAID"
+                ? "emerald"
+                : "amber",
+        }));
+
+  const supportActivities: ActivityItem[] = user.supportTickets.map((ticket) => ({
+    id: `support-${ticket.id}`,
+    title: `Support ${ticket.status}`,
+    description: `${ticket.category} - ${ticket.subject}`,
+    createdAt: ticket.updatedAt,
+    tone: ticket.status === "RESOLVED" ? "emerald" : "blue",
+  }));
+
+  const reviewActivities: ActivityItem[] = user.reviews.map((review) => ({
+    id: `review-${review.id}`,
+    title: `Review ${review.rating}/5`,
+    description: `${review.restaurant.name}${review.comment ? ` - ${review.comment}` : ""}`,
+    createdAt: review.createdAt,
+    tone: review.rating >= 4 ? "emerald" : review.rating <= 2 ? "red" : "amber",
+  }));
+
+  const adminActivities: ActivityItem[] = adminLogs.map((log) => ({
+    id: `admin-${log.id}`,
+    title: log.action.replaceAll("_", " "),
+    description: `Admin: ${log.admin?.name ?? "System"}${log.admin?.email ? ` - ${log.admin.email}` : ""}`,
+    createdAt: log.createdAt,
+    tone: log.action.includes("SUSPENDED") ? "red" : "gray",
+  }));
+
+  const sessionActivities: ActivityItem[] = sessions.slice(0, 6).map((item) => ({
+    id: `session-${item.id}`,
+    title:
+      item.kind === "IMPERSONATION"
+        ? "Admin impersonation"
+        : item.revokedAt
+          ? "Session dicabut"
+          : "Session aktif",
+    description: `${item.deviceLabel ?? "Perangkat"}${item.ipAddress ? ` - ${item.ipAddress}` : ""}`,
+    createdAt: item.revokedAt ?? item.lastSeenAt,
+    tone:
+      item.kind === "IMPERSONATION"
+        ? "amber"
+        : item.revokedAt
+          ? "red"
+          : "emerald",
+  }));
+
+  const activities = [
+    ...orderActivities,
+    ...refundActivities,
+    ...supportActivities,
+    ...reviewActivities,
+    ...adminActivities,
+    ...sessionActivities,
+  ]
+    .sort((first, second) => second.createdAt.getTime() - first.createdAt.getTime())
+    .slice(0, 18)
+    .map((activity) => ({
+      id: activity.id,
+      title: activity.title,
+      description: activity.description,
+      time: formatDateTime(activity.createdAt),
+      tone: activity.tone,
+    }));
 
   return NextResponse.json({
     ok: true,
@@ -108,7 +297,7 @@ export async function GET(_request: Request, { params }: AdminUserRouteProps) {
         user.status === UserStatus.SUSPENDED
           ? "Akun sedang dibekukan oleh admin."
           : undefined,
-      lastLogin: user.updatedAt ? formatDateTime(user.updatedAt) : "-",
+      lastLogin: latestSession ? formatDateTime(latestSession.lastSeenAt) : "-",
       verification:
         user.role === UserRole.OWNER
           ? latestApplication?.status || "Belum ada aplikasi"
@@ -125,31 +314,41 @@ export async function GET(_request: Request, { params }: AdminUserRouteProps) {
       riskScore: Math.min(100, refundRequests * 15),
       linkedStore: linkedStore?.name,
     },
-    activities: relevantOrders.slice(0, 8).map((order) => ({
-      id: order.id,
-      title: `Order ${order.orderCode}`,
-      description: `${order.status} - ${formatRp(order.total)}`,
-      time: formatDateTime(order.updatedAt),
-      tone:
-        order.status === "CANCELLED" || order.status === "REFUNDED"
-          ? "red"
-          : order.status === "NO_SHOW"
-            ? "amber"
-          : order.status === "COMPLETED"
-            ? "emerald"
-            : "blue",
+    activities,
+    sessions: sessions.map((item) => ({
+      id: item.id,
+      kind: item.kind,
+      deviceLabel: item.deviceLabel ?? "Perangkat tidak dikenal",
+      ipAddress: item.ipAddress ?? "-",
+      userAgent: item.userAgent ?? "-",
+      startedAt: formatDateTime(item.startedAt),
+      lastSeenAt: formatDateTime(item.lastSeenAt),
+      expiresAt: formatDateTime(item.expiresAt),
+      revokedAt: item.revokedAt ? formatDateTime(item.revokedAt) : null,
+      revokeReason: item.revokeReason,
+      impersonatedBy: item.impersonatedBy
+        ? {
+            id: item.impersonatedBy.id,
+            name: item.impersonatedBy.name,
+            email: item.impersonatedBy.email,
+          }
+        : null,
+      revokedBy: item.revokedBy
+        ? {
+            id: item.revokedBy.id,
+            name: item.revokedBy.name,
+            email: item.revokedBy.email,
+          }
+        : null,
     })),
   });
 }
 
 export async function PATCH(request: Request, { params }: AdminUserRouteProps) {
-  const session = await getCurrentSession();
+  const adminCheck = await requireAdmin();
 
-  if (session?.role !== UserRole.ADMIN) {
-    return NextResponse.json(
-      { ok: false, message: "Akses admin diperlukan." },
-      { status: session ? 403 : 401 },
-    );
+  if (adminCheck.response) {
+    return adminCheck.response;
   }
 
   const { id } = await params;
@@ -157,23 +356,54 @@ export async function PATCH(request: Request, { params }: AdminUserRouteProps) {
 
   if (!parsed.success) {
     return NextResponse.json(
-      { ok: false, message: "Status user tidak valid.", issues: parsed.error.flatten() },
+      {
+        ok: false,
+        message: "Status user tidak valid.",
+        issues: parsed.error.flatten(),
+      },
       { status: 400 },
     );
   }
 
-  const user = await prisma.user.update({
+  const existingUser = await prisma.user.findUnique({
     where: { id },
-    data: { status: parsed.data.status },
+    select: { id: true, role: true },
   });
 
-  await prisma.adminActionLog.create({
-    data: {
-      adminId: session.userId,
-      action: `USER_${parsed.data.status}`,
-      targetType: "user",
-      targetId: user.id,
-    },
+  if (!existingUser || existingUser.role === UserRole.ADMIN) {
+    return NextResponse.json(
+      { ok: false, message: "User tidak ditemukan." },
+      { status: 404 },
+    );
+  }
+
+  const user = await prisma.$transaction(async (tx: PrismaTransactionClient) => {
+    const updatedUser = await tx.user.update({
+      where: { id },
+      data: { status: parsed.data.status },
+    });
+
+    if (parsed.data.status === UserStatus.SUSPENDED) {
+      await tx.userSession.updateMany({
+        where: { userId: id, revokedAt: null },
+        data: {
+          revokedAt: new Date(),
+          revokedById: adminCheck.session!.userId,
+          revokeReason: "ACCOUNT_SUSPENDED",
+        },
+      });
+    }
+
+    await tx.adminActionLog.create({
+      data: {
+        adminId: adminCheck.session!.userId,
+        action: `USER_${parsed.data.status}`,
+        targetType: "user",
+        targetId: updatedUser.id,
+      },
+    });
+
+    return updatedUser;
   });
 
   return NextResponse.json({ ok: true, user });

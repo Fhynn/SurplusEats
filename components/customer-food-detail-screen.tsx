@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import {
+  Check,
   CheckCircle2,
   ChevronLeft,
   Clock3,
@@ -9,6 +10,7 @@ import {
   ExternalLink,
   Heart,
   Leaf,
+  Loader2,
   MapPin,
   Minus,
   Navigation,
@@ -20,10 +22,15 @@ import {
   UtensilsCrossed,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { type MouseEvent, useEffect, useMemo, useRef, useState } from "react";
 
+import {
+  CartFlyItem,
+  useCartInteractionFeedback,
+} from "@/components/cart-interaction-feedback";
 import { useCustomerApp } from "@/components/customer-app-provider";
 import { MobileDeviceFrame } from "@/components/mobile-device-frame";
+import { PickupAvailabilityBadge } from "@/components/pickup-availability-badge";
 import type { Food } from "@/lib/customer-data";
 import {
   formatRatingSummary,
@@ -51,11 +58,20 @@ export function CustomerFoodDetailScreen({
   const router = useRouter();
   const { addToCart, customerLocation } = useCustomerApp();
   const [displayFood, setDisplayFood] = useState(food);
-  const [isAdded, setIsAdded] = useState(false);
+  const [isAddingToCart, setIsAddingToCart] = useState(false);
   const [isFavorite, setIsFavorite] = useState(false);
   const [isTogglingFavorite, setIsTogglingFavorite] = useState(false);
   const [qty, setQty] = useState(1);
+  const cartTargetRef = useRef<HTMLButtonElement | null>(null);
+  const {
+    addedFoodId,
+    cartToast,
+    flyingCartItem,
+    showAddedToCart,
+    showCartError,
+  } = useCartInteractionFeedback();
   const customerCoordinates = customerLocation.coordinates;
+  const isAdded = addedFoodId === displayFood.id;
 
   const subtotal = displayFood.price * qty;
   const originalSubtotal = displayFood.originalPrice * qty;
@@ -119,28 +135,26 @@ export function CustomerFoodDetailScreen({
     };
   }, [food]);
 
-  useEffect(() => {
-    if (!isAdded) {
-      return;
+  const handleAddToCart = async (sourceElement?: HTMLElement | null) => {
+    if (isAddingToCart) {
+      return false;
     }
 
-    const timeoutId = window.setTimeout(() => {
-      setIsAdded(false);
-    }, 2000);
-
-    return () => {
-      window.clearTimeout(timeoutId);
-    };
-  }, [isAdded]);
-
-  const handleAddToCart = async () => {
+    setIsAddingToCart(true);
     const isSaved = await addToCart(displayFood, qty);
+    setIsAddingToCart(false);
 
     if (isSaved) {
-      setIsAdded(true);
+      showAddedToCart(displayFood, sourceElement, cartTargetRef.current);
+    } else {
+      showCartError();
     }
 
     return isSaved;
+  };
+
+  const handleAddButtonClick = (event: MouseEvent<HTMLButtonElement>) => {
+    void handleAddToCart(event.currentTarget);
   };
 
   const handleToggleFavorite = async () => {
@@ -371,9 +385,15 @@ export function CustomerFoodDetailScreen({
                 <div className="flex items-start gap-3 rounded-2xl bg-amber-50 p-3">
                   <Clock3 size={16} className="mt-0.5 shrink-0 text-amber-600" />
                   <div>
-                    <p className="text-xs font-extrabold text-amber-900">
-                      {displayFood.time}
-                    </p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-xs font-extrabold text-amber-900">
+                        {displayFood.time}
+                      </p>
+                      <PickupAvailabilityBadge
+                        pickupWindow={displayFood.time}
+                        compact
+                      />
+                    </div>
                     <p className="mt-0.5 text-[11px] font-medium text-amber-700">
                       Datang sesuai jam pickup agar kualitas makanan optimal.
                     </p>
@@ -507,33 +527,66 @@ export function CustomerFoodDetailScreen({
 
           <div className="grid grid-cols-[1fr_auto] gap-3">
             <button
+              ref={cartTargetRef}
               type="button"
-              onClick={() => void handleAddToCart()}
+              onClick={handleAddButtonClick}
+              disabled={isAddingToCart}
               className={`flex min-h-14 items-center justify-center gap-2 rounded-2xl px-5 text-sm font-extrabold transition-all active:scale-[0.98] ${
                 isAdded
                   ? "bg-emerald-100 text-emerald-600 shadow-none"
-                  : "bg-gray-900 text-white shadow-[0_12px_26px_rgba(15,23,42,0.14)] hover:bg-emerald-500"
+                  : "bg-gray-900 text-white shadow-[0_12px_26px_rgba(15,23,42,0.14)] hover:bg-emerald-500 disabled:cursor-wait disabled:bg-gray-300 disabled:shadow-none"
               }`}
             >
-              {isAdded ? "Berhasil Ditambah" : "Tambah ke Cart"}
-              <ShoppingBag size={18} />
+              {isAddingToCart ? (
+                <>
+                  Menambahkan
+                  <Loader2 size={18} className="animate-spin" />
+                </>
+              ) : isAdded ? (
+                <>
+                  Berhasil Ditambah
+                  <Check size={18} strokeWidth={3} />
+                </>
+              ) : (
+                <>
+                  Tambah ke Cart
+                  <ShoppingBag size={18} />
+                </>
+              )}
             </button>
             <button
               type="button"
-              onClick={() => {
-                void handleAddToCart().then((isSaved) => {
+              onClick={(event) => {
+                void handleAddToCart(event.currentTarget).then((isSaved) => {
                   if (isSaved) {
                     router.push("/cart");
                   }
                 });
               }}
+              disabled={isAddingToCart}
               className="min-h-14 rounded-2xl bg-emerald-500 px-5 text-sm font-extrabold whitespace-nowrap text-white shadow-[0_12px_26px_rgba(16,185,129,0.2)] transition-all active:scale-[0.98]"
             >
-              Checkout
+              {isAddingToCart ? "..." : "Checkout"}
             </button>
           </div>
         </div>
       </div>
+      {cartToast ? (
+        <div className="cart-add-toast fixed right-4 bottom-36 z-[80] flex max-w-[calc(100vw-2rem)] items-center gap-3 rounded-2xl border border-emerald-100 bg-white px-4 py-3 text-xs font-extrabold text-gray-800 shadow-[0_18px_44px_rgba(15,23,42,0.14)] lg:right-8 lg:bottom-8">
+          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
+            <Check size={17} strokeWidth={3} />
+          </span>
+          <span className="line-clamp-2">{cartToast}</span>
+          <button
+            type="button"
+            onClick={() => router.push("/cart")}
+            className="ml-1 rounded-full bg-emerald-600 px-3 py-1.5 text-[11px] font-extrabold text-white transition-colors hover:bg-emerald-700"
+          >
+            Lihat
+          </button>
+        </div>
+      ) : null}
+      <CartFlyItem item={flyingCartItem} />
     </MobileDeviceFrame>
   );
 }

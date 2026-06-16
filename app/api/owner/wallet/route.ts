@@ -9,14 +9,23 @@ import { z } from "zod";
 
 import { createPayoutReference } from "@/lib/backend-utils";
 import { getCurrentSession } from "@/lib/auth-session";
+import { createNotificationAndDeliver } from "@/lib/notification-delivery";
 import { prisma } from "@/lib/prisma";
+import { settleCompletedWalletTransactions } from "@/lib/wallet-settlement";
+import {
+  buildPayoutDescription,
+  getOwnerPayoutFee,
+  validateBankAccount,
+} from "@/lib/wallet-payout";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const payoutRequestSchema = z.object({
   amount: z.coerce.number().int().min(10_000).max(50_000_000),
-  destination: z.string().trim().min(8).max(160),
+  bankName: z.string().trim().min(2).max(40),
+  accountNumber: z.string().trim().min(8).max(30),
+  accountHolder: z.string().trim().min(3).max(80),
 });
 
 function getWalletSummary(
@@ -64,6 +73,8 @@ export async function GET() {
     );
   }
 
+  await settleCompletedWalletTransactions();
+
   const restaurant = await prisma.restaurant.findFirst({
     where: { ownerId: session.userId },
     include: {
@@ -81,6 +92,7 @@ export async function GET() {
       pending: 0,
       pendingIncome: 0,
       pendingPayout: 0,
+      payoutFee: getOwnerPayoutFee(),
       transactions: [],
     });
   }
@@ -92,8 +104,13 @@ export async function GET() {
     restaurant: {
       id: restaurant.id,
       name: restaurant.name,
+      bankName: restaurant.bankName,
+      bankAccountNumber: restaurant.bankAccountNumber,
+      bankAccountHolder: restaurant.bankAccountHolder,
+      bankVerifiedAt: restaurant.bankVerifiedAt,
     },
     ...walletSummary,
+    payoutFee: getOwnerPayoutFee(),
     transactions: restaurant.walletTransactions,
   });
 }
@@ -121,6 +138,24 @@ export async function POST(request: Request) {
     );
   }
 
+  const bankValidation = validateBankAccount({
+    bankName: parsed.data.bankName,
+    accountNumber: parsed.data.accountNumber,
+    accountHolder: parsed.data.accountHolder,
+  });
+
+  if (!bankValidation.ok) {
+    return NextResponse.json(
+      {
+        ok: false,
+        message: bankValidation.errors.join(" "),
+      },
+      { status: 400 },
+    );
+  }
+
+  await settleCompletedWalletTransactions();
+
   const restaurant = await prisma.restaurant.findFirst({
     where: { ownerId: session.userId },
     include: {
@@ -137,6 +172,8 @@ export async function POST(request: Request) {
   }
 
   const walletSummary = getWalletSummary(restaurant.walletTransactions);
+  const payoutFee = getOwnerPayoutFee();
+  const payoutNetAmount = parsed.data.amount - payoutFee;
 
   if (parsed.data.amount > walletSummary.balance) {
     return NextResponse.json(
@@ -148,25 +185,61 @@ export async function POST(request: Request) {
     );
   }
 
-  const transaction = await prisma.walletTransaction.create({
-    data: {
-      restaurantId: restaurant.id,
-      type: WalletTransactionType.PAYOUT,
-      status: WalletTransactionStatus.PENDING,
-      amount: -parsed.data.amount,
-      reference: createPayoutReference(),
-      description: `Request pencairan ke ${parsed.data.destination}`,
-    },
+  if (payoutNetAmount <= 0) {
+    return NextResponse.json(
+      {
+        ok: false,
+        message: "Nominal pencairan harus lebih besar dari fee payout.",
+      },
+      { status: 400 },
+    );
+  }
+
+  const transaction = await prisma.$transaction(async (tx) => {
+    await tx.restaurant.update({
+      where: { id: restaurant.id },
+      data: {
+        bankName: bankValidation.account.bankName,
+        bankAccountNumber: bankValidation.account.accountNumber,
+        bankAccountHolder: bankValidation.account.accountHolder,
+        bankVerifiedAt: new Date(),
+      },
+    });
+
+    return tx.walletTransaction.create({
+      data: {
+        restaurantId: restaurant.id,
+        type: WalletTransactionType.PAYOUT,
+        status: WalletTransactionStatus.PENDING,
+        amount: -parsed.data.amount,
+        grossAmount: parsed.data.amount,
+        platformFee: 0,
+        netAmount: -parsed.data.amount,
+        payoutFee,
+        payoutNetAmount,
+        reference: createPayoutReference(),
+        bankName: bankValidation.account.bankName,
+        bankAccountNumber: bankValidation.account.accountNumber,
+        bankAccountHolder: bankValidation.account.accountHolder,
+        bankValidationStatus: bankValidation.account.validationStatus,
+        description: buildPayoutDescription({
+          amount: parsed.data.amount,
+          payoutFee,
+          payoutNetAmount,
+          bankName: bankValidation.account.bankName,
+          maskedAccountNumber: bankValidation.account.maskedAccountNumber,
+          accountHolder: bankValidation.account.accountHolder,
+        }),
+      },
+    });
   });
 
-  await prisma.notification.create({
-    data: {
-      userId: session.userId,
-      type: NotificationType.SYSTEM,
-      title: "Pencairan saldo diajukan",
-      body: `${restaurant.name} mengajukan pencairan saldo. Admin akan meninjau permintaan ini.`,
-      href: "/owner/wallet",
-    },
+  await createNotificationAndDeliver({
+    userId: session.userId,
+    type: NotificationType.SYSTEM,
+    title: "Pencairan saldo diajukan",
+    body: `${restaurant.name} mengajukan pencairan saldo. Admin akan meninjau permintaan ini.`,
+    href: "/owner/wallet",
   });
 
   return NextResponse.json({ ok: true, transaction }, { status: 201 });

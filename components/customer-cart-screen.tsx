@@ -19,13 +19,62 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useCustomerApp } from "@/components/customer-app-provider";
-import { formatRp } from "@/lib/customer-data";
+import { formatRp, type CartItem } from "@/lib/customer-data";
 
 type CartVoucher = {
   code: string;
   discount: number;
   minSpendAmount: number;
   status: "available" | "used" | "expired";
+  restaurantId?: string | null;
+  restaurantName?: string | null;
+  category?: string | null;
+};
+
+function normalizeVoucherCategory(value: string | null | undefined) {
+  return (value || "").trim().toLowerCase();
+}
+
+function getVoucherScopeText(voucher: CartVoucher) {
+  const labels: string[] = [];
+
+  if (voucher.restaurantName) {
+    labels.push(`toko ${voucher.restaurantName}`);
+  }
+
+  if (voucher.category) {
+    labels.push(`kategori ${voucher.category}`);
+  }
+
+  return labels.length > 0 ? labels.join(" dan ") : "semua menu";
+}
+
+function getVoucherEligibleSubtotal(voucher: CartVoucher, cart: CartItem[]) {
+  const category = normalizeVoucherCategory(voucher.category);
+
+  return cart.reduce((total, item) => {
+    if (voucher.restaurantId && item.restaurantId !== voucher.restaurantId) {
+      return total;
+    }
+
+    if (category && normalizeVoucherCategory(item.category) !== category) {
+      return total;
+    }
+
+    return total + item.price * item.qty;
+  }, 0);
+}
+
+type CartFeePreview = {
+  serviceFee: number;
+  taxFee: number;
+  customerFeeTotal: number;
+};
+
+const fallbackCartFeePreview: CartFeePreview = {
+  serviceFee: 2000,
+  taxFee: 0,
+  customerFeeTotal: 2000,
 };
 
 export function CustomerCartScreen() {
@@ -44,13 +93,20 @@ export function CustomerCartScreen() {
   const [availableVouchers, setAvailableVouchers] = useState<CartVoucher[]>([]);
   const [voucherNotice, setVoucherNotice] = useState("");
   const [isClearOpen, setIsClearOpen] = useState(false);
-  const serviceFee = 2000;
+  const [feePreview, setFeePreview] =
+    useState<CartFeePreview>(fallbackCartFeePreview);
   const activeVoucher = useMemo(
     () => availableVouchers.find((voucher) => voucher.code === appliedVoucher),
     [appliedVoucher, availableVouchers],
   );
-  const voucherDiscount = activeVoucher ? activeVoucher.discount : 0;
-  const grandTotal = Math.max(0, cartTotal + serviceFee - voucherDiscount);
+  const voucherEligibleSubtotal = activeVoucher
+    ? getVoucherEligibleSubtotal(activeVoucher, cart)
+    : 0;
+  const voucherDiscount = activeVoucher
+    ? Math.min(activeVoucher.discount, voucherEligibleSubtotal)
+    : 0;
+  const checkoutNetSubtotal = Math.max(0, cartTotal - voucherDiscount);
+  const grandTotal = checkoutNetSubtotal + feePreview.customerFeeTotal;
   const foodSavedKg = (cartCount * 0.8).toFixed(1);
   const checkoutHref = appliedVoucher
     ? `/checkout?voucher=${encodeURIComponent(appliedVoucher)}`
@@ -80,6 +136,37 @@ export function CustomerCartScreen() {
     };
   }, []);
 
+  useEffect(() => {
+    let ignore = false;
+
+    async function loadFeePreview() {
+      try {
+        const response = await fetch(
+          `/api/checkout/fees?amount=${checkoutNetSubtotal}`,
+          { cache: "no-store" },
+        );
+        const data = (await response.json()) as {
+          ok: boolean;
+          fees?: CartFeePreview;
+        };
+
+        if (!ignore && response.ok && data.ok && data.fees) {
+          setFeePreview(data.fees);
+        }
+      } catch {
+        if (!ignore) {
+          setFeePreview(fallbackCartFeePreview);
+        }
+      }
+    }
+
+    void loadFeePreview();
+
+    return () => {
+      ignore = true;
+    };
+  }, [checkoutNetSubtotal]);
+
   const applyVoucherByCode = useCallback((code: string) => {
     const normalizedCode = code.trim().toUpperCase();
 
@@ -99,9 +186,19 @@ export function CustomerCartScreen() {
       return;
     }
 
-    if (cartTotal < voucher.minSpendAmount) {
+    const eligibleSubtotal = getVoucherEligibleSubtotal(voucher, cart);
+
+    if (eligibleSubtotal <= 0) {
       setVoucherNotice(
-        `Minimum transaksi voucher ini ${formatRp(voucher.minSpendAmount)}.`,
+        `Voucher ini hanya berlaku untuk ${getVoucherScopeText(voucher)}.`,
+      );
+      setAppliedVoucher("");
+      return;
+    }
+
+    if (eligibleSubtotal < voucher.minSpendAmount) {
+      setVoucherNotice(
+        `Minimum transaksi voucher ini ${formatRp(voucher.minSpendAmount)} untuk ${getVoucherScopeText(voucher)}.`,
       );
       setAppliedVoucher("");
       return;
@@ -110,7 +207,7 @@ export function CustomerCartScreen() {
     setAppliedVoucher(voucher.code);
     setVoucherCode(normalizedCode);
     setVoucherNotice("");
-  }, [availableVouchers, cartTotal]);
+  }, [availableVouchers, cart]);
 
   useEffect(() => {
     if (availableVouchers.length === 0) {
@@ -144,7 +241,7 @@ export function CustomerCartScreen() {
           <button
             type="button"
             onClick={() => router.push("/home")}
-            className="-ml-2 rounded-full p-2 transition-colors hover:bg-gray-100"
+            className="-ml-2 flex h-11 w-11 items-center justify-center rounded-full transition-colors hover:bg-gray-100"
             aria-label="Kembali ke beranda"
           >
             <ChevronLeft size={24} className="text-gray-800" />
@@ -184,7 +281,7 @@ export function CustomerCartScreen() {
           <button
             type="button"
             onClick={() => router.push("/home")}
-            className="-ml-2 rounded-full p-2 transition-colors hover:bg-gray-100"
+            className="-ml-2 flex h-11 w-11 items-center justify-center rounded-full transition-colors hover:bg-gray-100"
             aria-label="Kembali ke beranda"
           >
             <ChevronLeft size={24} className="text-gray-800" />
@@ -370,7 +467,8 @@ export function CustomerCartScreen() {
           ) : null}
           {appliedVoucher ? (
             <p className="mt-3 text-xs font-bold text-emerald-600">
-              Voucher {appliedVoucher} aktif: diskon {formatRp(voucherDiscount)}.
+              Voucher {appliedVoucher} aktif: diskon {formatRp(voucherDiscount)}
+              {activeVoucher ? ` untuk ${getVoucherScopeText(activeVoucher)}.` : "."}
             </p>
           ) : null}
         </section>
@@ -424,8 +522,14 @@ export function CustomerCartScreen() {
             ) : null}
             <div className="flex justify-between px-1 text-gray-600">
               <span>Biaya Layanan</span>
-              <span>{formatRp(serviceFee)}</span>
+              <span>{formatRp(feePreview.serviceFee)}</span>
             </div>
+            {feePreview.taxFee > 0 ? (
+              <div className="flex justify-between px-1 text-gray-600">
+                <span>Pajak Platform</span>
+                <span>{formatRp(feePreview.taxFee)}</span>
+              </div>
+            ) : null}
             <div className="my-2 h-px w-full bg-gray-100" />
             <div className="flex justify-between px-1 text-lg font-extrabold text-gray-900">
               <span>Total</span>

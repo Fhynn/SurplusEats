@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
   CheckCircle2,
@@ -20,6 +20,8 @@ import {
 import { useCustomerApp } from "@/components/customer-app-provider";
 import { MobileDeviceFrame } from "@/components/mobile-device-frame";
 import { PickupQrCode } from "@/components/pickup-qr-code";
+import { InlineNotice, StateCard } from "@/components/ui-state";
+import { useRealtimePolling } from "@/components/use-realtime-polling";
 import { formatRp } from "@/lib/customer-data";
 import {
   apiOrderToCard,
@@ -151,12 +153,12 @@ export function CustomerOrderTrackingScreen() {
     setRequestedOrderId(query.get("order") || query.get("id"));
   }, []);
 
-  useEffect(() => {
-    let ignore = false;
-
-    async function loadTrackingOrders() {
-      setIsLoading(true);
-      setNotice(null);
+  const loadTrackingOrders = useCallback(
+    async ({ silent = false }: { silent?: boolean } = {}) => {
+      if (!silent) {
+        setIsLoading(true);
+        setNotice(null);
+      }
 
       try {
         const ordersResponse = await fetch("/api/orders", {
@@ -172,13 +174,10 @@ export function CustomerOrderTrackingScreen() {
           throw new Error(ordersData.message || "Tracking pesanan gagal dimuat.");
         }
 
-        if (ignore) {
-          return;
-        }
-
         setApiOrders(ordersData.orders ?? []);
+        setNotice(null);
       } catch (error) {
-        if (!ignore) {
+        if (!silent) {
           setApiOrders([]);
           setNotice(
             error instanceof Error
@@ -187,18 +186,22 @@ export function CustomerOrderTrackingScreen() {
           );
         }
       } finally {
-        if (!ignore) {
+        if (!silent) {
           setIsLoading(false);
         }
       }
-    }
+    },
+    [],
+  );
 
+  useEffect(() => {
     void loadTrackingOrders();
+  }, [loadTrackingOrders]);
 
-    return () => {
-      ignore = true;
-    };
-  }, []);
+  useRealtimePolling({
+    intervalMs: 10000,
+    onPoll: () => loadTrackingOrders({ silent: true }),
+  });
 
   useEffect(() => {
     if (orders.length === 0) {
@@ -240,8 +243,8 @@ export function CustomerOrderTrackingScreen() {
             </button>
             <button
               type="button"
-              onClick={() => window.location.reload()}
-              className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-50 text-gray-600 transition-colors hover:bg-emerald-50 hover:text-emerald-600"
+              onClick={() => void loadTrackingOrders()}
+              className="flex h-11 w-11 items-center justify-center rounded-full bg-gray-50 text-gray-600 transition-colors hover:bg-emerald-50 hover:text-emerald-600"
               aria-label="Muat ulang tracking"
             >
               <RefreshCcw size={18} />
@@ -264,53 +267,34 @@ export function CustomerOrderTrackingScreen() {
 
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-6 pb-24 [scrollbar-width:none] sm:px-6 md:mx-auto md:w-full md:max-w-6xl md:px-8 [&::-webkit-scrollbar]:hidden">
           {notice ? (
-            <div className="mb-5 rounded-2xl border border-red-100 bg-red-50 p-4 text-sm font-bold text-red-700">
-              {notice}
-            </div>
+            <InlineNotice
+              variant="error"
+              description={notice}
+              className="mb-5"
+            />
           ) : null}
 
           {isLoading ? (
             <div className="flex min-h-[55vh] items-center justify-center text-center">
-              <div>
-                <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
-                  <RefreshCcw size={30} className="animate-spin" />
-                </div>
-                <h2 className="text-xl font-extrabold text-gray-950">
-                  Memuat tracking...
-                </h2>
-                <p className="mt-2 text-sm font-medium text-gray-500">
-                  Mengambil pesanan aktif dari akun kamu.
-                </p>
-              </div>
+              <StateCard
+                title="Memuat tracking"
+                description="Mengambil pesanan aktif dari akun kamu."
+                variant="loading"
+                className="w-full max-w-md"
+              />
             </div>
           ) : orders.length === 0 ? (
             <div className="flex min-h-[55vh] items-center justify-center text-center">
-              <div className="max-w-sm">
-                <div className="mx-auto mb-5 flex h-20 w-20 items-center justify-center rounded-full bg-gray-100 text-gray-500">
-                  <ShoppingBag size={36} />
-                </div>
-                <h2 className="text-2xl font-extrabold tracking-tight text-gray-950">
-                  Belum ada pesanan aktif
-                </h2>
-                <p className="mt-3 text-sm leading-6 font-medium text-gray-500">
-                  Tracking akan muncul setelah kamu checkout dan order masuk ke
-                  restoran.
-                </p>
-                <div className="mt-8 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <Link
-                    href="/browse"
-                    className="rounded-2xl bg-emerald-500 px-5 py-3 text-sm font-extrabold text-white shadow-[0_8px_22px_rgba(16,185,129,0.25)]"
-                  >
-                    Cari Makanan
-                  </Link>
-                  <Link
-                    href="/orders"
-                    className="rounded-2xl border border-gray-200 bg-white px-5 py-3 text-sm font-extrabold text-gray-700"
-                  >
-                    Riwayat Pesanan
-                  </Link>
-                </div>
-              </div>
+              <StateCard
+                title="Belum ada pesanan aktif"
+                description="Tracking akan muncul setelah kamu checkout dan order masuk ke restoran."
+                variant="empty"
+                className="w-full max-w-md"
+                action={{
+                  label: "Cari Makanan",
+                  href: "/browse",
+                }}
+              />
             </div>
           ) : selectedOrder ? (
             <section className="grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">

@@ -168,7 +168,7 @@ export function CustomerRegisterScreen() {
             <button
               type="button"
               onClick={() => router.push("/")}
-              className="relative -ml-2 rounded-full p-2 transition-colors hover:bg-gray-100 md:text-white md:hover:bg-white/10"
+              className="relative -ml-2 flex h-11 w-11 items-center justify-center rounded-full transition-colors hover:bg-gray-100 md:text-white md:hover:bg-white/10"
               aria-label="Kembali ke login"
             >
               <ChevronLeft size={24} className="text-gray-800 md:text-white" />
@@ -276,7 +276,7 @@ export function CustomerRegisterScreen() {
                 <button
                   type="button"
                   onClick={() => setShowPassword((value) => !value)}
-                  className="absolute right-4 p-1 text-gray-400"
+                  className="absolute right-1 flex h-11 w-11 items-center justify-center rounded-xl text-gray-400 transition-colors hover:bg-gray-100 hover:text-emerald-600"
                   aria-label={
                     showPassword ? "Sembunyikan password" : "Lihat password"
                   }
@@ -316,7 +316,7 @@ export function CustomerRegisterScreen() {
                       key={preference}
                       type="button"
                       onClick={() => togglePreference(preference)}
-                      className={`rounded-2xl px-4 py-2 text-xs font-extrabold transition-all ${
+                      className={`min-h-11 rounded-2xl px-4 py-2 text-xs font-extrabold transition-all ${
                         isSelected
                           ? "bg-gray-900 text-white"
                           : "bg-white text-gray-500 hover:bg-gray-100"
@@ -367,7 +367,7 @@ export function CustomerRegisterScreen() {
                 </p>
                 <Link
                   href="/register-mitra"
-                  className="mt-1 inline-block text-xs font-extrabold text-emerald-700 hover:text-emerald-800"
+                  className="mt-1 inline-flex min-h-11 items-center text-xs font-extrabold text-emerald-700 hover:text-emerald-800"
                 >
                   Daftar sebagai mitra ResQFood
                 </Link>
@@ -379,7 +379,7 @@ export function CustomerRegisterScreen() {
             Sudah punya akun?{" "}
             <Link
               href="/"
-              className="font-bold text-emerald-600 transition-colors hover:text-emerald-700"
+              className="inline-flex min-h-11 items-center font-bold text-emerald-600 transition-colors hover:text-emerald-700"
             >
               Masuk di sini
             </Link>
