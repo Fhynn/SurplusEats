@@ -17,11 +17,17 @@ import {
   getPlatformFeeSettings,
 } from "@/lib/platform-fees";
 import { prisma, type PrismaTransactionClient } from "@/lib/prisma";
+import { enforceRateLimit } from "@/lib/rate-limit";
 import {
   createTripayTransaction,
   getTripayCallbackUrl,
   TripayApiError,
 } from "@/lib/tripay";
+import { invalidateCacheTags } from "@/lib/server-cache";
+import {
+  lockVoucherRedemption,
+  redeemVoucherClaimForOrder,
+} from "@/lib/voucher-integrity";
 import {
   calculateVoucherEligibility,
   normalizeVoucherCategory,
@@ -228,6 +234,22 @@ export async function POST(request: Request) {
       { ok: false, message: "Login customer diperlukan untuk checkout." },
       { status: session ? 403 : 401 },
     );
+  }
+
+  const rateLimit = await enforceRateLimit(
+    request,
+    {
+      keyPrefix: "checkout-order",
+      max: 15,
+      windowMs: 10 * 60 * 1000,
+      message: "Terlalu banyak percobaan checkout. Coba lagi beberapa menit lagi.",
+      auditAction: "CHECKOUT_RATE_LIMIT_BLOCKED",
+    },
+    [session.userId],
+  );
+
+  if (!rateLimit.allowed) {
+    return rateLimit.response;
   }
 
   const parsed = checkoutSchema.safeParse(await request.json());
@@ -468,6 +490,7 @@ export async function POST(request: Request) {
       }, 0);
       let voucherDiscount = 0;
       let appliedVoucherClaimId: string | null = null;
+      let appliedVoucherId: string | null = null;
       let appliedVoucherRule: {
         restaurantId: string | null;
         category: string | null;
@@ -490,6 +513,8 @@ export async function POST(request: Request) {
         if (!voucher) {
           throw new Error("Voucher tidak valid atau sudah tidak berlaku.");
         }
+
+        await lockVoucherRedemption(tx, voucher.id);
 
         const [
           voucherClaim,
@@ -564,6 +589,7 @@ export async function POST(request: Request) {
 
         voucherDiscount = eligibility.discount;
         appliedVoucherClaimId = voucherClaim.id;
+        appliedVoucherId = voucher.id;
         appliedVoucherRule = {
           restaurantId: voucher.restaurantId,
           category: voucher.category,
@@ -746,18 +772,19 @@ export async function POST(request: Request) {
         data: { status: MenuItemStatus.SOLD_OUT },
       });
 
-      if (appliedVoucherClaimId && voucherRedemptionOrderId) {
-        await tx.voucherRedemption.update({
-          where: { id: appliedVoucherClaimId },
-          data: {
-            orderId: voucherRedemptionOrderId,
-            redeemedAt: new Date(),
-          },
+      if (appliedVoucherClaimId && appliedVoucherId && voucherRedemptionOrderId) {
+        await redeemVoucherClaimForOrder(tx, {
+          claimId: appliedVoucherClaimId,
+          voucherId: appliedVoucherId,
+          userId: customer.id,
+          orderId: voucherRedemptionOrderId,
         });
       }
 
       return { orders: createdOrders };
     }, checkoutTransactionOptions);
+
+    await invalidateCacheTags(["menu-items:public"]);
 
     if (!checkoutAttemptId) {
       throw new Error("Referensi checkout gagal dibuat.");
@@ -843,6 +870,7 @@ export async function POST(request: Request) {
           console.warn("Checkout reservation release failed", releaseError);
         },
       );
+      await invalidateCacheTags(["menu-items:public"]);
     }
 
     return NextResponse.json(

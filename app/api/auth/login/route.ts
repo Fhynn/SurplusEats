@@ -10,6 +10,7 @@ import {
 import { createPersistedSession } from "@/lib/auth-session-records";
 import { verifyPassword } from "@/lib/password";
 import { prisma } from "@/lib/prisma";
+import { enforceRateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -64,6 +65,17 @@ function getRedirectTo(role: UserRole, ownerStatus: OwnerAccessStatus) {
 }
 
 export async function POST(request: Request) {
+  const ipRateLimit = await enforceRateLimit(request, {
+    keyPrefix: "auth-login-ip",
+    max: 30,
+    windowMs: 10 * 60 * 1000,
+    auditAction: "LOGIN_IP_RATE_LIMIT_BLOCKED",
+  });
+
+  if (!ipRateLimit.allowed) {
+    return ipRateLimit.response;
+  }
+
   const parsed = loginSchema.safeParse(await request.json());
 
   if (!parsed.success) {
@@ -74,8 +86,25 @@ export async function POST(request: Request) {
   }
 
   const { email, password, rememberMe } = parsed.data;
+  const normalizedEmail = email.toLowerCase();
+  const accountRateLimit = await enforceRateLimit(
+    request,
+    {
+      keyPrefix: "auth-login-account",
+      max: 8,
+      windowMs: 10 * 60 * 1000,
+      message: "Terlalu banyak percobaan login. Tunggu beberapa menit lalu coba lagi.",
+      auditAction: "LOGIN_ACCOUNT_RATE_LIMIT_BLOCKED",
+    },
+    [normalizedEmail],
+  );
+
+  if (!accountRateLimit.allowed) {
+    return accountRateLimit.response;
+  }
+
   const user = await prisma.user.findUnique({
-    where: { email: email.toLowerCase() },
+    where: { email: normalizedEmail },
   });
 
   if (!user || !verifyPassword(password, user.passwordHash)) {

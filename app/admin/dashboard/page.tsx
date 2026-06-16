@@ -513,7 +513,10 @@ function AdminDashboardPage() {
   }, [loadDashboardData]);
 
   useRealtimePolling({
-    intervalMs: activeTab === "transactions" ? 10000 : 15000,
+    intervalMs:
+      activeTab === "transactions" || activeTab === "verification"
+        ? 9000
+        : 25000,
     onPoll: () => loadDashboardData({ silent: true }),
   });
 

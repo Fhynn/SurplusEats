@@ -11,6 +11,11 @@ import { getCurrentSession } from "@/lib/auth-session";
 import { slugify } from "@/lib/backend-utils";
 import { deliverNotifications } from "@/lib/notification-delivery";
 import { prisma, type PrismaTransactionClient } from "@/lib/prisma";
+import { enforceRateLimit } from "@/lib/rate-limit";
+import {
+  documentUploadTypes,
+  validateUploadFile,
+} from "@/lib/upload-security";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,12 +25,6 @@ interface ApplicationDocumentRouteProps {
 }
 
 const maxDocumentSize = 6 * 1024 * 1024;
-const allowedDocumentTypes = new Set([
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-  "application/pdf",
-]);
 
 export async function POST(
   request: Request,
@@ -40,6 +39,22 @@ export async function POST(
     );
   }
 
+  const rateLimit = await enforceRateLimit(
+    request,
+    {
+      keyPrefix: "owner-document-revision",
+      max: 12,
+      windowMs: 60 * 60 * 1000,
+      message: "Terlalu banyak upload dokumen. Tunggu beberapa menit lalu coba lagi.",
+      auditAction: "OWNER_DOCUMENT_UPLOAD_RATE_LIMIT_BLOCKED",
+    },
+    [session.userId],
+  );
+
+  if (!rateLimit.allowed) {
+    return rateLimit.response;
+  }
+
   const { id } = await params;
   const formData = await request.formData();
   const documentId = String(formData.get("documentId") || "");
@@ -52,16 +67,16 @@ export async function POST(
     );
   }
 
-  if (file.size > maxDocumentSize) {
-    return NextResponse.json(
-      { ok: false, message: "Ukuran dokumen maksimal 6MB." },
-      { status: 400 },
-    );
-  }
+  const validation = await validateUploadFile(file, {
+    allowedMimeTypes: documentUploadTypes,
+    maxSizeBytes: maxDocumentSize,
+    maxSizeMessage: "Ukuran dokumen maksimal 6MB.",
+    unsupportedMessage: "Dokumen harus JPG, PNG, WEBP, atau PDF.",
+  });
 
-  if (!allowedDocumentTypes.has(file.type)) {
+  if (!validation.ok) {
     return NextResponse.json(
-      { ok: false, message: "Dokumen harus JPG, PNG, WEBP, atau PDF." },
+      { ok: false, message: validation.message },
       { status: 400 },
     );
   }
@@ -112,9 +127,8 @@ export async function POST(
     );
   }
 
-  const extension = file.name.split(".").pop() || "bin";
   const nextRevision = document.revision + 1;
-  const filename = `${slugify(document.type)}-rev-${nextRevision}-${crypto.randomUUID()}.${extension}`;
+  const filename = `${slugify(document.type)}-rev-${nextRevision}-${crypto.randomUUID()}.${validation.extension}`;
   const pathname = `restaurant-verifications/${slugify(application.email)}/${filename}`;
   const blob = await put(pathname, file, {
     access: "public",
@@ -128,7 +142,7 @@ export async function POST(
           uploadedById: session.userId,
           url: blob.url,
           pathname: blob.pathname,
-          contentType: file.type,
+          contentType: validation.contentType,
           size: file.size,
           visibility: AssetVisibility.PUBLIC,
           entityType: "restaurant_application",

@@ -2,7 +2,6 @@ import {
   NotificationType,
   OrderStatus,
   WalletTransactionStatus,
-  WalletTransactionType,
 } from "@prisma/client";
 
 import {
@@ -10,6 +9,7 @@ import {
   type NotificationDeliveryPayload,
 } from "@/lib/notification-delivery";
 import { prisma } from "@/lib/prisma";
+import { transitionOrderIncomeWalletTransaction } from "@/lib/wallet-integrity";
 
 const defaultNoShowGraceMinutes = 15;
 
@@ -90,17 +90,12 @@ export async function expireNoShowOrders(now = new Date()) {
         continue;
       }
 
-      await tx.walletTransaction.updateMany({
-        where: {
-          restaurantId: order.restaurantId,
-          type: WalletTransactionType.ORDER_INCOME,
-          reference: order.orderCode,
-        },
-        data: {
-          status: WalletTransactionStatus.COMPLETED,
-          processedAt: now,
-          description: `Order ${order.orderCode} no-show pickup`,
-        },
+      await transitionOrderIncomeWalletTransaction(tx, {
+        restaurantId: order.restaurantId,
+        orderCode: order.orderCode,
+        nextStatus: WalletTransactionStatus.COMPLETED,
+        processedAt: now,
+        description: `Order ${order.orderCode} no-show pickup`,
       });
 
       const orderNotifications = [

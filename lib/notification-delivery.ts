@@ -17,6 +17,36 @@ type NotificationRecipient = {
   phone: string | null;
 };
 
+export type NotificationDeliveryChannel = "email" | "whatsapp";
+
+export type NotificationDeliveryResult = {
+  channel: NotificationDeliveryChannel;
+  attempted: boolean;
+  ok: boolean;
+  status?: number;
+  skippedReason?: string;
+  error?: string;
+};
+
+export type NotificationDeliveryChannelStatus = {
+  channel: NotificationDeliveryChannel;
+  label: string;
+  provider: string;
+  enabled: boolean;
+  configured: boolean;
+  recipientReady: boolean;
+  missing: string[];
+};
+
+export type NotificationDeliveryStatus = {
+  channels: NotificationDeliveryChannelStatus[];
+  ready: boolean;
+  appBaseUrl: string | null;
+  appBaseUrlConfigured: boolean;
+  promoExternalEnabled: boolean;
+  timeoutMs: number;
+};
+
 const defaultFonnteApiUrl = "https://api.fonnte.com/send";
 
 function envFlagIsFalse(value: string | undefined) {
@@ -25,6 +55,14 @@ function envFlagIsFalse(value: string | undefined) {
 
 function isPromoExternalEnabled() {
   return process.env.NOTIFICATION_PROMO_EXTERNAL_ENABLED === "true";
+}
+
+function isEmailEnabled() {
+  return !envFlagIsFalse(process.env.NOTIFICATION_EMAIL_ENABLED);
+}
+
+function isWhatsappEnabled() {
+  return !envFlagIsFalse(process.env.NOTIFICATION_WHATSAPP_ENABLED);
 }
 
 function getDeliveryTimeoutMs() {
@@ -128,6 +166,63 @@ function normalizeWhatsappTarget(phone: string | null) {
   return digits;
 }
 
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "Unknown error";
+}
+
+export function getNotificationDeliveryStatus(
+  recipient?: Pick<NotificationRecipient, "email" | "phone">,
+): NotificationDeliveryStatus {
+  const emailMissing = [
+    !process.env.RESEND_API_KEY ? "RESEND_API_KEY" : null,
+    !(process.env.RESEND_FROM_EMAIL || process.env.EMAIL_FROM)
+      ? "RESEND_FROM_EMAIL"
+      : null,
+    recipient && !recipient.email ? "recipient.email" : null,
+  ].filter(Boolean) as string[];
+  const whatsappMissing = [
+    !process.env.FONNTE_TOKEN ? "FONNTE_TOKEN" : null,
+    recipient && !normalizeWhatsappTarget(recipient.phone)
+      ? "recipient.phone"
+      : null,
+  ].filter(Boolean) as string[];
+  const channels: NotificationDeliveryChannelStatus[] = [
+    {
+      channel: "email",
+      label: "Email",
+      provider: "Resend",
+      enabled: isEmailEnabled(),
+      configured:
+        emailMissing.filter((item) => item !== "recipient.email").length === 0,
+      recipientReady: !recipient || Boolean(recipient.email),
+      missing: emailMissing,
+    },
+    {
+      channel: "whatsapp",
+      label: "WhatsApp",
+      provider: "Fonnte",
+      enabled: isWhatsappEnabled(),
+      configured:
+        whatsappMissing.filter((item) => item !== "recipient.phone").length === 0,
+      recipientReady:
+        !recipient || Boolean(normalizeWhatsappTarget(recipient.phone)),
+      missing: whatsappMissing,
+    },
+  ];
+  const appBaseUrl = getAppBaseUrl();
+
+  return {
+    channels,
+    ready: channels.some(
+      (channel) => channel.enabled && channel.configured && channel.recipientReady,
+    ),
+    appBaseUrl: appBaseUrl || null,
+    appBaseUrlConfigured: Boolean(appBaseUrl),
+    promoExternalEnabled: isPromoExternalEnabled(),
+    timeoutMs: getDeliveryTimeoutMs(),
+  };
+}
+
 async function fetchWithTimeout(input: string, init: RequestInit) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), getDeliveryTimeoutMs());
@@ -142,99 +237,205 @@ async function fetchWithTimeout(input: string, init: RequestInit) {
 async function sendEmailNotification(
   payload: NotificationDeliveryPayload,
   recipient: NotificationRecipient,
-) {
+): Promise<NotificationDeliveryResult> {
   const apiKey = process.env.RESEND_API_KEY;
   const from = process.env.RESEND_FROM_EMAIL || process.env.EMAIL_FROM;
 
-  if (
-    envFlagIsFalse(process.env.NOTIFICATION_EMAIL_ENABLED) ||
-    !apiKey ||
-    !from ||
-    !recipient.email
-  ) {
-    return;
+  if (!isEmailEnabled()) {
+    return {
+      channel: "email",
+      attempted: false,
+      ok: false,
+      skippedReason: "EMAIL_DISABLED",
+    };
   }
 
-  const response = await fetchWithTimeout("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      from,
-      to: recipient.email,
-      subject: payload.title,
-      text: buildNotificationText(payload),
-      html: buildNotificationHtml(payload),
-    }),
-  });
+  if (!apiKey || !from || !recipient.email) {
+    return {
+      channel: "email",
+      attempted: false,
+      ok: false,
+      skippedReason: "EMAIL_NOT_CONFIGURED",
+    };
+  }
 
-  if (!response.ok) {
-    console.warn("Email notification delivery failed", await response.text());
+  try {
+    const response = await fetchWithTimeout("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from,
+        to: recipient.email,
+        subject: payload.title,
+        text: buildNotificationText(payload),
+        html: buildNotificationHtml(payload),
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      console.warn("Email notification delivery failed", error);
+
+      return {
+        channel: "email",
+        attempted: true,
+        ok: false,
+        status: response.status,
+        error,
+      };
+    }
+
+    return {
+      channel: "email",
+      attempted: true,
+      ok: true,
+      status: response.status,
+    };
+  } catch (error) {
+    const message = getErrorMessage(error);
+    console.warn("Email notification delivery failed", message);
+
+    return {
+      channel: "email",
+      attempted: true,
+      ok: false,
+      error: message,
+    };
   }
 }
 
 async function sendWhatsappNotification(
   payload: NotificationDeliveryPayload,
   recipient: NotificationRecipient,
-) {
+): Promise<NotificationDeliveryResult> {
   const token = process.env.FONNTE_TOKEN;
   const target = normalizeWhatsappTarget(recipient.phone);
 
-  if (
-    envFlagIsFalse(process.env.NOTIFICATION_WHATSAPP_ENABLED) ||
-    !token ||
-    !target
-  ) {
-    return;
+  if (!isWhatsappEnabled()) {
+    return {
+      channel: "whatsapp",
+      attempted: false,
+      ok: false,
+      skippedReason: "WHATSAPP_DISABLED",
+    };
+  }
+
+  if (!token || !target) {
+    return {
+      channel: "whatsapp",
+      attempted: false,
+      ok: false,
+      skippedReason: "WHATSAPP_NOT_CONFIGURED",
+    };
   }
 
   const formData = new FormData();
   formData.set("target", target);
   formData.set("message", buildNotificationText(payload));
 
-  const response = await fetchWithTimeout(
-    process.env.FONNTE_API_URL || defaultFonnteApiUrl,
-    {
-      method: "POST",
-      headers: {
-        Authorization: token,
+  try {
+    const response = await fetchWithTimeout(
+      process.env.FONNTE_API_URL || defaultFonnteApiUrl,
+      {
+        method: "POST",
+        headers: {
+          Authorization: token,
+        },
+        body: formData,
       },
-      body: formData,
-    },
-  );
+    );
 
-  if (!response.ok) {
-    console.warn("WhatsApp notification delivery failed", await response.text());
+    if (!response.ok) {
+      const error = await response.text();
+      console.warn("WhatsApp notification delivery failed", error);
+
+      return {
+        channel: "whatsapp",
+        attempted: true,
+        ok: false,
+        status: response.status,
+        error,
+      };
+    }
+
+    const responseBody = await response.text();
+
+    if (responseBody) {
+      try {
+        const parsed = JSON.parse(responseBody) as { status?: boolean };
+
+        if (parsed.status === false) {
+          console.warn("WhatsApp notification delivery failed", responseBody);
+
+          return {
+            channel: "whatsapp",
+            attempted: true,
+            ok: false,
+            status: response.status,
+            error: responseBody,
+          };
+        }
+      } catch {
+        // Fonnte normally returns JSON, but a plain 2xx response is still accepted.
+      }
+    }
+
+    return {
+      channel: "whatsapp",
+      attempted: true,
+      ok: true,
+      status: response.status,
+    };
+  } catch (error) {
+    const message = getErrorMessage(error);
+    console.warn("WhatsApp notification delivery failed", message);
+
+    return {
+      channel: "whatsapp",
+      attempted: true,
+      ok: false,
+      error: message,
+    };
   }
 }
 
 async function deliverNotificationToRecipient(
   payload: NotificationDeliveryPayload,
   recipient: NotificationRecipient,
-) {
+): Promise<NotificationDeliveryResult[]> {
   if (payload.type === "PROMO" && !isPromoExternalEnabled()) {
-    return;
+    return [
+      {
+        channel: "email",
+        attempted: false,
+        ok: false,
+        skippedReason: "PROMO_EXTERNAL_DISABLED",
+      },
+      {
+        channel: "whatsapp",
+        attempted: false,
+        ok: false,
+        skippedReason: "PROMO_EXTERNAL_DISABLED",
+      },
+    ];
   }
 
-  const results = await Promise.allSettled([
+  const results = await Promise.all([
     sendEmailNotification(payload, recipient),
     sendWhatsappNotification(payload, recipient),
   ]);
 
-  for (const result of results) {
-    if (result.status === "rejected") {
-      console.warn("Notification delivery failed", result.reason);
-    }
-  }
+  return results;
 }
 
 export async function deliverNotifications(
   payloads: NotificationDeliveryPayload[],
-) {
+): Promise<NotificationDeliveryResult[]> {
   if (payloads.length === 0) {
-    return;
+    return [];
   }
 
   try {
@@ -252,23 +453,21 @@ export async function deliverNotifications(
       recipients.map((recipient) => [recipient.id, recipient]),
     );
 
-    const results = await Promise.allSettled(
-      payloads.map((payload) => {
+    const results = await Promise.all(
+      payloads.map(async (payload) => {
         const recipient = recipientById.get(payload.userId);
 
         return recipient
           ? deliverNotificationToRecipient(payload, recipient)
-          : Promise.resolve();
+          : Promise.resolve([]);
       }),
     );
 
-    for (const result of results) {
-      if (result.status === "rejected") {
-        console.warn("Notification delivery task failed", result.reason);
-      }
-    }
+    return results.flat();
   } catch (error) {
     console.warn("Notification recipient lookup failed", error);
+
+    return [];
   }
 }
 

@@ -7,9 +7,12 @@ import { slugify } from "@/lib/backend-utils";
 import { deriveMenuStatus, reconcileMenuLifecycle } from "@/lib/menu-lifecycle";
 import { prisma } from "@/lib/prisma";
 import { notifyRestaurantFollowers } from "@/lib/restaurant-follower-notifications";
+import { getCachedJson, invalidateCacheTags } from "@/lib/server-cache";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+const publicMenuCacheTags = ["menu-items:public"];
 
 const createMenuItemSchema = z
   .object({
@@ -75,39 +78,54 @@ export async function GET(request: Request) {
     );
   }
 
-  const menuItems = await prisma.menuItem.findMany({
-    where: {
-      restaurantId:
-        restaurantId && (!isOwnerScope || session?.role === UserRole.ADMIN)
-          ? restaurantId
-          : undefined,
-      status: isOwnerScope
-        ? includeArchived
-          ? undefined
-          : { not: MenuItemStatus.ARCHIVED }
-        : MenuItemStatus.ACTIVE,
-      restaurant: isOwnerScope
-        ? session?.role === UserRole.OWNER
-          ? { ownerId: session.userId }
-          : undefined
-        : { status: RestaurantStatus.APPROVED },
-      category:
-        category && category !== "Semua"
-          ? { equals: category, mode: "insensitive" }
-          : undefined,
-      OR: query
-        ? [
-            { name: { contains: query, mode: "insensitive" } },
-            { description: { contains: query, mode: "insensitive" } },
-            { restaurant: { name: { contains: query, mode: "insensitive" } } },
-          ]
+  const where = {
+    restaurantId:
+      restaurantId && (!isOwnerScope || session?.role === UserRole.ADMIN)
+        ? restaurantId
         : undefined,
-    },
+    status: isOwnerScope
+      ? includeArchived
+        ? undefined
+        : { not: MenuItemStatus.ARCHIVED }
+      : MenuItemStatus.ACTIVE,
+    restaurant: isOwnerScope
+      ? session?.role === UserRole.OWNER
+        ? { ownerId: session.userId }
+        : undefined
+      : { status: RestaurantStatus.APPROVED },
+    category:
+      category && category !== "Semua"
+        ? { equals: category, mode: "insensitive" as const }
+        : undefined,
+    OR: query
+      ? [
+          { name: { contains: query, mode: "insensitive" as const } },
+          { description: { contains: query, mode: "insensitive" as const } },
+          { restaurant: { name: { contains: query, mode: "insensitive" as const } } },
+        ]
+      : undefined,
+  };
+  const loadMenuItems = () => prisma.menuItem.findMany({
+    where,
     include: {
       restaurant: true,
     },
     orderBy: [{ stock: "desc" }, { createdAt: "desc" }],
   });
+  const menuItems = isOwnerScope
+    ? await loadMenuItems()
+    : await getCachedJson(
+        {
+          key: `public-menu-items:${JSON.stringify({
+            query,
+            category,
+            restaurantId,
+          })}`,
+          ttlMs: 8_000,
+          tags: publicMenuCacheTags,
+        },
+        loadMenuItems,
+      );
 
   return NextResponse.json({ ok: true, menuItems });
 }
@@ -208,6 +226,8 @@ export async function POST(request: Request) {
       href: `/detail/${menuItem.id}`,
     });
   }
+
+  await invalidateCacheTags(publicMenuCacheTags);
 
   return NextResponse.json({ ok: true, menuItem }, { status: 201 });
 }

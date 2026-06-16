@@ -3,6 +3,7 @@
 import { Gift, ReceiptText, RefreshCcw, ShoppingBag } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { BrowserNotificationControl } from "@/components/browser-notification-control";
 import { useCustomerApp } from "@/components/customer-app-provider";
 import { MobileDeviceFrame } from "@/components/mobile-device-frame";
 import {
@@ -253,6 +254,7 @@ export default function CustomerNotificationsPage() {
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 pb-28 [scrollbar-width:none] sm:px-6 md:mx-auto md:w-full md:max-w-5xl [&::-webkit-scrollbar]:hidden">
+          <BrowserNotificationControl className="mb-4" />
           <NotificationListHeading />
 
           <section className="space-y-3">

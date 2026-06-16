@@ -14,6 +14,11 @@ import { getStorePickupCoordinateIssue } from "@/lib/location-quality";
 import { deliverNotifications } from "@/lib/notification-delivery";
 import { hashPassword } from "@/lib/password";
 import { prisma, type PrismaTransactionClient } from "@/lib/prisma";
+import { enforceRateLimit } from "@/lib/rate-limit";
+import {
+  documentUploadTypes,
+  validateUploadFile,
+} from "@/lib/upload-security";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -115,12 +120,6 @@ const documentRequirements = [
 ] as const;
 
 const maxDocumentSize = 6 * 1024 * 1024;
-const allowedDocumentTypes = new Set([
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-  "application/pdf",
-]);
 
 type RegistrationDocumentFile = {
   type: string;
@@ -201,16 +200,18 @@ async function uploadRegistrationDocuments(
   const uploadedDocuments: UploadedRegistrationDocument[] = [];
 
   for (const document of documents) {
-    if (document.file.size > maxDocumentSize) {
-      throw new Error(`${document.label} melebihi batas 6MB.`);
+    const validation = await validateUploadFile(document.file, {
+      allowedMimeTypes: documentUploadTypes,
+      maxSizeBytes: maxDocumentSize,
+      maxSizeMessage: `${document.label} melebihi batas 6MB.`,
+      unsupportedMessage: `${document.label} harus JPG, PNG, WEBP, atau PDF.`,
+    });
+
+    if (!validation.ok) {
+      throw new Error(`${document.label}: ${validation.message}`);
     }
 
-    if (!allowedDocumentTypes.has(document.file.type)) {
-      throw new Error(`${document.label} harus JPG, PNG, WEBP, atau PDF.`);
-    }
-
-    const extension = document.file.name.split(".").pop() || "bin";
-    const filename = `${slugify(document.type)}-${crypto.randomUUID()}.${extension}`;
+    const filename = `${slugify(document.type)}-${crypto.randomUUID()}.${validation.extension}`;
     const pathname = `restaurant-verifications/${slugify(email)}/${filename}`;
     const blob = await put(pathname, document.file, {
       access: "public",
@@ -222,7 +223,7 @@ async function uploadRegistrationDocuments(
       label: document.label,
       url: blob.url,
       pathname: blob.pathname,
-      contentType: document.file.type,
+      contentType: validation.contentType,
       size: document.file.size,
     });
   }
@@ -231,6 +232,18 @@ async function uploadRegistrationDocuments(
 }
 
 export async function POST(request: Request) {
+  const ipRateLimit = await enforceRateLimit(request, {
+    keyPrefix: "auth-register-owner-ip",
+    max: 8,
+    windowMs: 60 * 60 * 1000,
+    message: "Terlalu banyak percobaan daftar mitra. Coba lagi nanti.",
+    auditAction: "OWNER_REGISTER_IP_RATE_LIMIT_BLOCKED",
+  });
+
+  if (!ipRateLimit.allowed) {
+    return ipRateLimit.response;
+  }
+
   const { payload, documents, missingDocuments } =
     await readRegisterPayload(request);
   const parsed = ownerRegisterSchema.safeParse(payload);
@@ -251,6 +264,21 @@ export async function POST(request: Request) {
 
   const data = parsed.data;
   const email = data.email.toLowerCase();
+  const emailRateLimit = await enforceRateLimit(
+    request,
+    {
+      keyPrefix: "auth-register-owner-email",
+      max: 3,
+      windowMs: 60 * 60 * 1000,
+      message: "Terlalu banyak percobaan daftar mitra dengan email ini. Coba lagi nanti.",
+      auditAction: "OWNER_REGISTER_EMAIL_RATE_LIMIT_BLOCKED",
+    },
+    [email],
+  );
+
+  if (!emailRateLimit.allowed) {
+    return emailRateLimit.response;
+  }
 
   if (missingDocuments.length > 0) {
     return NextResponse.json(

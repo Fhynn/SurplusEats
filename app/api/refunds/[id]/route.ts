@@ -116,6 +116,24 @@ export async function GET(_request: Request, { params }: RefundDetailRouteProps)
         include: {
           items: true,
           restaurant: { include: { owner: true } },
+          supportTickets: {
+            where: { category: "REFUND" },
+            orderBy: { updatedAt: "desc" },
+            take: 3,
+            select: {
+              id: true,
+              subject: true,
+              status: true,
+              priority: true,
+              updatedAt: true,
+              assignee: {
+                select: {
+                  name: true,
+                  email: true,
+                },
+              },
+            },
+          },
         },
       },
     },
@@ -228,13 +246,22 @@ export async function PATCH(
     });
 
     if (parsed.data.status === RefundStatus.PAID) {
-      await tx.order.update({
-        where: { id: updatedRefund.orderId },
+      const refundedOrder = await tx.order.updateMany({
+        where: {
+          id: updatedRefund.orderId,
+          paymentStatus: PaymentStatus.PAID,
+          status: { not: OrderStatus.REFUNDED },
+        },
         data: {
           status: OrderStatus.REFUNDED,
           paymentStatus: PaymentStatus.REFUNDED,
         },
       });
+
+      if (refundedOrder.count !== 1) {
+        throw new Error("Order sudah berubah atau tidak valid untuk refund.");
+      }
+
       await applyPaidRefundWalletEffect(tx, updatedRefund);
     }
 

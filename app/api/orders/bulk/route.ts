@@ -5,7 +5,6 @@ import {
   PaymentStatus,
   UserRole,
   WalletTransactionStatus,
-  WalletTransactionType,
 } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -19,6 +18,8 @@ import {
   isValidOrderStatusTransition,
 } from "@/lib/order-status-flow";
 import { prisma, type PrismaTransactionClient } from "@/lib/prisma";
+import { invalidateCacheTags } from "@/lib/server-cache";
+import { transitionOrderIncomeWalletTransaction } from "@/lib/wallet-integrity";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -145,6 +146,20 @@ export async function PATCH(request: Request) {
     );
   }
 
+  const unpaidOrder = orders.find(
+    (order) => order.paymentStatus !== PaymentStatus.PAID,
+  );
+
+  if (unpaidOrder) {
+    return NextResponse.json(
+      {
+        ok: false,
+        message: `Order ${unpaidOrder.orderCode} belum dibayar dan tidak boleh diproses.`,
+      },
+      { status: 400 },
+    );
+  }
+
   const transactionResult = await prisma.$transaction(
     async (tx: PrismaTransactionClient) => {
       const now = new Date();
@@ -163,8 +178,12 @@ export async function PATCH(request: Request) {
           }
         }
 
-        const updatedOrder = await tx.order.update({
-          where: { id: order.id },
+        const orderTransition = await tx.order.updateMany({
+          where: {
+            id: order.id,
+            status: order.status,
+            paymentStatus: PaymentStatus.PAID,
+          },
           data: {
             status: nextStatus,
             paymentStatus:
@@ -190,6 +209,16 @@ export async function PATCH(request: Request) {
                 ? now
                 : undefined,
           },
+        });
+
+        if (orderTransition.count !== 1) {
+          throw new Error(
+            `Status order ${order.orderCode} sudah berubah. Muat ulang halaman lalu coba lagi.`,
+          );
+        }
+
+        const updatedOrder = await tx.order.findUniqueOrThrow({
+          where: { id: order.id },
           include: {
             customer: true,
             items: {
@@ -216,17 +245,12 @@ export async function PATCH(request: Request) {
         });
 
         if (nextStatus === OrderStatus.CANCELLED) {
-          await tx.walletTransaction.updateMany({
-            where: {
-              restaurantId: order.restaurantId,
-              type: WalletTransactionType.ORDER_INCOME,
-              reference: order.orderCode,
-            },
-            data: {
-              status: WalletTransactionStatus.FAILED,
-              processedAt: now,
-              description: `Order ${order.orderCode} dibatalkan`,
-            },
+          await transitionOrderIncomeWalletTransaction(tx, {
+            restaurantId: order.restaurantId,
+            orderCode: order.orderCode,
+            nextStatus: WalletTransactionStatus.FAILED,
+            processedAt: now,
+            description: `Order ${order.orderCode} dibatalkan`,
           });
         }
 
@@ -241,6 +265,18 @@ export async function PATCH(request: Request) {
     { maxWait: 5_000, timeout: 12_000 },
   );
   const updatedOrders = transactionResult.orders;
+  const ownerAnalyticsTags = Array.from(
+    new Set(
+      updatedOrders.map((order) => `owner-analytics:${order.restaurant.ownerId}`),
+    ),
+  );
+
+  await invalidateCacheTags([
+    ...ownerAnalyticsTags,
+    ...(transactionResult.restoredAvailableMenuItemIds.length > 0
+      ? ["menu-items:public"]
+      : []),
+  ]);
 
   await createManyNotificationsAndDeliver(
     updatedOrders.map((order) => ({

@@ -4,9 +4,11 @@ import Image from "next/image";
 import Link from "next/link";
 import {
   BellRing,
+  Check,
   ChevronLeft,
   Clock3,
   Heart,
+  Loader2,
   MapPin,
   Plus,
   Search,
@@ -16,9 +18,20 @@ import {
   Store,
   Trash2,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  type MouseEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useRouter } from "next/navigation";
 
+import {
+  CartFlyItem,
+  useCartInteractionFeedback,
+} from "@/components/cart-interaction-feedback";
 import { useCustomerApp } from "@/components/customer-app-provider";
 import { MobileDeviceFrame } from "@/components/mobile-device-frame";
 import { InlineNotice, StateCard } from "@/components/ui-state";
@@ -142,7 +155,7 @@ function formatFavoriteDate(value: string | null) {
 
 export default function CustomerFavoritesPage() {
   const router = useRouter();
-  const { addToCart, customerLocation } = useCustomerApp();
+  const { addToCart, cartCount, customerLocation } = useCustomerApp();
   const [favorites, setFavorites] = useState<Food[]>([]);
   const [favoriteStores, setFavoriteStores] = useState<FavoriteStore[]>([]);
   const [query, setQuery] = useState("");
@@ -152,7 +165,16 @@ export default function CustomerFavoritesPage() {
   const [menuSort, setMenuSort] = useState<MenuFavoriteSort>("nearby");
   const [storeSort, setStoreSort] = useState<StoreFavoriteSort>("latest");
   const [isLoadingFavorites, setIsLoadingFavorites] = useState(true);
+  const [addingFavoriteId, setAddingFavoriteId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const cartTargetRef = useRef<HTMLButtonElement | null>(null);
+  const {
+    addedFoodId,
+    cartToast,
+    flyingCartItem,
+    showAddedToCart,
+    showCartError,
+  } = useCartInteractionFeedback();
 
   const loadFavorites = useCallback(async () => {
     setIsLoadingFavorites(true);
@@ -325,6 +347,28 @@ export default function CustomerFavoritesPage() {
     }
   };
 
+  const handleAddFavoriteToCart = async (
+    food: Food,
+    event: MouseEvent<HTMLButtonElement>,
+  ) => {
+    if (addingFavoriteId === food.id) {
+      return;
+    }
+
+    const sourceElement = event.currentTarget;
+
+    setAddingFavoriteId(food.id);
+    const added = await addToCart(food);
+    setAddingFavoriteId(null);
+
+    if (!added) {
+      showCartError();
+      return;
+    }
+
+    showAddedToCart(food, sourceElement, cartTargetRef.current);
+  };
+
   const handleRemoveFavoriteStore = async (storeId: string) => {
     const store = favoriteStores.find((item) => item.id === storeId);
     const isConfirmed = await showSweetConfirm({
@@ -399,6 +443,21 @@ export default function CustomerFavoritesPage() {
                 </p>
               </div>
             </div>
+            <button
+              ref={cartTargetRef}
+              type="button"
+              data-customer-cart-target="favorite-header"
+              onClick={() => router.push("/cart")}
+              className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600 transition-colors hover:bg-emerald-100"
+              aria-label="Buka keranjang"
+            >
+              <ShoppingBag size={21} />
+              {cartCount > 0 ? (
+                <span className="absolute -top-1 -right-1 min-w-5 rounded-full border-2 border-white bg-emerald-500 px-1 text-[10px] leading-4 font-extrabold text-white">
+                  {cartCount > 99 ? "99+" : cartCount}
+                </span>
+              ) : null}
+            </button>
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-red-50 text-red-500">
               <Heart size={22} className="fill-red-500" />
             </div>
@@ -693,6 +752,8 @@ export default function CustomerFavoritesPage() {
             <section className="space-y-4 md:grid md:grid-cols-2 md:gap-4 md:space-y-0">
               {visibleFavorites.map((food) => {
                 const detailRoute = `/detail/${food.id}`;
+                const isAddingThisFood = addingFavoriteId === food.id;
+                const isAddedThisFood = addedFoodId === food.id;
 
                 return (
                   <article
@@ -762,12 +823,23 @@ export default function CustomerFavoritesPage() {
                           type="button"
                           onClick={(event) => {
                             event.stopPropagation();
-                            addToCart(food);
+                            void handleAddFavoriteToCart(food, event);
                           }}
-                          className="flex h-10 w-10 items-center justify-center rounded-xl bg-gray-900 text-white transition-colors hover:bg-emerald-500"
+                          disabled={isAddingThisFood}
+                          className={`motion-press flex h-10 w-10 items-center justify-center rounded-xl text-white disabled:cursor-wait ${
+                            isAddedThisFood
+                              ? "bg-emerald-500 shadow-[0_10px_22px_rgba(16,185,129,0.24)]"
+                              : "bg-gray-900 hover:bg-emerald-500 disabled:bg-gray-300"
+                          }`}
                           aria-label={`Tambah ${food.name} ke keranjang`}
                         >
-                          <Plus size={16} />
+                          {isAddingThisFood ? (
+                            <Loader2 size={16} className="animate-spin" />
+                          ) : isAddedThisFood ? (
+                            <Check size={16} strokeWidth={3} />
+                          ) : (
+                            <Plus size={16} />
+                          )}
                         </button>
                       </div>
                     </div>
@@ -789,6 +861,22 @@ export default function CustomerFavoritesPage() {
           )}
         </div>
       </div>
+      {cartToast ? (
+        <div className="cart-add-toast fixed right-4 bottom-24 z-[80] flex max-w-[calc(100vw-2rem)] items-center gap-3 rounded-2xl border border-emerald-100 bg-white px-4 py-3 text-xs font-extrabold text-gray-800 shadow-[0_18px_44px_rgba(15,23,42,0.14)] lg:right-8 lg:bottom-8">
+          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
+            <Check size={17} strokeWidth={3} />
+          </span>
+          <span className="line-clamp-2">{cartToast}</span>
+          <button
+            type="button"
+            onClick={() => router.push("/cart")}
+            className="ml-1 rounded-full bg-emerald-600 px-3 py-1.5 text-[11px] font-extrabold text-white transition-colors hover:bg-emerald-700"
+          >
+            Lihat
+          </button>
+        </div>
+      ) : null}
+      <CartFlyItem item={flyingCartItem} />
     </MobileDeviceFrame>
   );
 }

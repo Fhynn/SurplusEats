@@ -3,6 +3,10 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { getCurrentSession } from "@/lib/auth-session";
+import {
+  deliverNotifications,
+  type NotificationDeliveryPayload,
+} from "@/lib/notification-delivery";
 import { prisma, type PrismaTransactionClient } from "@/lib/prisma";
 import {
   getSupportSlaDates,
@@ -184,7 +188,7 @@ export async function PATCH(request: Request) {
   const now = new Date();
   const sla = shouldResetSla ? getSupportSlaDates(nextPriority, now) : null;
 
-  const updatedTicket = await prisma.$transaction(
+  const result = await prisma.$transaction(
     async (tx: PrismaTransactionClient) => {
       const updated = await tx.supportTicket.update({
         where: { id: ticket.id },
@@ -207,8 +211,8 @@ export async function PATCH(request: Request) {
         include: ticketInclude,
       });
 
-      await tx.notification.create({
-        data: {
+      const notificationPayloads: NotificationDeliveryPayload[] = [
+        {
           userId: ticket.userId,
           type: NotificationType.SYSTEM,
           title:
@@ -220,22 +224,22 @@ export async function PATCH(request: Request) {
             `${ticket.subject} sekarang berstatus ${nextStatus}.`,
           href: "/support",
         },
-      });
+      ];
 
       if (
         parsed.data.assignedAdminId &&
         parsed.data.assignedAdminId !== ticket.assignedAdminId
       ) {
-        await tx.notification.create({
-          data: {
-            userId: parsed.data.assignedAdminId,
-            type: NotificationType.SYSTEM,
-            title: "Tiket support ditugaskan",
-            body: ticket.subject,
-            href: `/admin/support?ticket=${ticket.id}`,
-          },
+        notificationPayloads.push({
+          userId: parsed.data.assignedAdminId,
+          type: NotificationType.SYSTEM,
+          title: "Tiket support ditugaskan",
+          body: ticket.subject,
+          href: `/admin/support?ticket=${ticket.id}`,
         });
       }
+
+      await tx.notification.createMany({ data: notificationPayloads });
 
       await tx.adminActionLog.create({
         data: {
@@ -251,12 +255,14 @@ export async function PATCH(request: Request) {
         },
       });
 
-      return updated;
+      return { ticket: updated, notificationPayloads };
     },
   );
 
+  await deliverNotifications(result.notificationPayloads);
+
   return NextResponse.json({
     ok: true,
-    ticket: serializeTicket(updatedTicket),
+    ticket: serializeTicket(result.ticket),
   });
 }

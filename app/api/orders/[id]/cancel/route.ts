@@ -5,7 +5,6 @@ import {
   PaymentStatus,
   UserRole,
   WalletTransactionStatus,
-  WalletTransactionType,
 } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -14,6 +13,7 @@ import { getCurrentSession } from "@/lib/auth-session";
 import { notifyFavoriteMenuItemsAvailableByIds } from "@/lib/favorite-menu-notifications";
 import { deliverNotifications } from "@/lib/notification-delivery";
 import { prisma, type PrismaTransactionClient } from "@/lib/prisma";
+import { transitionOrderIncomeWalletTransaction } from "@/lib/wallet-integrity";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -138,18 +138,33 @@ export async function POST(request: Request, { params }: CancelOrderRouteProps) 
           );
         }
 
+        if (order.paymentStatus !== PaymentStatus.PAID) {
+          throw new Error("Order belum dibayar dan belum dapat dibatalkan dari halaman ini.");
+        }
+
+        const now = new Date();
         restoredAvailableMenuItemIds = await restoreOrderStock(tx, order.items);
 
-        const nextOrder = await tx.order.update({
-          where: { id: order.id },
+        const orderTransition = await tx.order.updateMany({
+          where: {
+            id: order.id,
+            customerId: session.userId,
+            status: order.status,
+            paymentStatus: PaymentStatus.PAID,
+          },
           data: {
             status: OrderStatus.CANCELLED,
-            paymentStatus:
-              order.paymentStatus === PaymentStatus.PAID
-                ? PaymentStatus.REFUNDED
-                : order.paymentStatus,
-            cancelledAt: new Date(),
+            paymentStatus: PaymentStatus.REFUNDED,
+            cancelledAt: now,
           },
+        });
+
+        if (orderTransition.count !== 1) {
+          throw new Error("Status order sudah berubah. Muat ulang halaman lalu coba lagi.");
+        }
+
+        const nextOrder = await tx.order.findUniqueOrThrow({
+          where: { id: order.id },
           include: {
             customer: true,
             items: {
@@ -175,17 +190,12 @@ export async function POST(request: Request, { params }: CancelOrderRouteProps) 
           },
         });
 
-        await tx.walletTransaction.updateMany({
-          where: {
-            restaurantId: order.restaurantId,
-            type: WalletTransactionType.ORDER_INCOME,
-            reference: order.orderCode,
-          },
-          data: {
-            status: WalletTransactionStatus.FAILED,
-            processedAt: new Date(),
-            description: `Order ${order.orderCode} dibatalkan customer`,
-          },
+        await transitionOrderIncomeWalletTransaction(tx, {
+          restaurantId: order.restaurantId,
+          orderCode: order.orderCode,
+          nextStatus: WalletTransactionStatus.FAILED,
+          processedAt: now,
+          description: `Order ${order.orderCode} dibatalkan customer`,
         });
 
         await tx.notification.createMany({

@@ -34,6 +34,99 @@ const publicInformationPaths = new Set([
   "/kontak",
 ]);
 
+const unsafeApiMethods = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+const csrfExemptPathPrefixes = [
+  "/api/payments/tripay/callback",
+  "/api/cron/",
+];
+
+function envOrigin(value: string | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    const normalized = value.startsWith("http") ? value : `https://${value}`;
+
+    return new URL(normalized).origin;
+  } catch {
+    return null;
+  }
+}
+
+function getAllowedOrigins(request: NextRequest) {
+  const configuredOrigins = [
+    envOrigin(process.env.NEXT_PUBLIC_APP_URL),
+    envOrigin(process.env.APP_URL),
+    envOrigin(process.env.VERCEL_URL),
+  ].filter(Boolean);
+
+  return new Set([request.nextUrl.origin, ...configuredOrigins]);
+}
+
+function getSourceOrigin(request: NextRequest) {
+  const origin = request.headers.get("origin");
+
+  if (origin) {
+    return origin;
+  }
+
+  const referer = request.headers.get("referer");
+
+  if (!referer) {
+    return null;
+  }
+
+  try {
+    return new URL(referer).origin;
+  } catch {
+    return "invalid";
+  }
+}
+
+function isCsrfExempt(pathname: string) {
+  return csrfExemptPathPrefixes.some((prefix) => pathname.startsWith(prefix));
+}
+
+function applyApiSecurityHeaders(response: NextResponse) {
+  response.headers.set("X-Content-Type-Options", "nosniff");
+  response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  response.headers.set(
+    "Permissions-Policy",
+    "camera=(self), geolocation=(self), microphone=()",
+  );
+
+  return response;
+}
+
+function handleApiRequest(request: NextRequest) {
+  const pathname = request.nextUrl.pathname;
+
+  if (unsafeApiMethods.has(request.method) && !isCsrfExempt(pathname)) {
+    const fetchSite = request.headers.get("sec-fetch-site");
+    const sourceOrigin = getSourceOrigin(request);
+    const allowedOrigins = getAllowedOrigins(request);
+    const isCrossSiteFetch = fetchSite === "cross-site";
+    const isOriginAllowed =
+      !sourceOrigin ||
+      (sourceOrigin !== "invalid" && allowedOrigins.has(sourceOrigin));
+
+    if (isCrossSiteFetch || !isOriginAllowed) {
+      return applyApiSecurityHeaders(
+        NextResponse.json(
+          {
+            ok: false,
+            message: "Request ditolak karena origin tidak valid.",
+          },
+          { status: 403 },
+        ),
+      );
+    }
+  }
+
+  return applyApiSecurityHeaders(NextResponse.next());
+}
+
 function getSecret() {
   const secret = process.env.NEON_AUTH_COOKIE_SECRET;
 
@@ -200,10 +293,13 @@ export async function proxy(request: NextRequest) {
 
   if (
     pathname.startsWith("/_next") ||
-    pathname.startsWith("/api") ||
     pathname.includes(".")
   ) {
     return NextResponse.next();
+  }
+
+  if (pathname.startsWith("/api")) {
+    return handleApiRequest(request);
   }
 
   const tokenSession = await readSession(request);

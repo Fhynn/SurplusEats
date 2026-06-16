@@ -5,18 +5,18 @@ import { NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/auth-session";
 import { slugify } from "@/lib/backend-utils";
 import { prisma } from "@/lib/prisma";
+import { enforceRateLimit } from "@/lib/rate-limit";
+import {
+  documentUploadTypes,
+  validateUploadFile,
+} from "@/lib/upload-security";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const maxUploadSize = 6 * 1024 * 1024;
-const allowedTypes = new Set([
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-  "image/gif",
-  "application/pdf",
-]);
+const allowedTypes = new Set([...documentUploadTypes, "image/gif"]);
+const menuImageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 export async function POST(request: Request) {
   try {
@@ -29,6 +29,22 @@ export async function POST(request: Request) {
       );
     }
 
+    const rateLimit = await enforceRateLimit(
+      request,
+      {
+        keyPrefix: "uploads",
+        max: 40,
+        windowMs: 10 * 60 * 1000,
+        message: "Terlalu banyak upload file. Tunggu beberapa menit lalu coba lagi.",
+        auditAction: "UPLOAD_RATE_LIMIT_BLOCKED",
+      },
+      [session.userId],
+    );
+
+    if (!rateLimit.allowed) {
+      return rateLimit.response;
+    }
+
     const formData = await request.formData();
     const file = formData.get("file");
 
@@ -39,16 +55,16 @@ export async function POST(request: Request) {
       );
     }
 
-    if (file.size > maxUploadSize) {
-      return NextResponse.json(
-        { ok: false, message: "Ukuran file maksimal 6MB." },
-        { status: 400 },
-      );
-    }
+    const validation = await validateUploadFile(file, {
+      allowedMimeTypes: allowedTypes,
+      maxSizeBytes: maxUploadSize,
+      maxSizeMessage: "Ukuran file maksimal 6MB.",
+      unsupportedMessage: "Format file belum didukung.",
+    });
 
-    if (!allowedTypes.has(file.type)) {
+    if (!validation.ok) {
       return NextResponse.json(
-        { ok: false, message: "Format file belum didukung." },
+        { ok: false, message: validation.message },
         { status: 400 },
       );
     }
@@ -63,7 +79,7 @@ export async function POST(request: Request) {
 
     if (
       entityType === "menu_item" &&
-      !["image/jpeg", "image/png", "image/webp"].includes(file.type)
+      !menuImageTypes.has(validation.contentType)
     ) {
       return NextResponse.json(
         { ok: false, message: "Gambar menu harus JPG, PNG, atau WEBP." },
@@ -78,8 +94,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const extension = file.name.split(".").pop() || "bin";
-    const filename = `${slugify(file.name.replace(/\.[^.]+$/, "")) || "file"}-${crypto.randomUUID()}.${extension}`;
+    const filename = `${slugify(file.name.replace(/\.[^.]+$/, "")) || "file"}-${crypto.randomUUID()}.${validation.extension}`;
     const pathname = `${slugify(folder) || "uploads"}/${filename}`;
 
     const blob = await put(pathname, file, {
@@ -91,7 +106,7 @@ export async function POST(request: Request) {
       data: {
         url: blob.url,
         pathname: blob.pathname,
-        contentType: file.type,
+        contentType: validation.contentType,
         size: file.size,
         visibility,
         entityType: entityType || null,

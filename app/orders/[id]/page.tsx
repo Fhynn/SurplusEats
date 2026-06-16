@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   ChevronLeft,
   Clock3,
+  Download,
   MapPin,
   MessageCircle,
   MessageSquareText,
@@ -51,6 +52,14 @@ type ApiOrderMessage = {
     role: "CUSTOMER" | "OWNER" | "ADMIN";
   };
 };
+
+const terminalApiOrderStatuses = new Set([
+  "COMPLETED",
+  "NO_SHOW",
+  "CANCELLED",
+  "REFUNDED",
+  "PAYMENT_FAILED",
+]);
 
 type TrackingOrder = {
   id: string;
@@ -266,8 +275,12 @@ export default function CustomerOrderTrackingPage() {
     void loadOrder();
   }, [loadOrder]);
 
+  const shouldPollOrder =
+    !apiOrder || !terminalApiOrderStatuses.has(apiOrder.status);
+
   useRealtimePolling({
-    intervalMs: 10000,
+    enabled: shouldPollOrder,
+    intervalMs: order?.status === "ready" ? 6000 : 10000,
     onPoll: () => loadOrder({ silent: true }),
   });
 
@@ -763,13 +776,23 @@ export default function CustomerOrderTrackingPage() {
               </button>
             </div>
 
-            <Link
-              href={`/payment-success?order=${order.id}`}
-              className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl border border-emerald-100 bg-emerald-50 py-4 text-sm font-extrabold text-emerald-700 transition-colors hover:bg-emerald-100"
-            >
-              <ReceiptText size={18} />
-              Lihat Receipt
-            </Link>
+            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <Link
+                href={`/payment-success?order=${order.id}`}
+                className="flex w-full items-center justify-center gap-2 rounded-2xl border border-emerald-100 bg-emerald-50 py-4 text-sm font-extrabold text-emerald-700 transition-colors hover:bg-emerald-100"
+              >
+                <ReceiptText size={18} />
+                Lihat Receipt
+              </Link>
+              <a
+                href={`/api/orders/${order.id}/receipt`}
+                download
+                className="flex w-full items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-white py-4 text-sm font-extrabold text-gray-700 transition-colors hover:bg-gray-50"
+              >
+                <Download size={18} />
+                Download PDF
+              </a>
+            </div>
 
             {canCancelOrder ? (
               <>

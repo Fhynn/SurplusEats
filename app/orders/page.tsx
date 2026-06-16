@@ -41,6 +41,17 @@ const formatRp = (amount: number) =>
     maximumFractionDigits: 0,
   }).format(amount);
 
+function formatSyncTime(value: Date | null) {
+  if (!value) {
+    return "Belum sync";
+  }
+
+  return new Intl.DateTimeFormat("id-ID", {
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(value);
+}
+
 const statusClassNameByStatus: Record<UiOrderStatus, string> = {
   ready: "bg-emerald-50 text-emerald-600",
   preparing: "bg-blue-50 text-blue-600",
@@ -148,8 +159,9 @@ export default function CustomerOrdersPage() {
     void loadOrders();
   }, [loadOrders]);
 
-  useRealtimePolling({
-    intervalMs: 10000,
+  const orderSync = useRealtimePolling({
+    enabled: !isLoadingOrders,
+    intervalMs: activeOrders.length > 0 ? 8000 : 30000,
     onPoll: () => loadOrders({ silent: true }),
   });
 
@@ -316,13 +328,27 @@ export default function CustomerOrdersPage() {
                 Riwayat Pesanan
               </h1>
             </div>
-            <div className="rounded-2xl bg-emerald-50 px-3 py-2 text-right">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={orderSync.pollNow}
+                disabled={orderSync.isPolling}
+                className="flex min-h-11 items-center gap-2 rounded-2xl border border-gray-100 bg-white px-3 py-2 text-xs font-extrabold text-gray-600 shadow-sm transition-colors hover:bg-gray-50 disabled:cursor-wait disabled:text-gray-400"
+              >
+                <RefreshCcw
+                  size={14}
+                  className={orderSync.isPolling ? "animate-spin" : ""}
+                />
+                {formatSyncTime(orderSync.lastSyncedAt)}
+              </button>
+              <div className="rounded-2xl bg-emerald-50 px-3 py-2 text-right">
               <p className="text-lg font-extrabold text-emerald-700">
                 {activeOrders.length}
               </p>
               <p className="text-[10px] font-bold text-emerald-600">
                 aktif
               </p>
+              </div>
             </div>
           </div>
 

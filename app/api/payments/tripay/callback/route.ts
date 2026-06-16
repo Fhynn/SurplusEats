@@ -246,6 +246,8 @@ export async function POST(request: Request) {
       }> = [];
       const restoredAvailableMenuItemIds = new Set<string>();
 
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`resqfood:tripay:${payload.reference}`}))`;
+
       if (payload.status === "PAID") {
       const payableOrders = await tx.order.findMany({
         where: {
@@ -276,6 +278,24 @@ export async function POST(request: Request) {
       });
 
       for (const order of payableOrders) {
+        const paidOrderUpdate = await tx.order.updateMany({
+          where: {
+            id: order.id,
+            paymentStatus: PaymentStatus.PENDING,
+            status: OrderStatus.PENDING,
+          },
+          data: {
+            paymentStatus: PaymentStatus.PAID,
+            status: OrderStatus.PAID,
+            paidAt: getTripayPaidAt(payload.paid_at),
+            pickupCode: createPickupCode(),
+          },
+        });
+
+        if (paidOrderUpdate.count !== 1) {
+          continue;
+        }
+
         for (const item of order.items) {
           if (!item.menuItemId) {
             continue;
@@ -288,16 +308,6 @@ export async function POST(request: Request) {
             },
           });
         }
-
-        await tx.order.update({
-          where: { id: order.id },
-          data: {
-            paymentStatus: PaymentStatus.PAID,
-            status: OrderStatus.PAID,
-            paidAt: getTripayPaidAt(payload.paid_at),
-            pickupCode: createPickupCode(),
-          },
-        });
 
         const existingWalletTransaction = await tx.walletTransaction.findFirst({
           where: {
@@ -415,34 +425,39 @@ export async function POST(request: Request) {
           },
         },
       });
-      const pendingMenuItemIds = Array.from(
-        new Set(
-          pendingOrders.flatMap((order) =>
-            order.items
-              .map((item) => item.menuItemId)
-              .filter((id): id is string => Boolean(id)),
-          ),
-        ),
-      );
-
-      if (pendingMenuItemIds.length > 0) {
-        const soldOutMenuItems = await tx.menuItem.findMany({
-          where: {
-            id: { in: pendingMenuItemIds },
-            status: MenuItemStatus.SOLD_OUT,
-          },
-          select: { id: true },
-        });
-
-        for (const menuItem of soldOutMenuItems) {
-          restoredAvailableMenuItemIds.add(menuItem.id);
-        }
-      }
+      const failedOrderIds: string[] = [];
 
       for (const order of pendingOrders) {
+        const failedOrderUpdate = await tx.order.updateMany({
+          where: {
+            id: order.id,
+            paymentStatus: PaymentStatus.PENDING,
+            status: OrderStatus.PENDING,
+          },
+          data: {
+            paymentStatus: PaymentStatus.FAILED,
+            status: OrderStatus.PAYMENT_FAILED,
+          },
+        });
+
+        if (failedOrderUpdate.count !== 1) {
+          continue;
+        }
+
+        failedOrderIds.push(order.id);
+
         for (const item of order.items) {
           if (!item.menuItemId) {
             continue;
+          }
+
+          const menuItem = await tx.menuItem.findUnique({
+            where: { id: item.menuItemId },
+            select: { status: true },
+          });
+
+          if (menuItem?.status === MenuItemStatus.SOLD_OUT) {
+            restoredAvailableMenuItemIds.add(item.menuItemId);
           }
 
           await tx.menuItem.update({
@@ -455,23 +470,14 @@ export async function POST(request: Request) {
         }
       }
 
-      const pendingOrderIds = pendingOrders.map((order) => order.id);
-
-      if (pendingOrderIds.length > 0) {
-        await tx.order.updateMany({
-          where: { id: { in: pendingOrderIds } },
-          data: {
-            paymentStatus: PaymentStatus.FAILED,
-            status: OrderStatus.PAYMENT_FAILED,
-          },
-        });
+      if (failedOrderIds.length > 0) {
         await tx.voucherRedemption.updateMany({
-          where: { orderId: { in: pendingOrderIds } },
+          where: { orderId: { in: failedOrderIds } },
           data: { orderId: null },
         });
       }
 
-      if (checkoutAttemptIds.length > 0 && pendingOrders.length > 0) {
+      if (checkoutAttemptIds.length > 0 && failedOrderIds.length > 0) {
         await tx.checkoutAttempt.updateMany({
           where: { id: { in: checkoutAttemptIds } },
           data: {

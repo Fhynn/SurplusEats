@@ -115,7 +115,10 @@ export default function CustomerRefundRequestPage() {
     refundReasonOptions.find((reason) => reason.label === selectedReason) ?? null;
   const refundAmount = order?.total ?? 0;
   const restaurantName = order?.restaurant.name ?? "Restoran";
-  const supportHref = `/support?category=REFUND&order=${encodeURIComponent(orderId)}`;
+  const supportOrderCode = order?.orderCode ?? orderId;
+  const supportHref = `/support?category=REFUND&order=${encodeURIComponent(
+    supportOrderCode,
+  )}`;
   const completionItems = useMemo(
     () => [
       { label: "Alasan dipilih", done: Boolean(selectedReason) },

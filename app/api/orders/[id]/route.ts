@@ -12,6 +12,7 @@ import {
   type PickupVerificationMethod,
 } from "@/lib/order-status-flow";
 import { prisma, type PrismaTransactionClient } from "@/lib/prisma";
+import { invalidateCacheTags } from "@/lib/server-cache";
 import {
   MenuItemStatus,
   NotificationType,
@@ -19,8 +20,8 @@ import {
   PaymentStatus,
   UserRole,
   WalletTransactionStatus,
-  WalletTransactionType,
 } from "@prisma/client";
+import { transitionOrderIncomeWalletTransaction } from "@/lib/wallet-integrity";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -38,7 +39,9 @@ const updateOrderStatusSchema = z.object({
     OrderStatus.CANCELLED,
   ]),
   pickupCode: z.string().trim().max(20).optional(),
-  pickupVerificationMethod: z.literal("SCANNER_OR_MANUAL").optional(),
+  pickupVerificationMethod: z
+    .enum(["SCANNER", "MANUAL", "SCANNER_OR_MANUAL"])
+    .optional(),
 });
 
 async function restoreOrderStock(
@@ -258,8 +261,12 @@ export async function PATCH(request: Request, { params }: OrderDetailRouteProps)
         restoredAvailableMenuItemIds = await restoreOrderStock(tx, order.items);
       }
 
-      const nextOrder = await tx.order.update({
-        where: { id: order.id },
+      const orderTransition = await tx.order.updateMany({
+        where: {
+          id: order.id,
+          status: order.status,
+          paymentStatus: PaymentStatus.PAID,
+        },
         data: {
           status: nextStatus,
           paymentStatus:
@@ -287,6 +294,14 @@ export async function PATCH(request: Request, { params }: OrderDetailRouteProps)
           cancelledAt:
             nextStatus === OrderStatus.CANCELLED ? now : undefined,
         },
+      });
+
+      if (orderTransition.count !== 1) {
+        throw new Error("Status order sudah berubah. Muat ulang halaman lalu coba lagi.");
+      }
+
+      const nextOrder = await tx.order.findUniqueOrThrow({
+        where: { id: order.id },
         include: {
           customer: true,
           items: {
@@ -313,38 +328,33 @@ export async function PATCH(request: Request, { params }: OrderDetailRouteProps)
       });
 
       if (nextStatus === OrderStatus.COMPLETED) {
-        await tx.walletTransaction.updateMany({
-          where: {
-            restaurantId: order.restaurantId,
-            type: WalletTransactionType.ORDER_INCOME,
-            reference: order.orderCode,
-          },
-          data: {
-            status: WalletTransactionStatus.COMPLETED,
-            processedAt: now,
-            description: `Order ${order.orderCode} selesai`,
-          },
+        await transitionOrderIncomeWalletTransaction(tx, {
+          restaurantId: order.restaurantId,
+          orderCode: order.orderCode,
+          nextStatus: WalletTransactionStatus.COMPLETED,
+          processedAt: now,
+          description: `Order ${order.orderCode} selesai`,
         });
       }
 
       if (nextStatus === OrderStatus.CANCELLED) {
-        await tx.walletTransaction.updateMany({
-          where: {
-            restaurantId: order.restaurantId,
-            type: WalletTransactionType.ORDER_INCOME,
-            reference: order.orderCode,
-          },
-          data: {
-            status: WalletTransactionStatus.FAILED,
-            processedAt: now,
-            description: `Order ${order.orderCode} dibatalkan`,
-          },
+        await transitionOrderIncomeWalletTransaction(tx, {
+          restaurantId: order.restaurantId,
+          orderCode: order.orderCode,
+          nextStatus: WalletTransactionStatus.FAILED,
+          processedAt: now,
+          description: `Order ${order.orderCode} dibatalkan`,
         });
       }
 
       return nextOrder;
     },
   );
+
+  await invalidateCacheTags([
+    `owner-analytics:${updatedOrder.restaurant.ownerId}`,
+    ...(restoredAvailableMenuItemIds.length > 0 ? ["menu-items:public"] : []),
+  ]);
 
   await createNotificationAndDeliver({
     userId: order.customerId,

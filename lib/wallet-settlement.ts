@@ -81,38 +81,47 @@ export async function settleCompletedWalletTransactions(now = new Date()) {
     };
   }
 
-  const notificationPayloads = eligibleTransactions.map((transaction) => ({
-    userId: transaction.restaurant.ownerId,
-    type: NotificationType.SYSTEM,
-    title: "Saldo order masuk wallet",
-    body: `${transaction.reference || "Order"} sudah masuk saldo tersedia.`,
-    href: "/owner/wallet",
-  }));
+  const settledTransactions = await prisma.$transaction(
+    async (tx: PrismaTransactionClient) => {
+      const settled: typeof eligibleTransactions = [];
 
-  await prisma.$transaction(async (tx: PrismaTransactionClient) => {
-    for (const transaction of eligibleTransactions) {
-      await tx.walletTransaction.updateMany({
-        where: {
-          id: transaction.id,
-          status: WalletTransactionStatus.PENDING,
-        },
-        data: {
-          status: WalletTransactionStatus.COMPLETED,
-          processedAt: now,
-          description:
-            transaction.description ||
-            `Settlement otomatis ${transaction.reference || "order"}`,
-        },
-      });
-    }
-  });
+      for (const transaction of eligibleTransactions) {
+        const updatedTransaction = await tx.walletTransaction.updateMany({
+          where: {
+            id: transaction.id,
+            status: WalletTransactionStatus.PENDING,
+          },
+          data: {
+            status: WalletTransactionStatus.COMPLETED,
+            processedAt: now,
+            description:
+              transaction.description ||
+              `Settlement otomatis ${transaction.reference || "order"}`,
+          },
+        });
 
-  await createManyNotificationsAndDeliver(notificationPayloads);
+        if (updatedTransaction.count === 1) {
+          settled.push(transaction);
+        }
+      }
+
+      return settled;
+    },
+  );
+
+  await createManyNotificationsAndDeliver(
+    settledTransactions.map((transaction) => ({
+      userId: transaction.restaurant.ownerId,
+      type: NotificationType.SYSTEM,
+      title: "Saldo order masuk wallet",
+      body: `${transaction.reference || "Order"} sudah masuk saldo tersedia.`,
+      href: "/owner/wallet",
+    })),
+  );
 
   return {
-    settledCount: eligibleTransactions.length,
+    settledCount: settledTransactions.length,
     settlementHours,
     cutoff,
   };
 }
-

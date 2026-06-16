@@ -3,6 +3,10 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { getCurrentSession } from "@/lib/auth-session";
+import {
+  deliverNotifications,
+  type NotificationDeliveryPayload,
+} from "@/lib/notification-delivery";
 import { prisma, type PrismaTransactionClient } from "@/lib/prisma";
 import {
   getSupportPriorityForCategory,
@@ -223,7 +227,7 @@ export async function POST(request: Request) {
   );
   const sla = getSupportSlaDates(priority, now);
 
-  const ticket = await prisma.$transaction(async (tx: PrismaTransactionClient) => {
+  const result = await prisma.$transaction(async (tx: PrismaTransactionClient) => {
     const createdTicket = await tx.supportTicket.create({
       data: {
         userId: session.userId,
@@ -269,48 +273,57 @@ export async function POST(request: Request) {
       });
     }
 
-    await tx.notification.create({
-      data: {
+    const notificationPayloads: NotificationDeliveryPayload[] = [
+      {
         userId: session.userId,
         type: NotificationType.SYSTEM,
         title: "Tiket support dibuat",
         body: `${createdTicket.subject} sedang menunggu review admin.`,
         href: "/support",
       },
-    });
+    ];
 
     if (order?.restaurant.ownerId) {
-      await tx.notification.create({
-        data: {
-          userId: order.restaurant.ownerId,
-          type: NotificationType.SYSTEM,
-          title: "Support terkait order",
-          body: `Customer membuat tiket untuk ${order.orderCode} di ${order.restaurant.name}.`,
-          href: `/owner/orders/${order.orderCode}`,
-        },
+      notificationPayloads.push({
+        userId: order.restaurant.ownerId,
+        type: NotificationType.SYSTEM,
+        title: "Support terkait order",
+        body: `Customer membuat tiket untuk ${order.orderCode} di ${order.restaurant.name}.`,
+        href: `/owner/orders/${order.orderCode}`,
       });
     }
 
     if (admins.length > 0) {
-      await tx.notification.createMany({
-        data: admins.map((admin) => ({
+      notificationPayloads.push(
+        ...admins.map((admin) => ({
           userId: admin.id,
           type: NotificationType.SYSTEM,
-          title: assignedAdminId === admin.id ? "Tiket support ditugaskan" : "Tiket support baru",
-          body: `${categoryLabel[parsed.data.category]} - ${createdTicket.subject}`,
+          title:
+            assignedAdminId === admin.id
+              ? "Tiket support ditugaskan"
+              : "Tiket support baru",
+          body: `${categoryLabel[parsed.data.category]} - ${
+            createdTicket.subject
+          }`,
           href: `/admin/support?ticket=${createdTicket.id}`,
         })),
-      });
+      );
     }
 
-    return tx.supportTicket.findUniqueOrThrow({
+    await tx.notification.createMany({ data: notificationPayloads });
+
+    const ticket = await tx.supportTicket.findUniqueOrThrow({
       where: { id: createdTicket.id },
       include: ticketInclude,
     });
+
+    return { ticket, notificationPayloads };
   });
 
+  await deliverNotifications(result.notificationPayloads);
+
   return NextResponse.json(
-    { ok: true, ticket: serializeTicket(ticket) },
+    { ok: true, ticket: serializeTicket(result.ticket) },
     { status: 201 },
   );
 }

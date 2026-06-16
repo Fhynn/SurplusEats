@@ -143,6 +143,7 @@ export function CustomerAiAssistantScreen() {
     showCartError,
   } = useCartInteractionFeedback();
   const inputRef = useRef<HTMLInputElement>(null);
+  const cartSummaryTargetRef = useRef<HTMLButtonElement | null>(null);
   const scrollContainerRef = useRef<HTMLElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const isSendingRef = useRef(false);
@@ -282,7 +283,7 @@ export function CustomerAiAssistantScreen() {
       return;
     }
 
-    showAddedToCart(food, sourceElement);
+    showAddedToCart(food, sourceElement, cartSummaryTargetRef.current);
   };
 
   return (
@@ -313,12 +314,19 @@ export function CustomerAiAssistantScreen() {
               </p>
             </div>
             <button
+              ref={cartSummaryTargetRef}
               type="button"
+              data-customer-cart-target="ai-summary"
               onClick={() => router.push(cartCount > 0 ? "/checkout" : "/cart")}
-              className="motion-press flex h-11 w-11 items-center justify-center rounded-full bg-emerald-500 text-white"
+              className="motion-press relative flex h-11 w-11 items-center justify-center rounded-full bg-emerald-500 text-white"
               aria-label={cartCount > 0 ? "Buka checkout" : "Buka keranjang"}
             >
               <ShoppingBag size={18} />
+              {cartCount > 0 ? (
+                <span className="absolute -top-1 -right-1 min-w-5 rounded-full border-2 border-emerald-50 bg-gray-950 px-1 text-[10px] leading-4 font-extrabold text-white">
+                  {cartCount > 99 ? "99+" : cartCount}
+                </span>
+              ) : null}
             </button>
           </div>
         </div>

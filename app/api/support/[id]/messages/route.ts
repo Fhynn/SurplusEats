@@ -3,6 +3,10 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { getCurrentSession } from "@/lib/auth-session";
+import {
+  deliverNotifications,
+  type NotificationDeliveryPayload,
+} from "@/lib/notification-delivery";
 import { prisma, type PrismaTransactionClient } from "@/lib/prisma";
 import { getSupportSlaState } from "@/lib/support-sla";
 
@@ -197,7 +201,7 @@ export async function POST(
 
   const isAdminReply = session.role === UserRole.ADMIN;
   const now = new Date();
-  const ticket = await prisma.$transaction(async (tx: PrismaTransactionClient) => {
+  const result = await prisma.$transaction(async (tx: PrismaTransactionClient) => {
     const createdMessage = await tx.supportMessage.create({
       data: {
         ticketId: id,
@@ -243,17 +247,22 @@ export async function POST(
       include: ticketInclude,
     });
 
-    await tx.notification.create({
-      data: {
-        userId: isAdminReply ? auth.ticket!.userId : session.userId,
-        type: NotificationType.SYSTEM,
-        title: isAdminReply ? "Support membalas tiket" : "Balasan support dikirim",
-        body: isAdminReply
-          ? `${auth.ticket!.subject} sudah dibalas admin.`
-          : `${auth.ticket!.subject} masuk ke thread support.`,
-        href: "/support",
-      },
-    });
+    const notificationPayloads: NotificationDeliveryPayload[] = [];
+    const deliveryPayloads: NotificationDeliveryPayload[] = [];
+    const primaryNotification = {
+      userId: isAdminReply ? auth.ticket!.userId : session.userId,
+      type: NotificationType.SYSTEM,
+      title: isAdminReply ? "Support membalas tiket" : "Balasan support dikirim",
+      body: isAdminReply
+        ? `${auth.ticket!.subject} sudah dibalas admin.`
+        : `${auth.ticket!.subject} masuk ke thread support.`,
+      href: "/support",
+    };
+    notificationPayloads.push(primaryNotification);
+
+    if (isAdminReply) {
+      deliveryPayloads.push(primaryNotification);
+    }
 
     if (!isAdminReply) {
       const admins = await tx.user.findMany({
@@ -262,20 +271,25 @@ export async function POST(
       });
 
       if (admins.length > 0) {
-        await tx.notification.createMany({
-          data: admins.map((admin) => ({
-            userId: admin.id,
-            type: NotificationType.SYSTEM,
-            title: "Balasan customer di support",
-            body: auth.ticket!.subject,
-            href: `/admin/support?ticket=${id}`,
-          })),
-        });
+        const adminNotifications = admins.map((admin) => ({
+          userId: admin.id,
+          type: NotificationType.SYSTEM,
+          title: "Balasan customer di support",
+          body: auth.ticket!.subject,
+          href: `/admin/support?ticket=${id}`,
+        }));
+
+        notificationPayloads.push(...adminNotifications);
+        deliveryPayloads.push(...adminNotifications);
       }
     }
 
-    return updatedTicket;
+    await tx.notification.createMany({ data: notificationPayloads });
+
+    return { ticket: updatedTicket, deliveryPayloads };
   });
 
-  return NextResponse.json({ ok: true, ticket: serializeTicket(ticket) });
+  await deliverNotifications(result.deliveryPayloads);
+
+  return NextResponse.json({ ok: true, ticket: serializeTicket(result.ticket) });
 }

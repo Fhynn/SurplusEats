@@ -8,9 +8,12 @@ import { notifyFavoriteMenuAvailability } from "@/lib/favorite-menu-notification
 import { deriveMenuStatus } from "@/lib/menu-lifecycle";
 import { prisma } from "@/lib/prisma";
 import { notifyRestaurantFollowers } from "@/lib/restaurant-follower-notifications";
+import { invalidateCacheTags } from "@/lib/server-cache";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+const publicMenuCacheTags = ["menu-items:public"];
 
 interface MenuItemRouteProps {
   params: Promise<{ id: string }>;
@@ -191,6 +194,8 @@ export async function PATCH(request: Request, { params }: MenuItemRouteProps) {
     }
   }
 
+  await invalidateCacheTags(publicMenuCacheTags);
+
   return NextResponse.json({ ok: true, menuItem: updatedMenuItem });
 }
 
@@ -215,6 +220,8 @@ export async function DELETE(_request: Request, { params }: MenuItemRouteProps) 
   await prisma.menuItem.delete({
     where: { id: menuItem.id },
   });
+
+  await invalidateCacheTags(publicMenuCacheTags);
 
   return NextResponse.json({ ok: true });
 }
@@ -268,6 +275,8 @@ export async function POST(request: Request, { params }: MenuItemRouteProps) {
       restaurant: true,
     },
   });
+
+  await invalidateCacheTags(publicMenuCacheTags);
 
   return NextResponse.json({ ok: true, menuItem: duplicate }, { status: 201 });
 }

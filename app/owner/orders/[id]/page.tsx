@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   ChefHat,
   Clock,
+  Download,
   MapPin,
   MessageSquareText,
   PackageCheck,
@@ -26,6 +27,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { useRealtimePolling } from "@/components/use-realtime-polling";
 import {
+  type PickupScannerResult,
   showPickupCodeScanner,
   showSweetError,
   showSweetToast,
@@ -150,6 +152,22 @@ function formatOrderDateTime(value: string) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(value));
+}
+
+function formatPickupVerificationMethod(method: string | null) {
+  if (method === "SCANNER") {
+    return "QR scanner";
+  }
+
+  if (method === "MANUAL") {
+    return "Kode manual";
+  }
+
+  if (method === "SCANNER_OR_MANUAL") {
+    return "Scanner/manual";
+  }
+
+  return "Belum ada metode";
 }
 
 function formatChatTime(value: string) {
@@ -289,6 +307,11 @@ const timeline = [
 ] as const;
 
 const statusOrder: FlowOrderStatus[] = ["new", "preparing", "ready", "completed"];
+const terminalOwnerOrderStatuses = new Set<OwnerOrderStatus>([
+  "completed",
+  "noShow",
+  "rejected",
+]);
 
 const rejectReasons = [
   "Stok surplus sudah habis",
@@ -357,8 +380,12 @@ export default function OwnerOrderDetailPage() {
     void loadOrder();
   }, [loadOrder]);
 
+  const shouldPollOrder =
+    !order || !terminalOwnerOrderStatuses.has(order.status);
+
   useRealtimePolling({
-    intervalMs: 8000,
+    enabled: shouldPollOrder && !isUpdatingStatus,
+    intervalMs: status === "ready" ? 6000 : 8000,
     onPoll: () => loadOrder({ silent: true }),
   });
 
@@ -465,6 +492,7 @@ export default function OwnerOrderDetailPage() {
   const updateOrderStatus = async (
     nextStatus: ApiOrderStatus,
     pickupCode?: string,
+    pickupVerificationMethod?: PickupScannerResult["method"],
   ) => {
     setOrderNotice(null);
     setIsUpdatingStatus(true);
@@ -479,7 +507,7 @@ export default function OwnerOrderDetailPage() {
           status: nextStatus,
           pickupCode,
           pickupVerificationMethod:
-            nextStatus === "COMPLETED" ? "SCANNER_OR_MANUAL" : undefined,
+            nextStatus === "COMPLETED" ? pickupVerificationMethod : undefined,
         }),
       });
       const data = (await response.json()) as {
@@ -513,23 +541,25 @@ export default function OwnerOrderDetailPage() {
 
     if (nextStatus) {
       try {
-        let pickupCode: string | undefined;
+        let pickupVerification: PickupScannerResult | null = null;
 
         if (nextStatus === "completed") {
-          const submittedPickupCode = await showPickupCodeScanner({
+          pickupVerification = await showPickupCodeScanner({
             title: "Verifikasi Pickup",
             text: `Minta customer menunjukkan kode pickup untuk order ${order.id}.`,
             orderId: order.id,
           });
 
-          if (!submittedPickupCode) {
+          if (!pickupVerification) {
             return;
           }
-
-          pickupCode = submittedPickupCode;
         }
 
-        await updateOrderStatus(apiStatusByOwnerStatus[nextStatus], pickupCode);
+        await updateOrderStatus(
+          apiStatusByOwnerStatus[nextStatus],
+          pickupVerification?.code,
+          pickupVerification?.method,
+        );
         showSweetToast({
           icon: "success",
           title:
@@ -654,6 +684,14 @@ export default function OwnerOrderDetailPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
+          <Link
+            href={`/api/orders/${order.id}/receipt`}
+            target="_blank"
+            className="inline-flex items-center gap-2 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-2.5 text-sm font-extrabold text-emerald-700 shadow-sm transition-colors hover:border-emerald-200 hover:bg-emerald-100"
+          >
+            <Download size={17} />
+            Download PDF
+          </Link>
           <button
             type="button"
             onClick={handlePrintReceipt}
@@ -726,6 +764,14 @@ export default function OwnerOrderDetailPage() {
                   {order.pickupVerifiedAt ? (
                     <p className="mt-1 text-xs font-semibold text-emerald-700">
                       {formatOrderDateTime(order.pickupVerifiedAt)}
+                    </p>
+                  ) : null}
+                  {order.pickupVerificationMethod ? (
+                    <p className="mt-1 text-xs font-semibold text-emerald-700">
+                      Metode:{" "}
+                      {formatPickupVerificationMethod(
+                        order.pickupVerificationMethod,
+                      )}
                     </p>
                   ) : null}
                 </div>
@@ -922,7 +968,9 @@ export default function OwnerOrderDetailPage() {
                         order.pickupVerifiedAt
                           ? formatOrderDateTime(order.pickupVerifiedAt)
                           : "waktu tidak tercatat"
-                      }`
+                      } • ${formatPickupVerificationMethod(
+                        order.pickupVerificationMethod,
+                      )}`
                     : "Belum diverifikasi staf pickup"}
                 </p>
               </div>

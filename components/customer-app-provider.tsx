@@ -68,6 +68,7 @@ type NotificationSummary = {
 type NotificationsResponse = {
   ok: boolean;
   notifications?: NotificationSummary[];
+  unreadCount?: number;
 };
 
 function apiCartItemToCartItem(item: ApiCartItem): CartItem {
@@ -193,8 +194,10 @@ export function CustomerAppProvider({
       }
 
       setUnreadNotificationCount(
-        (data.notifications ?? []).filter((notification) => !notification.readAt)
-          .length,
+        typeof data.unreadCount === "number"
+          ? data.unreadCount
+          : (data.notifications ?? []).filter((notification) => !notification.readAt)
+              .length,
       );
     } catch {
       setUnreadNotificationCount(0);

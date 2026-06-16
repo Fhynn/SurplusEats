@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { getCurrentSession } from "@/lib/auth-session";
 import { prisma } from "@/lib/prisma";
+import { claimVoucherForUser } from "@/lib/voucher-integrity";
 import {
   getVoucherRuleLabels,
   isVoucherUsableNow,
@@ -276,18 +277,12 @@ export async function POST(request: Request) {
     }
   }
 
-  const existingClaim = voucher.redemptions.find(
-    (redemption) => !redemption.orderId,
+  const claimResult = await prisma.$transaction((tx) =>
+    claimVoucherForUser(tx, {
+      voucherId: voucher.id,
+      userId: session.userId,
+    }),
   );
-
-  if (!existingClaim) {
-    await prisma.voucherRedemption.create({
-      data: {
-        voucherId: voucher.id,
-        userId: session.userId,
-      },
-    });
-  }
 
   const claimedVoucher = await prisma.voucher.findUniqueOrThrow({
     where: { id: voucher.id },
@@ -309,7 +304,7 @@ export async function POST(request: Request) {
 
   return NextResponse.json({
     ok: true,
-    message: existingClaim
+    message: !claimResult.created
       ? "Voucher sudah ada di akun."
       : "Voucher berhasil diklaim.",
     voucher: serializeVoucher(claimedVoucher, 0, usedCount, 0),

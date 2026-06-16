@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 import { getCurrentSession } from "@/lib/auth-session";
 import { prisma } from "@/lib/prisma";
+import { getCachedJson } from "@/lib/server-cache";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -550,6 +551,52 @@ function createAnalyticsCsv({
     .join("\n");
 }
 
+async function buildOwnerAnalyticsPayload(ownerId: string, periodDays: number) {
+  const now = new Date();
+  const from = subtractDays(periodDays);
+  const previousFrom = subtractDays(periodDays * 2);
+  const restaurant = await prisma.restaurant.findFirst({
+    where: { ownerId },
+    select: {
+      id: true,
+      name: true,
+      rating: true,
+      reviewCount: true,
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  if (!restaurant) {
+    return {
+      ok: true,
+      restaurant: null,
+      periodDays,
+      analytics: null,
+    };
+  }
+
+  const [orders, previousOrders, historicalCompletedCustomerCounts] =
+    await Promise.all([
+      getOrdersForPeriod(restaurant.id, from, now),
+      getOrdersForPeriod(restaurant.id, previousFrom, from),
+      getHistoricalCompletedCustomerCounts(restaurant.id, now),
+    ]);
+  const analytics = createAnalytics(
+    orders,
+    previousOrders,
+    periodDays,
+    restaurant,
+    historicalCompletedCustomerCounts,
+  );
+
+  return {
+    ok: true,
+    restaurant,
+    periodDays,
+    analytics,
+  };
+}
+
 export async function GET(request: Request) {
   const session = await getCurrentSession();
 
@@ -563,52 +610,28 @@ export async function GET(request: Request) {
   const periodDays = getPeriodDays(request);
   const url = new URL(request.url);
   const exportFormat = url.searchParams.get("format");
-  const now = new Date();
-  const from = subtractDays(periodDays);
-  const previousFrom = subtractDays(periodDays * 2);
-  const restaurant = await prisma.restaurant.findFirst({
-    where: { ownerId: session.userId },
-    select: {
-      id: true,
-      name: true,
-      rating: true,
-      reviewCount: true,
-    },
-    orderBy: { createdAt: "desc" },
-  });
+  const payload =
+    exportFormat === "csv"
+      ? await buildOwnerAnalyticsPayload(session.userId, periodDays)
+      : await getCachedJson(
+          {
+            key: `owner-analytics:${session.userId}:${periodDays}`,
+            ttlMs: 30_000,
+            tags: [`owner-analytics:${session.userId}`],
+          },
+          () => buildOwnerAnalyticsPayload(session.userId, periodDays),
+        );
 
-  if (!restaurant) {
-    return NextResponse.json({
-      ok: true,
-      restaurant: null,
-      periodDays,
-      analytics: null,
-    });
+  if (!payload.restaurant || !payload.analytics) {
+    return NextResponse.json(payload);
   }
-
-  const [
-    orders,
-    previousOrders,
-    historicalCompletedCustomerCounts,
-  ] = await Promise.all([
-    getOrdersForPeriod(restaurant.id, from, now),
-    getOrdersForPeriod(restaurant.id, previousFrom, from),
-    getHistoricalCompletedCustomerCounts(restaurant.id, now),
-  ]);
-  const analytics = createAnalytics(
-    orders,
-    previousOrders,
-    periodDays,
-    restaurant,
-    historicalCompletedCustomerCounts,
-  );
 
   if (exportFormat === "csv") {
     return new NextResponse(
       createAnalyticsCsv({
-        restaurantName: restaurant.name,
+        restaurantName: payload.restaurant.name,
         periodDays,
-        analytics,
+        analytics: payload.analytics,
       }),
       {
         headers: {
@@ -619,10 +642,5 @@ export async function GET(request: Request) {
     );
   }
 
-  return NextResponse.json({
-    ok: true,
-    restaurant,
-    periodDays,
-    analytics,
-  });
+  return NextResponse.json(payload);
 }

@@ -199,7 +199,8 @@ export function CustomerOrderTrackingScreen() {
   }, [loadTrackingOrders]);
 
   useRealtimePolling({
-    intervalMs: 10000,
+    enabled: !isLoading,
+    intervalMs: orders.length > 0 ? 8000 : 30000,
     onPoll: () => loadTrackingOrders({ silent: true }),
   });
 

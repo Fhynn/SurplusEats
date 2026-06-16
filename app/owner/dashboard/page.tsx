@@ -27,6 +27,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
+  type PickupScannerResult,
   showPickupCodeScanner,
   showSweetError,
   showSweetToast,
@@ -397,6 +398,7 @@ export default function OwnerDashboardPage() {
   const kanbanQuery = searchParams.get("q") ?? "";
   const activeTab: OwnerTab = dashboardTab === "orders" ? "orders" : "dashboard";
   const normalizedKanbanQuery = kanbanQuery.trim().toLowerCase();
+  const hasActiveOrders = orders.some((order) => order.status !== "completed");
 
   const loadDashboardData = useCallback(
     async ({ silent = false }: { silent?: boolean } = {}) => {
@@ -469,7 +471,8 @@ export default function OwnerDashboardPage() {
   }, [loadDashboardData]);
 
   useRealtimePolling({
-    intervalMs: activeTab === "orders" ? 8000 : 15000,
+    enabled: !isBulkUpdating,
+    intervalMs: activeTab === "orders" ? 7000 : hasActiveOrders ? 12000 : 30000,
     onPoll: () => loadDashboardData({ silent: true }),
   });
 
@@ -688,6 +691,7 @@ export default function OwnerDashboardPage() {
     orderId: string,
     nextStatus: ApiOrderStatus,
     pickupCode?: string,
+    pickupVerificationMethod?: PickupScannerResult["method"],
   ) => {
     setDashboardNotice(null);
     setUpdatingOrderIds((currentIds) => new Set(currentIds).add(orderId));
@@ -702,7 +706,7 @@ export default function OwnerDashboardPage() {
           status: nextStatus,
           pickupCode,
           pickupVerificationMethod:
-            nextStatus === "COMPLETED" ? "SCANNER_OR_MANUAL" : undefined,
+            nextStatus === "COMPLETED" ? pickupVerificationMethod : undefined,
         }),
       });
       const data = (await response.json()) as {
@@ -731,26 +735,25 @@ export default function OwnerDashboardPage() {
     }
 
     try {
-      let pickupCode: string | undefined;
+      let pickupVerification: PickupScannerResult | null = null;
 
       if (nextStatus === "completed") {
-        const submittedPickupCode = await showPickupCodeScanner({
+        pickupVerification = await showPickupCodeScanner({
           title: "Verifikasi Pickup",
           text: `Minta customer menunjukkan kode pickup untuk order ${orderId}.`,
           orderId,
         });
 
-        if (!submittedPickupCode) {
+        if (!pickupVerification) {
           return;
         }
-
-        pickupCode = submittedPickupCode;
       }
 
       await updateOrderStatus(
         orderId,
         apiStatusByKanbanStatus[nextStatus],
-        pickupCode,
+        pickupVerification?.code,
+        pickupVerification?.method,
       );
       setSelectedOrderIds((currentIds) => {
         const nextIds = new Set(currentIds);

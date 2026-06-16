@@ -63,6 +63,11 @@ type PriceRangeId = "all" | "under-10k" | "10k-20k" | "20k-50k" | "over-50k";
 type RatingFilterId = "all" | "4" | "4.5";
 type DiscountFilterId = "all" | "30" | "50";
 type PickupTimeFilterId = "all" | "afternoon" | "evening" | "night";
+type SearchSuggestion = {
+  id: string;
+  label: string;
+  type: "Menu" | "Toko" | "Kategori";
+};
 
 const priceRangeFilters: Array<{
   id: PriceRangeId;
@@ -186,6 +191,7 @@ export function CustomerBrowseScreen() {
   const [activeCategory, setActiveCategory] =
     useState<(typeof CATEGORIES)[number]>("Semua");
   const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [isSuggestionOpen, setIsSuggestionOpen] = useState(false);
   const [isNearbyOnly, setIsNearbyOnly] = useState(false);
   const [activePriceRange, setActivePriceRange] =
     useState<PriceRangeId>("all");
@@ -433,6 +439,56 @@ export function CustomerBrowseScreen() {
     isNearbyOnly,
     query,
   ]);
+  const searchSuggestions = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+
+    if (normalizedQuery.length < 2) {
+      return [];
+    }
+
+    const suggestionMap = new Map<string, SearchSuggestion>();
+
+    const addSuggestion = (suggestion: SearchSuggestion) => {
+      const key = `${suggestion.type}:${suggestion.label.toLowerCase()}`;
+
+      if (!suggestionMap.has(key) && suggestionMap.size < 7) {
+        suggestionMap.set(key, suggestion);
+      }
+    };
+
+    allFoods.forEach((food) => {
+      if (food.name.toLowerCase().includes(normalizedQuery)) {
+        addSuggestion({
+          id: `menu-${food.id}`,
+          label: food.name,
+          type: "Menu",
+        });
+      }
+
+      if (food.restaurant.toLowerCase().includes(normalizedQuery)) {
+        addSuggestion({
+          id: `store-${food.restaurantId || food.restaurant}`,
+          label: food.restaurant,
+          type: "Toko",
+        });
+      }
+
+      if (food.category.toLowerCase().includes(normalizedQuery)) {
+        addSuggestion({
+          id: `category-${food.category}`,
+          label: food.category,
+          type: "Kategori",
+        });
+      }
+    });
+
+    return [...suggestionMap.values()];
+  }, [allFoods, query]);
+  const fallbackSearchSuggestions = useMemo(() => {
+    const suggestions = [...new Set(allFoods.slice(0, 8).map((food) => food.category))];
+
+    return suggestions.slice(0, 4);
+  }, [allFoods]);
   const foodWithoutPickupPinCount = foods.filter(
     (food) => !hasFoodPickupCoordinates(food),
   ).length;
@@ -480,6 +536,20 @@ export function CustomerBrowseScreen() {
     setActivePickupTimeFilter("all");
     setIsFavoriteStoresOnly(false);
     setIsNearbyOnly(false);
+    setIsSuggestionOpen(false);
+  };
+
+  const applySearchSuggestion = (suggestion: SearchSuggestion) => {
+    setQuery(suggestion.label);
+    setIsSuggestionOpen(false);
+
+    if (suggestion.type === "Kategori") {
+      const category = CATEGORIES.find((item) => item === suggestion.label);
+
+      if (category) {
+        setActiveCategory(category);
+      }
+    }
   };
 
   const handleLocationChange = (nextLocation: CustomerLocation) => {
@@ -595,15 +665,26 @@ export function CustomerBrowseScreen() {
             type="text"
             autoFocus
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              setIsSuggestionOpen(true);
+            }}
+            onFocus={() => setIsSuggestionOpen(true)}
+            onBlur={() => {
+              window.setTimeout(() => setIsSuggestionOpen(false), 120);
+            }}
             placeholder="Cari makan malam hemat..."
             aria-label="Cari makanan surplus"
+            autoComplete="off"
             className="w-full rounded-2xl bg-transparent py-3.5 pr-24 pl-12 text-sm font-semibold text-gray-900 outline-none placeholder:text-gray-400"
           />
           {query ? (
             <button
               type="button"
-              onClick={() => setQuery("")}
+              onClick={() => {
+                setQuery("");
+                setIsSuggestionOpen(false);
+              }}
               className="absolute right-14 flex h-11 w-11 items-center justify-center rounded-xl bg-gray-100 text-gray-500 transition-colors hover:bg-gray-200"
               aria-label="Hapus pencarian"
             >
@@ -623,6 +704,37 @@ export function CustomerBrowseScreen() {
               </span>
             ) : null}
           </button>
+
+          {isSuggestionOpen && query.trim().length >= 2 ? (
+            <div className="absolute top-[calc(100%+0.5rem)] right-0 left-0 z-30 overflow-hidden rounded-[24px] border border-gray-100 bg-white shadow-[0_20px_60px_rgba(15,23,42,0.16)]">
+              {searchSuggestions.length > 0 ? (
+                <div className="p-2">
+                  {searchSuggestions.map((suggestion) => (
+                    <button
+                      key={suggestion.id}
+                      type="button"
+                      onMouseDown={(event) => {
+                        event.preventDefault();
+                        applySearchSuggestion(suggestion);
+                      }}
+                      className="flex w-full items-center justify-between gap-3 rounded-2xl px-3 py-3 text-left transition-colors hover:bg-emerald-50"
+                    >
+                      <span className="min-w-0 truncate text-sm font-extrabold text-gray-900">
+                        {suggestion.label}
+                      </span>
+                      <span className="shrink-0 rounded-full bg-gray-100 px-2 py-1 text-[10px] font-extrabold text-gray-500">
+                        {suggestion.type}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="px-4 py-4 text-sm font-bold text-gray-500">
+                  Tidak ada saran. Coba kata kunci lain atau buka filter.
+                </div>
+              )}
+            </div>
+          ) : null}
         </div>
       </header>
 
@@ -838,15 +950,40 @@ export function CustomerBrowseScreen() {
             })}
           </section>
         ) : (
-          <StateCard
-            title="Tidak ada hasil"
-            description="Coba ubah kata kunci, kategori, atau filter pencarian."
-            variant="empty"
-            action={{
-              label: "Reset Pencarian",
-              onClick: resetSearchFilters,
-            }}
-          />
+          <section className="space-y-4">
+            <StateCard
+              title="Tidak ada hasil"
+              description="Coba reset pencarian, kurangi filter, atau pakai kategori populer di bawah."
+              variant="empty"
+              action={{
+                label: "Reset Pencarian",
+                onClick: resetSearchFilters,
+              }}
+            />
+            {fallbackSearchSuggestions.length > 0 ? (
+              <div className="rounded-[24px] border border-gray-100 bg-white p-4 shadow-sm">
+                <p className="text-xs font-extrabold tracking-wider text-gray-400 uppercase">
+                  Coba kategori ini
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {fallbackSearchSuggestions.map((category) => (
+                    <button
+                      key={category}
+                      type="button"
+                      onClick={() => {
+                        setQuery("");
+                        setActiveCategory(category);
+                        setIsSuggestionOpen(false);
+                      }}
+                      className="min-h-10 rounded-full border border-emerald-100 bg-emerald-50 px-4 py-2 text-xs font-extrabold text-emerald-700 transition-colors hover:bg-emerald-100"
+                    >
+                      {category}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </section>
         )}
       </main>
 

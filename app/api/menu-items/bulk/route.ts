@@ -7,9 +7,12 @@ import { notifyFavoriteMenusAvailable } from "@/lib/favorite-menu-notifications"
 import { deriveMenuStatus } from "@/lib/menu-lifecycle";
 import { prisma } from "@/lib/prisma";
 import { notifyRestaurantFollowers } from "@/lib/restaurant-follower-notifications";
+import { invalidateCacheTags } from "@/lib/server-cache";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+const publicMenuCacheTags = ["menu-items:public"];
 
 const bulkMenuSchema = z.object({
   ids: z.array(z.string().min(1)).min(1).max(100),
@@ -205,6 +208,8 @@ export async function PATCH(request: Request) {
       console.warn("Bulk menu availability notification failed", result.reason);
     }
   }
+
+  await invalidateCacheTags(publicMenuCacheTags);
 
   return NextResponse.json({
     ok: true,

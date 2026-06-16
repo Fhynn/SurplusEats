@@ -498,7 +498,7 @@ export async function GET(request: Request) {
     totalRestaurants,
     orders,
     totalTransactions,
-    menuItems,
+    menuCategoryStats,
     applications,
     refundRequests,
     auditLogs,
@@ -540,9 +540,9 @@ export async function GET(request: Request) {
       },
     }),
     prisma.order.count({ where: orderWhere }),
-    prisma.menuItem.findMany({
-      select: {
-        category: true,
+    prisma.menuItem.groupBy({
+      by: ["category"],
+      _sum: {
         soldCount: true,
       },
     }),
@@ -666,11 +666,17 @@ export async function GET(request: Request) {
   }
 
   const totalOrderAmount = orders.reduce((total, order) => total + order.total, 0);
-  const soldItemCount = menuItems.reduce((total, item) => total + item.soldCount, 0);
-  const categoryTotals = menuItems.reduce<Record<string, number>>((acc, item) => {
-    acc[item.category] = (acc[item.category] || 0) + item.soldCount;
-    return acc;
-  }, {});
+  const soldItemCount = menuCategoryStats.reduce(
+    (total, item) => total + (item._sum.soldCount ?? 0),
+    0,
+  );
+  const categoryTotals = menuCategoryStats.reduce<Record<string, number>>(
+    (acc, item) => {
+      acc[item.category] = item._sum.soldCount ?? 0;
+      return acc;
+    },
+    {},
+  );
   const categoryTotalCount = Object.values(categoryTotals).reduce(
     (total, value) => total + value,
     0,

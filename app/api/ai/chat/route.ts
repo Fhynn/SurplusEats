@@ -9,6 +9,7 @@ import {
   type Coordinates,
 } from "@/lib/geo-distance";
 import { prisma } from "@/lib/prisma";
+import { enforceRateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -1091,6 +1092,22 @@ export async function POST(request: Request) {
       { ok: false, message: "Login customer diperlukan untuk memakai ResQBot." },
       { status: session ? 403 : 401 },
     );
+  }
+
+  const rateLimit = await enforceRateLimit(
+    request,
+    {
+      keyPrefix: "resqbot-chat",
+      max: 40,
+      windowMs: 10 * 60 * 1000,
+      message: "ResQBot sedang menerima terlalu banyak pesan. Coba lagi beberapa menit lagi.",
+      auditAction: "RESQBOT_RATE_LIMIT_BLOCKED",
+    },
+    [session.userId],
+  );
+
+  if (!rateLimit.allowed) {
+    return rateLimit.response;
   }
 
   const parsed = chatSchema.safeParse(await request.json());

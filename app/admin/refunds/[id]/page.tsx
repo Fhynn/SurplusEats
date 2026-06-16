@@ -64,6 +64,17 @@ type RefundDetail = {
         email: string;
       };
     };
+    supportTickets: Array<{
+      id: string;
+      subject: string;
+      status: string;
+      priority: string;
+      updatedAt: string;
+      assignee: {
+        name: string;
+        email: string;
+      } | null;
+    }>;
   };
 };
 
@@ -206,6 +217,7 @@ export default function AdminRefundDetailPage() {
       })
     : null;
   const refundTimelineItems = refund ? getTimelineItems(refund) : [];
+  const refundSupportTicket = refund?.order.supportTickets[0] ?? null;
 
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 p-5 md:p-8">
@@ -458,11 +470,50 @@ export default function AdminRefundDetailPage() {
                 Email Customer
               </a>
               <Link
-                href="/admin/support"
+                href={
+                  refundSupportTicket
+                    ? `/admin/support?ticket=${refundSupportTicket.id}`
+                    : "/admin/support"
+                }
                 className="flex items-center justify-center gap-2 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm font-extrabold text-emerald-700 transition-colors hover:bg-emerald-100"
               >
                 Support Refund
               </Link>
+            </div>
+            <div className="mt-5 rounded-3xl border border-gray-100 bg-gray-50 p-4">
+              <p className="text-xs font-extrabold tracking-wider text-gray-400 uppercase">
+                Ticket Support Refund
+              </p>
+              {refund.order.supportTickets.length > 0 ? (
+                <div className="mt-3 space-y-2">
+                  {refund.order.supportTickets.map((ticket) => (
+                    <Link
+                      key={ticket.id}
+                      href={`/admin/support?ticket=${ticket.id}`}
+                      className="block rounded-2xl bg-white p-3 transition-colors hover:bg-emerald-50"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-extrabold text-gray-950">
+                            {ticket.subject}
+                          </p>
+                          <p className="mt-1 text-xs font-bold text-gray-500">
+                            {ticket.assignee?.name ?? "Unassigned"} -{" "}
+                            {formatTime(ticket.updatedAt)}
+                          </p>
+                        </div>
+                        <span className="shrink-0 rounded-full bg-gray-100 px-2.5 py-1 text-[10px] font-extrabold text-gray-600">
+                          {ticket.status}
+                        </span>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-3 text-sm leading-6 font-semibold text-gray-500">
+                  Belum ada ticket support refund untuk order ini.
+                </p>
+              )}
             </div>
             <div className="mt-5 grid gap-3">
               <button

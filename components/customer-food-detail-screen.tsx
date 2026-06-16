@@ -22,7 +22,7 @@ import {
   UtensilsCrossed,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { type MouseEvent, useEffect, useMemo, useRef, useState } from "react";
+import { type MouseEvent, useEffect, useMemo, useState } from "react";
 
 import {
   CartFlyItem,
@@ -62,7 +62,6 @@ export function CustomerFoodDetailScreen({
   const [isFavorite, setIsFavorite] = useState(false);
   const [isTogglingFavorite, setIsTogglingFavorite] = useState(false);
   const [qty, setQty] = useState(1);
-  const cartTargetRef = useRef<HTMLButtonElement | null>(null);
   const {
     addedFoodId,
     cartToast,
@@ -145,7 +144,7 @@ export function CustomerFoodDetailScreen({
     setIsAddingToCart(false);
 
     if (isSaved) {
-      showAddedToCart(displayFood, sourceElement, cartTargetRef.current);
+      showAddedToCart(displayFood, sourceElement);
     } else {
       showCartError();
     }
@@ -527,7 +526,6 @@ export function CustomerFoodDetailScreen({
 
           <div className="grid grid-cols-[1fr_auto] gap-3">
             <button
-              ref={cartTargetRef}
               type="button"
               onClick={handleAddButtonClick}
               disabled={isAddingToCart}
@@ -556,6 +554,7 @@ export function CustomerFoodDetailScreen({
             </button>
             <button
               type="button"
+              data-customer-cart-target="mobile"
               onClick={(event) => {
                 void handleAddToCart(event.currentTarget).then((isSaved) => {
                   if (isSaved) {

@@ -3,9 +3,12 @@
 import type { FormEvent } from "react";
 import { useEffect, useState } from "react";
 import {
+  BellRing,
   Clock3,
   Mail,
+  MessageCircle,
   Save,
+  Send,
   ShieldCheck,
   SlidersHorizontal,
   UserRound,
@@ -41,6 +44,34 @@ type PlatformFeeSettings = {
   commissionPercent: number;
   minCommission: number;
   updatedAt?: string;
+};
+
+type NotificationDeliveryChannelStatus = {
+  channel: "email" | "whatsapp";
+  label: string;
+  provider: string;
+  enabled: boolean;
+  configured: boolean;
+  recipientReady: boolean;
+  missing: string[];
+};
+
+type NotificationDeliveryStatus = {
+  channels: NotificationDeliveryChannelStatus[];
+  ready: boolean;
+  appBaseUrl: string | null;
+  appBaseUrlConfigured: boolean;
+  promoExternalEnabled: boolean;
+  timeoutMs: number;
+};
+
+type NotificationDeliveryResult = {
+  channel: "email" | "whatsapp";
+  attempted: boolean;
+  ok: boolean;
+  status?: number;
+  skippedReason?: string;
+  error?: string;
 };
 
 type PlatformFeeForm = {
@@ -108,6 +139,13 @@ export default function AdminSettingsPage() {
     message: string;
   } | null>(null);
   const [isSavingFees, setIsSavingFees] = useState(false);
+  const [notificationStatus, setNotificationStatus] =
+    useState<NotificationDeliveryStatus | null>(null);
+  const [notificationNotice, setNotificationNotice] = useState<{
+    type: "success" | "error";
+    message: string;
+  } | null>(null);
+  const [isTestingNotification, setIsTestingNotification] = useState(false);
 
   useEffect(() => {
     let ignore = false;
@@ -116,10 +154,18 @@ export default function AdminSettingsPage() {
       setIsLoading(true);
 
       try {
-        const [meResponse, logsResponse, feesResponse] = await Promise.all([
+        const [
+          meResponse,
+          logsResponse,
+          feesResponse,
+          notificationResponse,
+        ] = await Promise.all([
           fetch("/api/auth/me", { cache: "no-store" }),
           fetch("/api/admin/logs", { cache: "no-store" }),
           fetch("/api/admin/settings/platform-fees", { cache: "no-store" }),
+          fetch("/api/admin/settings/notification-delivery", {
+            cache: "no-store",
+          }),
         ]);
         const meData = (await meResponse.json()) as {
           ok: boolean;
@@ -134,6 +180,11 @@ export default function AdminSettingsPage() {
         const feesData = (await feesResponse.json()) as {
           ok: boolean;
           settings?: PlatformFeeSettings;
+          message?: string;
+        };
+        const notificationData = (await notificationResponse.json()) as {
+          ok: boolean;
+          status?: NotificationDeliveryStatus;
           message?: string;
         };
 
@@ -151,10 +202,22 @@ export default function AdminSettingsPage() {
           );
         }
 
+        if (
+          !notificationResponse.ok ||
+          !notificationData.ok ||
+          !notificationData.status
+        ) {
+          throw new Error(
+            notificationData.message ||
+              "Pengaturan notifikasi eksternal gagal dimuat.",
+          );
+        }
+
         if (!ignore) {
           setAdmin(meData.user);
           setLogs(logsData.logs ?? []);
           setFeeForm(toFeeForm(feesData.settings));
+          setNotificationStatus(notificationData.status);
           setNotice(null);
         }
       } catch (error) {
@@ -232,6 +295,52 @@ export default function AdminSettingsPage() {
       });
     } finally {
       setIsSavingFees(false);
+    }
+  };
+
+  const handleTestNotification = async () => {
+    setIsTestingNotification(true);
+    setNotificationNotice(null);
+
+    try {
+      const response = await fetch("/api/admin/settings/notification-delivery", {
+        method: "POST",
+      });
+      const data = (await response.json()) as {
+        ok: boolean;
+        status?: NotificationDeliveryStatus;
+        results?: NotificationDeliveryResult[];
+        message?: string;
+      };
+
+      if (data.status) {
+        setNotificationStatus(data.status);
+      }
+
+      if (!response.ok || !data.ok) {
+        throw new Error(data.message || "Test notifikasi gagal dikirim.");
+      }
+
+      const deliveredChannels = (data.results ?? [])
+        .filter((result) => result.attempted && result.ok)
+        .map((result) => (result.channel === "email" ? "Email" : "WhatsApp"));
+
+      setNotificationNotice({
+        type: "success",
+        message:
+          data.message ||
+          `Test berhasil dikirim lewat ${deliveredChannels.join(", ")}.`,
+      });
+    } catch (error) {
+      setNotificationNotice({
+        type: "error",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Test notifikasi gagal dikirim.",
+      });
+    } finally {
+      setIsTestingNotification(false);
     }
   };
 
@@ -436,6 +545,155 @@ export default function AdminSettingsPage() {
                 {isSavingFees ? "Menyimpan..." : "Simpan Pengaturan Fee"}
               </button>
             </form>
+          </section>
+
+          <section className="rounded-[28px] border border-gray-100 bg-white p-6 shadow-sm">
+            <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+              <div>
+                <p className="text-xs font-extrabold tracking-[0.2em] text-emerald-600 uppercase">
+                  Notifikasi Eksternal
+                </p>
+                <h2 className="mt-1 flex items-center gap-2 text-lg font-extrabold text-gray-950">
+                  <BellRing size={20} className="text-emerald-600" />
+                  Email & WhatsApp
+                </h2>
+                <p className="mt-2 max-w-2xl text-sm font-medium text-gray-500">
+                  Dipakai untuk event penting seperti order, refund, payout,
+                  dan verifikasi mitra. Data secret tidak ditampilkan di panel.
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={!notificationStatus?.ready || isTestingNotification}
+                onClick={handleTestNotification}
+                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-5 py-3 text-sm font-extrabold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-500"
+              >
+                <Send size={18} />
+                {isTestingNotification ? "Mengirim..." : "Kirim Tes"}
+              </button>
+            </div>
+
+            {notificationNotice ? (
+              <InlineNotice
+                className="mt-5"
+                variant={notificationNotice.type}
+                description={notificationNotice.message}
+              />
+            ) : null}
+
+            {notificationStatus ? (
+              <>
+                <div className="mt-6 grid gap-4 md:grid-cols-2">
+                  {notificationStatus.channels.map((channel) => {
+                    const ChannelIcon =
+                      channel.channel === "email" ? Mail : MessageCircle;
+                    const isReady =
+                      channel.enabled &&
+                      channel.configured &&
+                      channel.recipientReady;
+
+                    return (
+                      <article
+                        key={channel.channel}
+                        className="rounded-3xl border border-gray-100 bg-gray-50 p-5"
+                      >
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex items-center gap-3">
+                            <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-emerald-600 shadow-sm">
+                              <ChannelIcon size={20} />
+                            </span>
+                            <div>
+                              <p className="text-sm font-extrabold text-gray-950">
+                                {channel.label}
+                              </p>
+                              <p className="text-xs font-bold text-gray-400">
+                                Provider: {channel.provider}
+                              </p>
+                            </div>
+                          </div>
+                          <span
+                            className={`rounded-full px-3 py-1 text-xs font-extrabold ${
+                              isReady
+                                ? "bg-emerald-100 text-emerald-700"
+                                : channel.enabled
+                                  ? "bg-amber-100 text-amber-700"
+                                  : "bg-gray-200 text-gray-500"
+                            }`}
+                          >
+                            {!channel.enabled
+                              ? "Nonaktif"
+                              : isReady
+                                ? "Siap"
+                                : "Belum siap"}
+                          </span>
+                        </div>
+
+                        <div className="mt-4 space-y-2 text-xs font-bold text-gray-500">
+                          <p>
+                            Konfigurasi:{" "}
+                            <span
+                              className={
+                                channel.configured
+                                  ? "text-emerald-700"
+                                  : "text-amber-700"
+                              }
+                            >
+                              {channel.configured ? "Lengkap" : "Belum lengkap"}
+                            </span>
+                          </p>
+                          <p>
+                            Kontak admin:{" "}
+                            <span
+                              className={
+                                channel.recipientReady
+                                  ? "text-emerald-700"
+                                  : "text-amber-700"
+                              }
+                            >
+                              {channel.recipientReady ? "Siap" : "Belum siap"}
+                            </span>
+                          </p>
+                          {channel.missing.length > 0 ? (
+                            <p className="break-words text-amber-700">
+                              Kurang: {channel.missing.join(", ")}
+                            </p>
+                          ) : null}
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+
+                <div className="mt-4 grid gap-3 md:grid-cols-3">
+                  <div className="rounded-2xl bg-gray-50 p-4">
+                    <p className="text-xs font-extrabold tracking-wider text-gray-400 uppercase">
+                      App URL
+                    </p>
+                    <p className="mt-1 break-words text-sm font-extrabold text-gray-950">
+                      {notificationStatus.appBaseUrl || "Belum diatur"}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl bg-gray-50 p-4">
+                    <p className="text-xs font-extrabold tracking-wider text-gray-400 uppercase">
+                      Promo Eksternal
+                    </p>
+                    <p className="mt-1 text-sm font-extrabold text-gray-950">
+                      {notificationStatus.promoExternalEnabled
+                        ? "Aktif"
+                        : "Nonaktif"}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl bg-gray-50 p-4">
+                    <p className="text-xs font-extrabold tracking-wider text-gray-400 uppercase">
+                      Timeout
+                    </p>
+                    <p className="mt-1 text-sm font-extrabold text-gray-950">
+                      {notificationStatus.timeoutMs} ms
+                    </p>
+                  </div>
+                </div>
+              </>
+            ) : null}
           </section>
 
           <section className="rounded-[28px] border border-gray-100 bg-white p-6 shadow-sm">

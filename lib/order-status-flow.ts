@@ -1,6 +1,9 @@
 import { OrderStatus } from "@prisma/client";
 
-export type PickupVerificationMethod = "SCANNER_OR_MANUAL";
+export type PickupVerificationMethod =
+  | "SCANNER"
+  | "MANUAL"
+  | "SCANNER_OR_MANUAL";
 
 export function normalizePickupCode(value: string | null | undefined) {
   return (value ?? "").replace(/\D/g, "");

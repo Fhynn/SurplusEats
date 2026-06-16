@@ -23,12 +23,18 @@ export async function GET() {
     return NextResponse.json({ ok: false, message: "Unauthorized" }, { status: 401 });
   }
 
-  const notifications = await prisma.notification.findMany({
-    where: { userId: session.userId },
-    orderBy: { createdAt: "desc" },
-  });
+  const [notifications, unreadCount] = await Promise.all([
+    prisma.notification.findMany({
+      where: { userId: session.userId },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+    }),
+    prisma.notification.count({
+      where: { userId: session.userId, readAt: null },
+    }),
+  ]);
 
-  return NextResponse.json({ ok: true, notifications });
+  return NextResponse.json({ ok: true, notifications, unreadCount });
 }
 
 export async function PATCH(request: Request) {

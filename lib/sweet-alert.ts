@@ -34,6 +34,11 @@ type PickupScannerOptions = {
   orderId?: string;
 };
 
+export type PickupScannerResult = {
+  code: string;
+  method: "SCANNER" | "MANUAL";
+};
+
 function normalizePickupCode(value: string | number | null | undefined) {
   return String(value ?? "").replace(/\D/g, "");
 }
@@ -258,6 +263,7 @@ export async function showPickupCodeScanner({
   let scannerResolved = false;
   let isScannerClosed = false;
   let permissionNoticeTimer: number | null = null;
+  let verificationMethod: PickupScannerResult["method"] = "MANUAL";
 
   const clearPermissionNoticeTimer = () => {
     if (permissionNoticeTimer !== null) {
@@ -451,6 +457,7 @@ export async function showPickupCodeScanner({
           // Controls can be stopped again during modal cleanup.
         }
         scannerControls = null;
+        verificationMethod = "SCANNER";
         inputElement.value = parsedCode.code;
         Swal.resetValidationMessage();
         setRetryButtonVisible(false);
@@ -523,7 +530,7 @@ export async function showPickupCodeScanner({
     }
   };
 
-  const result = await Swal.fire<string>({
+  const result = await Swal.fire<PickupScannerResult>({
     icon: "question",
     title,
     html: `
@@ -570,6 +577,8 @@ export async function showPickupCodeScanner({
           inputElement.value = normalizedValue;
         }
 
+        verificationMethod = "MANUAL";
+
         if (normalizedValue.length === 6) {
           Swal.resetValidationMessage();
           setStatus("Kode manual lengkap. Tekan Verifikasi.", "success");
@@ -593,11 +602,14 @@ export async function showPickupCodeScanner({
         return false;
       }
 
-      return pickupCode;
+      return {
+        code: pickupCode,
+        method: verificationMethod,
+      };
     },
   });
 
   stopScanner({ closing: true });
 
-  return result.isConfirmed ? String(result.value ?? "") : null;
+  return result.isConfirmed && result.value ? result.value : null;
 }

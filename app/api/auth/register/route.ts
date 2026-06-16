@@ -6,6 +6,7 @@ import { createSessionToken, setSessionCookie } from "@/lib/auth-session";
 import { createPersistedSession } from "@/lib/auth-session-records";
 import { hashPassword } from "@/lib/password";
 import { prisma } from "@/lib/prisma";
+import { enforceRateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,6 +20,17 @@ const registerSchema = z.object({
 });
 
 export async function POST(request: Request) {
+  const ipRateLimit = await enforceRateLimit(request, {
+    keyPrefix: "auth-register-ip",
+    max: 10,
+    windowMs: 60 * 60 * 1000,
+    auditAction: "REGISTER_IP_RATE_LIMIT_BLOCKED",
+  });
+
+  if (!ipRateLimit.allowed) {
+    return ipRateLimit.response;
+  }
+
   const parsed = registerSchema.safeParse(await request.json());
 
   if (!parsed.success) {
@@ -34,6 +46,22 @@ export async function POST(request: Request) {
 
   const data = parsed.data;
   const email = data.email.toLowerCase();
+  const emailRateLimit = await enforceRateLimit(
+    request,
+    {
+      keyPrefix: "auth-register-email",
+      max: 5,
+      windowMs: 60 * 60 * 1000,
+      message: "Terlalu banyak percobaan daftar dengan email ini. Coba lagi nanti.",
+      auditAction: "REGISTER_EMAIL_RATE_LIMIT_BLOCKED",
+    },
+    [email],
+  );
+
+  if (!emailRateLimit.allowed) {
+    return emailRateLimit.response;
+  }
+
   const existingUser = await prisma.user.findUnique({ where: { email } });
 
   if (existingUser) {

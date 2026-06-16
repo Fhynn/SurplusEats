@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import {
   CalendarClock,
   CheckCircle2,
+  Download,
   Home,
   Navigation,
   PackageCheck,
@@ -284,12 +285,21 @@ function PaymentSuccessContent() {
                           {receiptOrder.orderCode}
                         </p>
                       </div>
-                      <Link
-                        href={`/orders/${receiptOrder.orderCode}`}
-                        className="rounded-full bg-white px-3 py-1.5 text-[10px] font-extrabold text-emerald-600"
-                      >
-                        Lacak
-                      </Link>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <a
+                          href={`/api/orders/${receiptOrder.orderCode}/receipt`}
+                          download
+                          className="rounded-full bg-white px-3 py-1.5 text-[10px] font-extrabold text-gray-600"
+                        >
+                          PDF
+                        </a>
+                        <Link
+                          href={`/orders/${receiptOrder.orderCode}`}
+                          className="rounded-full bg-white px-3 py-1.5 text-[10px] font-extrabold text-emerald-600"
+                        >
+                          Lacak
+                        </Link>
+                      </div>
                     </div>
                   ) : null}
                   <div className="space-y-3">
@@ -368,13 +378,24 @@ function PaymentSuccessContent() {
             >
               {orders.length > 1 ? "Lihat Semua Order" : "Lacak Order"}
             </Link>
-            <Link
-              href="/home"
-              className="flex items-center justify-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-extrabold text-gray-700"
-            >
-              <Home size={17} />
-              Home
-            </Link>
+            {orders.length === 1 ? (
+              <a
+                href={`/api/orders/${order.orderCode}/receipt`}
+                download
+                className="flex items-center justify-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-extrabold text-gray-700"
+              >
+                <Download size={17} />
+                Download PDF
+              </a>
+            ) : (
+              <Link
+                href="/home"
+                className="flex items-center justify-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-extrabold text-gray-700"
+              >
+                <Home size={17} />
+                Home
+              </Link>
+            )}
           </div>
           </div>
         </section>

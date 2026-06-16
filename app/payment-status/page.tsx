@@ -15,6 +15,7 @@ import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 
 import { useCustomerApp } from "@/components/customer-app-provider";
 import { MobileDeviceFrame } from "@/components/mobile-device-frame";
+import { useRealtimePolling } from "@/components/use-realtime-polling";
 import { formatRp } from "@/lib/customer-data";
 
 type PaymentStatusPayload = {
@@ -93,17 +94,24 @@ function PaymentStatusContent() {
     }
   }, [attemptId, clearCart, router]);
 
-  useEffect(() => {
-    void loadStatus();
-    const interval = window.setInterval(() => {
-      void loadStatus();
-    }, 3000);
-
-    return () => window.clearInterval(interval);
-  }, [loadStatus]);
-
   const status = payload?.payment?.status || "UNPAID";
   const isFailed = status === "FAILED" || status === "EXPIRED";
+  const shouldPollPayment =
+    Boolean(attemptId) &&
+    !redirectedRef.current &&
+    status !== "PAID" &&
+    !isFailed;
+
+  useEffect(() => {
+    void loadStatus();
+  }, [loadStatus]);
+
+  useRealtimePolling({
+    enabled: shouldPollPayment,
+    intervalMs: 3000,
+    minIntervalMs: 1500,
+    onPoll: () => loadStatus(),
+  });
 
   return (
     <MobileDeviceFrame backgroundClassName="bg-gray-50">
