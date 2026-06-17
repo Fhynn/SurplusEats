@@ -281,7 +281,10 @@ export default function ForgotPasswordPage() {
 
               <p className="text-center text-xs font-semibold text-gray-500">
                 Ingat password?{" "}
-                <Link href="/" className="font-extrabold text-emerald-600">
+                <Link
+                  href="/"
+                  className="inline-flex min-h-11 items-center font-extrabold text-emerald-600"
+                >
                   Masuk sekarang
                 </Link>
               </p>

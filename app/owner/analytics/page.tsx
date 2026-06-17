@@ -189,7 +189,9 @@ export default function OwnerAnalyticsPage() {
   const [activePeriod, setActivePeriod] = useState<PeriodDays>(7);
   const [data, setData] = useState<AnalyticsResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [isExporting, setIsExporting] = useState(false);
+  const [exportingFormat, setExportingFormat] = useState<"csv" | "pdf" | null>(
+    null,
+  );
   const [notice, setNotice] = useState<string | null>(null);
   const analytics = data?.analytics ?? null;
   const activePeriodLabel =
@@ -302,13 +304,13 @@ export default function OwnerAnalyticsPage() {
     };
   }, [activePeriod]);
 
-  const handleExportCsv = async () => {
-    setIsExporting(true);
+  const handleExportReport = async (format: "csv" | "pdf") => {
+    setExportingFormat(format);
     setNotice(null);
 
     try {
       const response = await fetch(
-        `/api/owner/analytics?days=${activePeriod}&format=csv`,
+        `/api/owner/analytics?days=${activePeriod}&format=${format}`,
         { cache: "no-store" },
       );
 
@@ -321,7 +323,7 @@ export default function OwnerAnalyticsPage() {
       const link = document.createElement("a");
 
       link.href = url;
-      link.download = `resqfood-owner-analytics-${activePeriod}d.csv`;
+      link.download = `resqfood-owner-analytics-${activePeriod}d.${format}`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -329,7 +331,7 @@ export default function OwnerAnalyticsPage() {
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Export laporan gagal.");
     } finally {
-      setIsExporting(false);
+      setExportingFormat(null);
     }
   };
 
@@ -372,12 +374,21 @@ export default function OwnerAnalyticsPage() {
           </div>
           <button
             type="button"
-            onClick={() => void handleExportCsv()}
-            disabled={isExporting || !analytics}
+            onClick={() => void handleExportReport("csv")}
+            disabled={Boolean(exportingFormat) || !analytics}
             className="inline-flex items-center justify-center gap-2 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-2.5 text-xs font-extrabold text-emerald-700 transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
           >
             <Download size={15} />
-            {isExporting ? "Export..." : "Export CSV"}
+            {exportingFormat === "csv" ? "Export..." : "Export CSV"}
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleExportReport("pdf")}
+            disabled={Boolean(exportingFormat) || !analytics}
+            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-2.5 text-xs font-extrabold text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
+          >
+            <Download size={15} />
+            {exportingFormat === "pdf" ? "Export..." : "Export PDF"}
           </button>
         </div>
       </header>

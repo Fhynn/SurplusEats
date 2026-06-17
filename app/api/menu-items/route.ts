@@ -7,6 +7,10 @@ import { slugify } from "@/lib/backend-utils";
 import { deriveMenuStatus, reconcileMenuLifecycle } from "@/lib/menu-lifecycle";
 import { prisma } from "@/lib/prisma";
 import { notifyRestaurantFollowers } from "@/lib/restaurant-follower-notifications";
+import {
+  enforceSensitiveActionRateLimit,
+  securityRateLimitRules,
+} from "@/lib/security-rate-limits";
 import { getCachedJson, invalidateCacheTags } from "@/lib/server-cache";
 
 export const runtime = "nodejs";
@@ -143,6 +147,16 @@ export async function POST(request: Request) {
     );
   }
 
+  const rateLimit = await enforceSensitiveActionRateLimit(
+    request,
+    securityRateLimitRules.ownerMenuMutation,
+    session,
+  );
+
+  if (!rateLimit.allowed) {
+    return rateLimit.response;
+  }
+
   const parsed = createMenuItemSchema.safeParse(await request.json());
 
   if (!parsed.success) {
@@ -227,7 +241,7 @@ export async function POST(request: Request) {
     });
   }
 
-  await invalidateCacheTags(publicMenuCacheTags);
+  await invalidateCacheTags([...publicMenuCacheTags, "admin-dashboard"]);
 
   return NextResponse.json({ ok: true, menuItem }, { status: 201 });
 }

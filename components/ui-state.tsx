@@ -139,6 +139,7 @@ export function StateCard({
   return (
     <section
       role={role}
+      aria-busy={isLoading ? true : undefined}
       aria-live={variant === "error" || variant === "loading" ? "polite" : undefined}
       className={cx(
         "rounded-[28px] border bg-white text-center shadow-sm",
@@ -156,7 +157,7 @@ export function StateCard({
         <Icon
           size={24}
           strokeWidth={isLoading ? 2.5 : 2.25}
-          className={cx(style.icon, isLoading && "animate-spin")}
+          className={cx(style.icon, isLoading && "motion-safe:animate-spin")}
         />
       </div>
       <h2 className={cx("text-base font-extrabold sm:text-lg", style.title)}>
@@ -252,7 +253,7 @@ export function SkeletonBlock({ className }: { className?: string }) {
   return (
     <div
       aria-hidden="true"
-      className={cx("animate-pulse rounded-2xl bg-gray-100", className)}
+      className={cx("rounded-2xl bg-gray-100 motion-safe:animate-pulse", className)}
     />
   );
 }
@@ -268,6 +269,7 @@ export function SkeletonCardGrid({
     <section
       role="status"
       aria-live="polite"
+      aria-busy="true"
       aria-label="Memuat konten"
       className={cx("grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3 lg:gap-6", className)}
     >

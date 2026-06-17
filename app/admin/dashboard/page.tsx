@@ -369,7 +369,9 @@ function AdminDashboardPage() {
   const [dashboardFilters, setDashboardFilters] = useState<DashboardFilters>(
     defaultDashboardFilters,
   );
-  const [isExporting, setIsExporting] = useState(false);
+  const [exportingFormat, setExportingFormat] = useState<"csv" | "pdf" | null>(
+    null,
+  );
   const [selectedAuditLog, setSelectedAuditLog] = useState<AdminAuditLog | null>(
     null,
   );
@@ -570,12 +572,12 @@ function AdminDashboardPage() {
     handleClearGlobalSearch();
   };
 
-  const handleExportDashboard = async () => {
-    setIsExporting(true);
+  const handleExportDashboard = async (format: "csv" | "pdf") => {
+    setExportingFormat(format);
 
     try {
       const params = new URLSearchParams();
-      params.set("format", "csv");
+      params.set("format", format);
 
       if (appliedSearchQuery) {
         params.set("q", appliedSearchQuery);
@@ -617,24 +619,24 @@ function AdminDashboardPage() {
         const data = (await response.json().catch(() => null)) as
           | { message?: string }
           | null;
-        throw new Error(data?.message || "Export CSV gagal dibuat.");
+        throw new Error(data?.message || "Export laporan gagal dibuat.");
       }
 
       const blob = await response.blob();
       const objectUrl = window.URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = objectUrl;
-      anchor.download = `resqfood-admin-export-${Date.now()}.csv`;
+      anchor.download = `resqfood-admin-export-${Date.now()}.${format}`;
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
       window.URL.revokeObjectURL(objectUrl);
     } catch (error) {
       setDashboardNotice(
-        error instanceof Error ? error.message : "Export CSV gagal dibuat.",
+        error instanceof Error ? error.message : "Export laporan gagal dibuat.",
       );
     } finally {
-      setIsExporting(false);
+      setExportingFormat(null);
     }
   };
 
@@ -953,12 +955,21 @@ function AdminDashboardPage() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => void handleExportDashboard()}
-                      disabled={isExporting}
+                      onClick={() => void handleExportDashboard("csv")}
+                      disabled={Boolean(exportingFormat)}
                       className="inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-4 py-2.5 text-sm font-extrabold text-white shadow-[0_8px_20px_rgba(16,185,129,0.18)] transition-colors hover:bg-emerald-600 disabled:cursor-wait disabled:bg-emerald-300"
                     >
                       <Download size={16} />
-                      {isExporting ? "Export..." : "Export CSV"}
+                      {exportingFormat === "csv" ? "Export..." : "Export CSV"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleExportDashboard("pdf")}
+                      disabled={Boolean(exportingFormat)}
+                      className="inline-flex items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-extrabold text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-wait disabled:text-gray-300"
+                    >
+                      <Download size={16} />
+                      {exportingFormat === "pdf" ? "Export..." : "Export PDF"}
                     </button>
                   </div>
                 </div>

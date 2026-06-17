@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 
 import { prisma } from "@/lib/prisma";
 
-type RateLimitRule = {
+export type RateLimitRule = {
   keyPrefix: string;
   max: number;
   windowMs: number;
@@ -231,6 +231,8 @@ async function auditRateLimitBlock(
           path: url.pathname,
           method: request.method,
           ipAddress: getClientIp(request),
+          origin: request.headers.get("origin") || null,
+          referer: request.headers.get("referer") || null,
           userAgent: request.headers.get("user-agent") || null,
           identityHash:
             identityParts.length > 0 ? hashKey(identityParts) : null,

@@ -13,6 +13,11 @@ import { z } from "zod";
 import { getCurrentSession } from "@/lib/auth-session";
 import { deliverNotifications } from "@/lib/notification-delivery";
 import { prisma, type PrismaTransactionClient } from "@/lib/prisma";
+import {
+  enforceSensitiveActionRateLimit,
+  securityRateLimitRules,
+} from "@/lib/security-rate-limits";
+import { invalidateCacheTags } from "@/lib/server-cache";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -163,6 +168,17 @@ export async function PATCH(
   }
 
   const { id } = await params;
+  const rateLimit = await enforceSensitiveActionRateLimit(
+    request,
+    securityRateLimitRules.adminRefundMutation,
+    session,
+    [id],
+  );
+
+  if (!rateLimit.allowed) {
+    return rateLimit.response;
+  }
+
   const parsed = updateRefundSchema.safeParse(await request.json());
 
   if (!parsed.success) {
@@ -341,6 +357,11 @@ export async function PATCH(
           },
         ]
       : []),
+  ]);
+
+  await invalidateCacheTags([
+    "admin-dashboard",
+    `owner-analytics:${refund.order.restaurant.ownerId}`,
   ]);
 
   return NextResponse.json({ ok: true, refund });

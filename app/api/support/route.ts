@@ -14,6 +14,10 @@ import {
   getSupportSlaState,
   normalizeSupportPriority,
 } from "@/lib/support-sla";
+import {
+  enforceSensitiveActionRateLimit,
+  securityRateLimitRules,
+} from "@/lib/security-rate-limits";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -154,6 +158,16 @@ export async function POST(request: Request) {
       { ok: false, message: "Login customer diperlukan untuk membuat tiket." },
       { status: session ? 403 : 401 },
     );
+  }
+
+  const rateLimit = await enforceSensitiveActionRateLimit(
+    request,
+    securityRateLimitRules.supportCreate,
+    session,
+  );
+
+  if (!rateLimit.allowed) {
+    return rateLimit.response;
   }
 
   const parsed = supportTicketSchema.safeParse(await request.json());

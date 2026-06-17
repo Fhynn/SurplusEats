@@ -194,6 +194,10 @@ export async function GET(request: Request) {
           : session.role === UserRole.ADMIN && customerEmail
             ? { email: customerEmail }
           : undefined,
+      paymentStatus:
+        session.role === UserRole.OWNER
+          ? { in: [PaymentStatus.PAID, PaymentStatus.REFUNDED] }
+          : undefined,
       restaurant:
         session.role === UserRole.OWNER
           ? { ownerId: session.userId }
@@ -784,7 +788,7 @@ export async function POST(request: Request) {
       return { orders: createdOrders };
     }, checkoutTransactionOptions);
 
-    await invalidateCacheTags(["menu-items:public"]);
+    await invalidateCacheTags(["menu-items:public", "admin-dashboard"]);
 
     if (!checkoutAttemptId) {
       throw new Error("Referensi checkout gagal dibuat.");
@@ -870,7 +874,7 @@ export async function POST(request: Request) {
           console.warn("Checkout reservation release failed", releaseError);
         },
       );
-      await invalidateCacheTags(["menu-items:public"]);
+      await invalidateCacheTags(["menu-items:public", "admin-dashboard"]);
     }
 
     return NextResponse.json(

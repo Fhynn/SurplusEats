@@ -106,7 +106,7 @@ export function PwaManager() {
   }
 
   return (
-    <div className="fixed right-4 bottom-4 z-[80] w-[calc(100%-2rem)] max-w-sm rounded-3xl border border-emerald-100 bg-white p-4 shadow-[0_20px_70px_rgba(15,23,42,0.18)] md:right-6 md:bottom-6">
+    <div className="fixed right-4 bottom-[calc(1rem+env(safe-area-inset-bottom))] z-[80] w-[calc(100%-2rem)] max-w-sm rounded-3xl border border-emerald-100 bg-white p-4 shadow-[0_20px_70px_rgba(15,23,42,0.18)] md:right-6 md:bottom-6">
       <div className="flex items-start gap-3">
         <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
           <Download size={21} />
@@ -120,14 +120,14 @@ export function PwaManager() {
             <button
               type="button"
               onClick={() => void installApp()}
-              className="rounded-full bg-emerald-500 px-4 py-2 text-xs font-extrabold text-white transition-colors hover:bg-emerald-600"
+              className="inline-flex min-h-11 items-center justify-center rounded-full bg-emerald-500 px-4 py-2 text-xs font-extrabold text-white transition-colors hover:bg-emerald-600"
             >
               Install
             </button>
             <button
               type="button"
               onClick={dismissPrompt}
-              className="rounded-full bg-gray-100 px-4 py-2 text-xs font-extrabold text-gray-600 transition-colors hover:bg-gray-200"
+              className="inline-flex min-h-11 items-center justify-center rounded-full bg-gray-100 px-4 py-2 text-xs font-extrabold text-gray-600 transition-colors hover:bg-gray-200"
             >
               Nanti
             </button>
@@ -136,10 +136,10 @@ export function PwaManager() {
         <button
           type="button"
           onClick={dismissPrompt}
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-500 transition-colors hover:bg-gray-200"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-500 transition-colors hover:bg-gray-200"
           aria-label="Tutup prompt install"
         >
-          <X size={15} />
+          <X size={17} />
         </button>
       </div>
     </div>

@@ -7,6 +7,10 @@ import { notifyFavoriteMenusAvailable } from "@/lib/favorite-menu-notifications"
 import { deriveMenuStatus } from "@/lib/menu-lifecycle";
 import { prisma } from "@/lib/prisma";
 import { notifyRestaurantFollowers } from "@/lib/restaurant-follower-notifications";
+import {
+  enforceSensitiveActionRateLimit,
+  securityRateLimitRules,
+} from "@/lib/security-rate-limits";
 import { invalidateCacheTags } from "@/lib/server-cache";
 
 export const runtime = "nodejs";
@@ -58,6 +62,17 @@ export async function PATCH(request: Request) {
       { ok: false, message: "Akses owner diperlukan." },
       { status: session ? 403 : 401 },
     );
+  }
+
+  const rateLimit = await enforceSensitiveActionRateLimit(
+    request,
+    securityRateLimitRules.ownerMenuMutation,
+    session,
+    ["bulk"],
+  );
+
+  if (!rateLimit.allowed) {
+    return rateLimit.response;
   }
 
   const parsed = bulkMenuSchema.safeParse(await request.json());
@@ -209,7 +224,7 @@ export async function PATCH(request: Request) {
     }
   }
 
-  await invalidateCacheTags(publicMenuCacheTags);
+  await invalidateCacheTags([...publicMenuCacheTags, "admin-dashboard"]);
 
   return NextResponse.json({
     ok: true,

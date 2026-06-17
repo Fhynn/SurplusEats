@@ -11,6 +11,11 @@ import { slugify } from "@/lib/backend-utils";
 import { getStorePickupCoordinateIssue } from "@/lib/location-quality";
 import { deliverNotifications } from "@/lib/notification-delivery";
 import { prisma, type PrismaTransactionClient } from "@/lib/prisma";
+import {
+  enforceSensitiveActionRateLimit,
+  securityRateLimitRules,
+} from "@/lib/security-rate-limits";
+import { invalidateCacheTags } from "@/lib/server-cache";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -109,6 +114,16 @@ export async function PATCH(request: Request) {
       { ok: false, message: "Akses admin diperlukan." },
       { status: session ? 403 : 401 },
     );
+  }
+
+  const rateLimit = await enforceSensitiveActionRateLimit(
+    request,
+    securityRateLimitRules.adminApplicationReview,
+    session,
+  );
+
+  if (!rateLimit.allowed) {
+    return rateLimit.response;
   }
 
   const parsed = reviewSchema.safeParse(await request.json());
@@ -347,6 +362,8 @@ export async function PATCH(request: Request) {
       },
     ]);
   }
+
+  await invalidateCacheTags(["admin-dashboard", "menu-items:public"]);
 
   return NextResponse.json({ ok: true, ...result });
 }

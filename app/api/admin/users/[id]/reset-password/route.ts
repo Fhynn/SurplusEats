@@ -5,6 +5,10 @@ import { z } from "zod";
 import { getCurrentSession } from "@/lib/auth-session";
 import { hashPassword } from "@/lib/password";
 import { prisma, type PrismaTransactionClient } from "@/lib/prisma";
+import {
+  enforceSensitiveActionRateLimit,
+  securityRateLimitRules,
+} from "@/lib/security-rate-limits";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -42,6 +46,18 @@ export async function POST(
     );
   }
 
+  const { id } = await params;
+  const rateLimit = await enforceSensitiveActionRateLimit(
+    request,
+    securityRateLimitRules.adminResetPassword,
+    session,
+    [id],
+  );
+
+  if (!rateLimit.allowed) {
+    return rateLimit.response;
+  }
+
   const parsed = resetPasswordSchema.safeParse(await request.json());
 
   if (!parsed.success) {
@@ -55,7 +71,6 @@ export async function POST(
     );
   }
 
-  const { id } = await params;
   const targetUser = await prisma.user.findUnique({
     where: { id },
     select: { id: true, role: true, email: true },

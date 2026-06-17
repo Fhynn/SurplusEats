@@ -24,6 +24,8 @@ import {
   XCircle,
 } from "lucide-react";
 
+import { InlineNotice, StateCard } from "@/components/ui-state";
+
 type VerificationDocument = {
   id: string;
   type: string;
@@ -92,6 +94,18 @@ type DocumentReviewDraft = {
   note: string;
 };
 
+type PreviewFile = {
+  title: string;
+  eyebrow: string;
+  url: string;
+  contentType: string | null;
+  size: number | null;
+  revision: number;
+  status?: string | null;
+  note?: string | null;
+  createdAt?: string | null;
+};
+
 const emptyChecklist: ChecklistState = {
   identityMatches: false,
   businessPermitValid: false,
@@ -132,6 +146,25 @@ const rejectionTemplates = [
   "Foto tampak depan toko belum menunjukkan lokasi pickup dengan jelas.",
   "Titik lokasi pickup tidak sesuai dengan alamat usaha yang didaftarkan.",
   "Data pengajuan belum lengkap. Silakan perbaiki dokumen yang ditandai lalu kirim ulang.",
+] as const;
+
+const documentRejectionTemplates = [
+  {
+    label: "File buram",
+    note: "File buram atau tidak terbaca. Unggah ulang dokumen dengan resolusi yang lebih jelas.",
+  },
+  {
+    label: "Data tidak sesuai",
+    note: "Data pada dokumen tidak sesuai dengan data pendaftaran usaha.",
+  },
+  {
+    label: "Dokumen tidak lengkap",
+    note: "Dokumen belum lengkap. Pastikan seluruh sisi atau halaman penting terlihat.",
+  },
+  {
+    label: "File kedaluwarsa",
+    note: "Dokumen sudah kedaluwarsa atau belum valid untuk usaha yang didaftarkan.",
+  },
 ] as const;
 
 const requiredDocumentTypes = new Set([
@@ -190,6 +223,51 @@ function getDocumentStatusClassName(status: string) {
   return "bg-amber-50 text-amber-700";
 }
 
+function createDocumentPreviewFile(
+  document: VerificationDocument,
+): PreviewFile | null {
+  if (!document.asset?.url) {
+    return null;
+  }
+
+  return {
+    title: document.label,
+    eyebrow: "Preview dokumen",
+    url: document.asset.url,
+    contentType: document.asset.contentType,
+    size: document.asset.size,
+    revision: document.revision,
+    status: document.status,
+    note: document.reviewNote,
+    createdAt: document.reviewedAt,
+  };
+}
+
+function createRevisionPreviewFile(
+  revision: VerificationDocumentRevision & { documentLabel: string },
+): PreviewFile | null {
+  if (!revision.asset?.url) {
+    return null;
+  }
+
+  return {
+    title: revision.documentLabel,
+    eyebrow:
+      revision.event === "REPLACED"
+        ? "File revisi mitra"
+        : revision.event === "REVIEWED"
+          ? "Catatan review"
+          : "Upload awal",
+    url: revision.asset.url,
+    contentType: revision.asset.contentType,
+    size: revision.asset.size,
+    revision: revision.revision,
+    status: revision.status,
+    note: revision.note,
+    createdAt: revision.createdAt,
+  };
+}
+
 export default function AdminVerificationDetailPage() {
   const params = useParams<{ id: string }>();
   const [application, setApplication] =
@@ -205,8 +283,7 @@ export default function AdminVerificationDetailPage() {
   const [documentReviewDrafts, setDocumentReviewDrafts] = useState<
     Record<string, DocumentReviewDraft>
   >({});
-  const [previewDocument, setPreviewDocument] =
-    useState<VerificationDocument | null>(null);
+  const [previewFile, setPreviewFile] = useState<PreviewFile | null>(null);
 
   const loadApplication = useCallback(async () => {
     setIsLoading(true);
@@ -277,14 +354,14 @@ export default function AdminVerificationDetailPage() {
   }, [loadApplication]);
 
   useEffect(() => {
-    if (!previewDocument) {
+    if (!previewFile) {
       return undefined;
     }
 
     const previousOverflow = document.body.style.overflow;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        setPreviewDocument(null);
+        setPreviewFile(null);
       }
     };
 
@@ -295,7 +372,7 @@ export default function AdminVerificationDetailPage() {
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [previewDocument]);
+  }, [previewFile]);
 
   const requiredDocuments =
     application?.documents.filter((document) =>
@@ -519,21 +596,15 @@ export default function AdminVerificationDetailPage() {
       </header>
 
       {notice ? (
-        <div
-          className={`rounded-2xl border p-4 text-sm font-bold ${
-            noticeTone === "success"
-              ? "border-emerald-100 bg-emerald-50 text-emerald-700"
-              : "border-red-100 bg-red-50 text-red-700"
-          }`}
-        >
-          {notice}
-        </div>
+        <InlineNotice variant={noticeTone} description={notice} />
       ) : null}
 
       {isLoading ? (
-        <div className="rounded-[28px] border border-gray-100 bg-white p-10 text-center text-sm font-bold text-gray-500 shadow-sm">
-          Memuat pengajuan...
-        </div>
+        <StateCard
+          variant="loading"
+          title="Memuat pengajuan"
+          description="Data usaha, checklist, dokumen, dan riwayat revisi sedang dimuat."
+        />
       ) : application ? (
         <section className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
           <div className="space-y-6">
@@ -650,6 +721,8 @@ export default function AdminVerificationDetailPage() {
                       status: "submitted",
                       note: "",
                     };
+                    const documentPreviewFile =
+                      createDocumentPreviewFile(document);
 
                     return (
                       <article
@@ -683,8 +756,12 @@ export default function AdminVerificationDetailPage() {
                         <div className="mt-4 flex gap-2">
                           <button
                             type="button"
-                            onClick={() => setPreviewDocument(document)}
-                            disabled={!document.asset?.url}
+                            onClick={() => {
+                              if (documentPreviewFile) {
+                                setPreviewFile(documentPreviewFile);
+                              }
+                            }}
+                            disabled={!documentPreviewFile}
                             className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-white px-3 py-2.5 text-xs font-extrabold text-gray-700 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-300"
                           >
                             <Eye size={15} />
@@ -741,16 +818,41 @@ export default function AdminVerificationDetailPage() {
                               </button>
                             </div>
                             {draft.status === "rejected" ? (
-                              <textarea
-                                value={draft.note}
-                                onChange={(event) =>
-                                  updateDocumentDraft(document.id, {
-                                    note: event.target.value,
-                                  })
-                                }
-                                placeholder="Jelaskan bagian dokumen yang harus diperbaiki..."
-                                className="mt-3 min-h-24 w-full resize-none rounded-2xl border border-red-100 bg-white p-3 text-xs leading-5 font-semibold text-gray-900 outline-none transition-all placeholder:text-gray-400 focus:border-red-300 focus:ring-4 focus:ring-red-500/10"
-                              />
+                              <>
+                                <div className="mt-3 rounded-2xl border border-red-100 bg-white p-3">
+                                  <p className="text-[10px] font-extrabold tracking-wider text-red-500 uppercase">
+                                    Template alasan revisi
+                                  </p>
+                                  <div className="mt-2 flex flex-wrap gap-2">
+                                    {documentRejectionTemplates.map(
+                                      (template) => (
+                                        <button
+                                          key={template.label}
+                                          type="button"
+                                          onClick={() =>
+                                            updateDocumentDraft(document.id, {
+                                              note: template.note,
+                                            })
+                                          }
+                                          className="rounded-full border border-red-100 bg-red-50 px-3 py-1.5 text-[11px] font-extrabold text-red-700 transition-colors hover:bg-red-100"
+                                        >
+                                          {template.label}
+                                        </button>
+                                      ),
+                                    )}
+                                  </div>
+                                </div>
+                                <textarea
+                                  value={draft.note}
+                                  onChange={(event) =>
+                                    updateDocumentDraft(document.id, {
+                                      note: event.target.value,
+                                    })
+                                  }
+                                  placeholder="Jelaskan bagian dokumen yang harus diperbaiki..."
+                                  className="mt-3 min-h-24 w-full resize-none rounded-2xl border border-red-100 bg-white p-3 text-xs leading-5 font-semibold text-gray-900 outline-none transition-all placeholder:text-gray-400 focus:border-red-300 focus:ring-4 focus:ring-red-500/10"
+                                />
+                              </>
                             ) : null}
                           </>
                         ) : null}
@@ -783,43 +885,47 @@ export default function AdminVerificationDetailPage() {
                 </p>
               ) : (
                 <div className="space-y-3">
-                  {revisionHistory.map((revision) => (
-                    <article
-                      key={revision.id}
-                      className="flex flex-col gap-3 rounded-2xl border border-gray-100 bg-gray-50 p-4 sm:flex-row sm:items-center sm:justify-between"
-                    >
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-extrabold text-gray-950">
-                          {revision.documentLabel} · Versi {revision.revision}
-                        </p>
-                        <p className="mt-1 text-xs font-bold text-gray-500">
-                          {revision.event === "REPLACED"
-                            ? "File diganti oleh mitra"
-                            : revision.event === "REVIEWED"
-                              ? `Direview: ${getDocumentStatusLabel(revision.status)}`
-                              : "Dokumen pertama dikirim"}
-                          {" · "}
-                          {formatTime(revision.createdAt)}
-                        </p>
-                        {revision.note ? (
-                          <p className="mt-2 text-xs leading-5 font-semibold text-red-600">
-                            {revision.note}
+                  {revisionHistory.map((revision) => {
+                    const revisionPreviewFile =
+                      createRevisionPreviewFile(revision);
+
+                    return (
+                      <article
+                        key={revision.id}
+                        className="flex flex-col gap-3 rounded-2xl border border-gray-100 bg-gray-50 p-4 sm:flex-row sm:items-center sm:justify-between"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-extrabold text-gray-950">
+                            {revision.documentLabel} · Versi {revision.revision}
                           </p>
+                          <p className="mt-1 text-xs font-bold text-gray-500">
+                            {revision.event === "REPLACED"
+                              ? "File diganti oleh mitra"
+                              : revision.event === "REVIEWED"
+                                ? `Direview: ${getDocumentStatusLabel(revision.status)}`
+                                : "Dokumen pertama dikirim"}
+                            {" · "}
+                            {formatTime(revision.createdAt)}
+                          </p>
+                          {revision.note ? (
+                            <p className="mt-2 text-xs leading-5 font-semibold text-red-600">
+                              {revision.note}
+                            </p>
+                          ) : null}
+                        </div>
+                        {revisionPreviewFile ? (
+                          <button
+                            type="button"
+                            onClick={() => setPreviewFile(revisionPreviewFile)}
+                            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-white px-3 py-2 text-xs font-extrabold text-gray-700 transition-colors hover:bg-gray-100"
+                          >
+                            <Eye size={14} />
+                            Lihat versi
+                          </button>
                         ) : null}
-                      </div>
-                      {revision.asset?.url ? (
-                        <a
-                          href={revision.asset.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex shrink-0 items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-white px-3 py-2 text-xs font-extrabold text-gray-700 transition-colors hover:bg-gray-100"
-                        >
-                          <Eye size={14} />
-                          Lihat versi
-                        </a>
-                      ) : null}
-                    </article>
-                  ))}
+                      </article>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -959,25 +1065,43 @@ export default function AdminVerificationDetailPage() {
         </section>
       ) : null}
 
-      {previewDocument?.asset?.url ? (
+      {previewFile ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/70 p-4 backdrop-blur-sm">
           <div className="flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-[24px] border border-white/20 bg-white shadow-[0_28px_100px_rgba(0,0,0,0.35)]">
             <div className="flex items-start justify-between gap-4 border-b border-gray-100 p-5">
               <div className="min-w-0">
                 <p className="text-xs font-extrabold tracking-wider text-emerald-600 uppercase">
-                  Preview Dokumen · Versi {previewDocument.revision}
+                  {previewFile.eyebrow} · Versi {previewFile.revision}
                 </p>
                 <h2 className="mt-1 truncate text-lg font-extrabold text-gray-950">
-                  {previewDocument.label}
+                  {previewFile.title}
                 </h2>
                 <p className="mt-1 text-xs font-semibold text-gray-500">
-                  {previewDocument.asset.contentType || "File"} ·{" "}
-                  {formatFileSize(previewDocument.asset.size)}
+                  {previewFile.contentType || "File"} ·{" "}
+                  {formatFileSize(previewFile.size)}
                 </p>
+                {previewFile.status || previewFile.createdAt || previewFile.note ? (
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    {previewFile.status ? (
+                      <span
+                        className={`rounded-full px-3 py-1 text-[10px] font-extrabold ${getDocumentStatusClassName(
+                          previewFile.status,
+                        )}`}
+                      >
+                        {getDocumentStatusLabel(previewFile.status)}
+                      </span>
+                    ) : null}
+                    {previewFile.createdAt ? (
+                      <span className="rounded-full bg-gray-100 px-3 py-1 text-[10px] font-extrabold text-gray-500">
+                        {formatTime(previewFile.createdAt)}
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
               <div className="flex shrink-0 gap-2">
                 <a
-                  href={previewDocument.asset.url}
+                  href={previewFile.url}
                   target="_blank"
                   rel="noreferrer"
                   className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 text-gray-600 transition-colors hover:bg-gray-200 hover:text-gray-950"
@@ -987,7 +1111,7 @@ export default function AdminVerificationDetailPage() {
                 </a>
                 <button
                   type="button"
-                  onClick={() => setPreviewDocument(null)}
+                  onClick={() => setPreviewFile(null)}
                   className="flex h-10 w-10 items-center justify-center rounded-full bg-red-50 text-red-500 transition-colors hover:bg-red-500 hover:text-white"
                   title="Tutup preview"
                 >
@@ -997,26 +1121,65 @@ export default function AdminVerificationDetailPage() {
             </div>
 
             <div className="min-h-0 flex-1 overflow-auto bg-gray-100 p-4">
-              {previewDocument.asset.contentType === "application/pdf" ? (
+              {previewFile.note ? (
+                <div className="mb-4 rounded-2xl border border-red-100 bg-white p-4 text-sm leading-6 font-semibold text-red-700">
+                  {previewFile.note}
+                </div>
+              ) : null}
+
+              {previewFile.contentType === "application/pdf" ? (
                 <iframe
-                  src={previewDocument.asset.url}
-                  title={`Preview ${previewDocument.label}`}
+                  src={previewFile.url}
+                  title={`Preview ${previewFile.title}`}
                   className="h-[72vh] w-full rounded-2xl border-0 bg-white"
                 />
-              ) : (
+              ) : previewFile.contentType?.startsWith("image/") ? (
                 <div className="flex min-h-[60vh] items-center justify-center">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
-                    src={previewDocument.asset.url}
-                    alt={previewDocument.label}
+                    src={previewFile.url}
+                    alt={previewFile.title}
                     className="max-h-[72vh] max-w-full rounded-2xl object-contain shadow-sm"
                   />
+                </div>
+              ) : (
+                <div className="flex min-h-[60vh] items-center justify-center">
+                  <div className="max-w-md rounded-[24px] border border-gray-200 bg-white p-8 text-center shadow-sm">
+                    <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-gray-100 text-gray-500">
+                      <FileText size={26} />
+                    </div>
+                    <h3 className="mt-4 text-base font-extrabold text-gray-950">
+                      Format file tidak bisa dipreview langsung
+                    </h3>
+                    <p className="mt-2 text-sm leading-6 font-semibold text-gray-500">
+                      Buka file asli di tab baru untuk memeriksa dokumen ini.
+                    </p>
+                    <a
+                      href={previewFile.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-5 inline-flex items-center justify-center gap-2 rounded-2xl bg-gray-950 px-4 py-3 text-sm font-extrabold text-white transition-colors hover:bg-emerald-600"
+                    >
+                      <ExternalLink size={16} />
+                      Buka file asli
+                    </a>
+                  </div>
                 </div>
               )}
             </div>
           </div>
         </div>
-      ) : null}
+      ) : (
+        <StateCard
+          variant="error"
+          title="Pengajuan tidak ditemukan"
+          description={notice || "Data pengajuan mitra ini tidak tersedia atau sudah dipindahkan."}
+          action={{
+            label: "Coba lagi",
+            onClick: () => void loadApplication(),
+          }}
+        />
+      )}
     </div>
   );
 }

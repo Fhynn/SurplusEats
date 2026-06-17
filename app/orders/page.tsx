@@ -53,6 +53,7 @@ function formatSyncTime(value: Date | null) {
 }
 
 const statusClassNameByStatus: Record<UiOrderStatus, string> = {
+  pendingPayment: "bg-amber-50 text-amber-700",
   ready: "bg-emerald-50 text-emerald-600",
   preparing: "bg-blue-50 text-blue-600",
   completed: "bg-gray-100 text-gray-600",
@@ -87,7 +88,10 @@ export default function CustomerOrdersPage() {
   const activeOrders = useMemo(
     () =>
       allOrders.filter(
-        (order) => order.status === "ready" || order.status === "preparing",
+        (order) =>
+          order.status === "pendingPayment" ||
+          order.status === "ready" ||
+          order.status === "preparing",
       ),
     [allOrders],
   );
@@ -114,6 +118,9 @@ export default function CustomerOrdersPage() {
       .includes(normalizedQuery);
   });
   const readyCount = activeOrders.filter((order) => order.status === "ready").length;
+  const pendingPaymentCount = activeOrders.filter(
+    (order) => order.status === "pendingPayment",
+  ).length;
   const preparingCount = activeOrders.filter(
     (order) => order.status === "preparing",
   ).length;
@@ -166,6 +173,15 @@ export default function CustomerOrdersPage() {
   });
 
   const handleOpenOrder = (order: CustomerOrderCard) => {
+    if (order.status === "pendingPayment") {
+      router.push(
+        order.checkoutAttemptId
+          ? `/payment-status?attempt=${order.checkoutAttemptId}`
+          : `/orders/${order.id}`,
+      );
+      return;
+    }
+
     if (order.status === "ready" || order.status === "preparing") {
       router.push(`/orders/${order.id}`);
     }
@@ -417,7 +433,15 @@ export default function CustomerOrdersPage() {
                   </p>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-3 gap-3">
+                <div className="rounded-2xl bg-white p-3">
+                  <p className="text-lg font-extrabold text-amber-600">
+                    {pendingPaymentCount}
+                  </p>
+                  <p className="text-[11px] font-bold text-gray-500">
+                    belum bayar
+                  </p>
+                </div>
                 <div className="rounded-2xl bg-white p-3">
                   <p className="text-lg font-extrabold text-emerald-700">
                     {readyCount}
@@ -473,7 +497,9 @@ export default function CustomerOrdersPage() {
 
           {visibleOrders.map((order) => {
             const isTrackable =
-              order.status === "ready" || order.status === "preparing";
+              order.status === "pendingPayment" ||
+              order.status === "ready" ||
+              order.status === "preparing";
 
             return (
               <article
@@ -534,7 +560,11 @@ export default function CustomerOrdersPage() {
                     <p className="mt-1 font-mono text-[10px] font-bold text-gray-400">
                       {order.id}
                     </p>
-                    {isTrackable ? (
+                    {order.status === "pendingPayment" ? (
+                      <p className="mt-2 text-[11px] font-semibold text-amber-600">
+                        Ketuk kartu untuk melanjutkan pembayaran
+                      </p>
+                    ) : isTrackable ? (
                       <p className="mt-2 text-[11px] font-semibold text-emerald-600">
                         Ketuk kartu untuk melihat live tracking
                       </p>
@@ -575,6 +605,15 @@ export default function CustomerOrdersPage() {
                         <span className="flex items-center gap-1.5 rounded-xl bg-gray-900 px-4 py-2 text-xs font-bold whitespace-nowrap text-white shadow-sm transition-colors group-hover:bg-emerald-500">
                           <QrCode size={14} />
                           Ambil
+                        </span>
+                      </div>
+                    ) : null}
+
+                    {order.status === "pendingPayment" ? (
+                      <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
+                        <span className="flex items-center gap-1.5 rounded-xl bg-amber-50 px-3 py-2 text-xs font-bold whitespace-nowrap text-amber-700 transition-colors group-hover:bg-amber-100">
+                          Bayar Sekarang
+                          <ChevronRight size={14} />
                         </span>
                       </div>
                     ) : null}

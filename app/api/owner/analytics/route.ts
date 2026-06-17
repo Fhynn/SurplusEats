@@ -2,6 +2,7 @@ import { OrderStatus, UserRole } from "@prisma/client";
 import { NextResponse } from "next/server";
 
 import { getCurrentSession } from "@/lib/auth-session";
+import { buildOwnerAnalyticsReportPdf } from "@/lib/owner-analytics-report-pdf";
 import { prisma } from "@/lib/prisma";
 import { getCachedJson } from "@/lib/server-cache";
 
@@ -637,6 +638,23 @@ export async function GET(request: Request) {
         headers: {
           "Content-Type": "text/csv; charset=utf-8",
           "Content-Disposition": `attachment; filename="resqfood-owner-analytics-${periodDays}d.csv"`,
+        },
+      },
+    );
+  }
+
+  if (exportFormat === "pdf") {
+    return new NextResponse(
+      buildOwnerAnalyticsReportPdf({
+        restaurantName: payload.restaurant.name,
+        periodDays,
+        generatedAt: new Date(),
+        analytics: payload.analytics,
+      }),
+      {
+        headers: {
+          "Content-Type": "application/pdf",
+          "Content-Disposition": `attachment; filename="resqfood-owner-analytics-${periodDays}d.pdf"`,
         },
       },
     );

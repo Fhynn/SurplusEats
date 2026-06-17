@@ -12,6 +12,11 @@ import { getCurrentSession } from "@/lib/auth-session";
 import { deliverNotifications } from "@/lib/notification-delivery";
 import { prisma, type PrismaTransactionClient } from "@/lib/prisma";
 import { isValidRefundReason } from "@/lib/refund-policy";
+import {
+  enforceSensitiveActionRateLimit,
+  securityRateLimitRules,
+} from "@/lib/security-rate-limits";
+import { invalidateCacheTags } from "@/lib/server-cache";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -77,6 +82,16 @@ export async function POST(request: Request) {
       { ok: false, message: "Login customer diperlukan untuk refund." },
       { status: session ? 403 : 401 },
     );
+  }
+
+  const rateLimit = await enforceSensitiveActionRateLimit(
+    request,
+    securityRateLimitRules.refundCreate,
+    session,
+  );
+
+  if (!rateLimit.allowed) {
+    return rateLimit.response;
   }
 
   const parsed = refundSchema.safeParse(await request.json());
@@ -253,6 +268,11 @@ export async function POST(request: Request) {
       body: `${order.orderCode} dari ${order.restaurant.name} menunggu review admin.`,
       href: `/admin/refunds/${refund.id}`,
     })),
+  ]);
+
+  await invalidateCacheTags([
+    "admin-dashboard",
+    `owner-analytics:${order.restaurant.ownerId}`,
   ]);
 
   return NextResponse.json({ ok: true, refund }, { status: 201 });

@@ -14,6 +14,7 @@ import {
   WalletCards,
 } from "lucide-react";
 
+import { InlineNotice, StateCard } from "@/components/ui-state";
 import { useRealtimePolling } from "@/components/use-realtime-polling";
 
 type AdminOrderDetail = {
@@ -159,16 +160,14 @@ export default function AdminTransactionDetailPage() {
         ) : null}
       </header>
 
-      {notice ? (
-        <div className="rounded-2xl border border-red-100 bg-red-50 p-4 text-sm font-bold text-red-700">
-          {notice}
-        </div>
-      ) : null}
+      {notice ? <InlineNotice variant="error" description={notice} /> : null}
 
       {isLoading ? (
-        <div className="rounded-[28px] border border-gray-100 bg-white p-10 text-center text-sm font-bold text-gray-500 shadow-sm">
-          Memuat transaksi...
-        </div>
+        <StateCard
+          variant="loading"
+          title="Memuat transaksi"
+          description="Data transaksi sedang diambil ulang dari server."
+        />
       ) : order ? (
         <>
           <section className="grid gap-4 md:grid-cols-4">
@@ -254,7 +253,17 @@ export default function AdminTransactionDetailPage() {
             </div>
           </section>
         </>
-      ) : null}
+      ) : (
+        <StateCard
+          variant="error"
+          title="Transaksi tidak ditemukan"
+          description={notice || "Transaksi ini tidak tersedia atau kamu tidak punya akses ke detailnya."}
+          action={{
+            label: "Coba lagi",
+            onClick: () => void loadOrder(),
+          }}
+        />
+      )}
     </div>
   );
 }

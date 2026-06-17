@@ -16,9 +16,23 @@ type RedisPipelineResult<T = unknown> = {
   error?: string;
 };
 
+type CacheStats = {
+  startedAt: number;
+  hits: number;
+  misses: number;
+  memoryHits: number;
+  redisHits: number;
+  writes: number;
+  invalidations: number;
+  bypasses: number;
+  errors: number;
+  lastErrorAt: number | null;
+};
+
 type ResQFoodCacheGlobal = typeof globalThis & {
   __resqFoodMemoryCache?: Map<string, CacheRecord<unknown>>;
   __resqFoodCacheVersions?: Map<string, number>;
+  __resqFoodCacheStats?: CacheStats;
 };
 
 const globalForCache = globalThis as ResQFoodCacheGlobal;
@@ -26,9 +40,33 @@ const memoryCache =
   globalForCache.__resqFoodMemoryCache ?? new Map<string, CacheRecord<unknown>>();
 const memoryVersions =
   globalForCache.__resqFoodCacheVersions ?? new Map<string, number>();
+const cacheStats =
+  globalForCache.__resqFoodCacheStats ??
+  ({
+    startedAt: Date.now(),
+    hits: 0,
+    misses: 0,
+    memoryHits: 0,
+    redisHits: 0,
+    writes: 0,
+    invalidations: 0,
+    bypasses: 0,
+    errors: 0,
+    lastErrorAt: null,
+  } satisfies CacheStats);
 
 globalForCache.__resqFoodMemoryCache = memoryCache;
 globalForCache.__resqFoodCacheVersions = memoryVersions;
+globalForCache.__resqFoodCacheStats = cacheStats;
+
+function incrementCacheStat(name: keyof Omit<CacheStats, "startedAt" | "lastErrorAt">) {
+  cacheStats[name] += 1;
+}
+
+function recordCacheError() {
+  cacheStats.errors += 1;
+  cacheStats.lastErrorAt = Date.now();
+}
 
 function envFlagIsFalse(value: string | undefined) {
   return value ? ["0", "false", "off", "no"].includes(value.toLowerCase()) : false;
@@ -160,15 +198,15 @@ function getMemoryValue<T>(key: string) {
   const record = memoryCache.get(key) as CacheRecord<T> | undefined;
 
   if (!record) {
-    return null;
+    return { hit: false as const };
   }
 
   if (Date.now() > record.expiresAt) {
     memoryCache.delete(key);
-    return null;
+    return { hit: false as const };
   }
 
-  return record.value;
+  return { hit: true as const, value: record.value };
 }
 
 function setMemoryValue<T>(key: string, value: T, ttlMs: number) {
@@ -183,6 +221,7 @@ export async function getCachedJson<T>(
   loader: () => Promise<T>,
 ) {
   if (options.ttlMs <= 0 || envFlagIsFalse(process.env.CACHE_ENABLED)) {
+    incrementCacheStat("bypasses");
     return loader();
   }
 
@@ -194,8 +233,10 @@ export async function getCachedJson<T>(
   });
   const memoryHit = getMemoryValue<T>(cacheKey);
 
-  if (memoryHit) {
-    return memoryHit;
+  if (memoryHit.hit) {
+    incrementCacheStat("hits");
+    incrementCacheStat("memoryHits");
+    return memoryHit.value;
   }
 
   if (getRedisConfig()) {
@@ -207,16 +248,21 @@ export async function getCachedJson<T>(
 
         if (Date.now() <= parsed.expiresAt) {
           setMemoryValue(cacheKey, parsed.value, options.ttlMs);
+          incrementCacheStat("hits");
+          incrementCacheStat("redisHits");
           return parsed.value;
         }
       }
     } catch (error) {
+      recordCacheError();
       console.warn("Redis cache read failed; loading fresh data", error);
     }
   }
 
+  incrementCacheStat("misses");
   const value = await loader();
   setMemoryValue(cacheKey, value, options.ttlMs);
+  incrementCacheStat("writes");
 
   if (getRedisConfig()) {
     try {
@@ -226,6 +272,7 @@ export async function getCachedJson<T>(
         options.ttlMs,
       );
     } catch (error) {
+      recordCacheError();
       console.warn("Redis cache write failed", error);
     }
   }
@@ -239,6 +286,7 @@ export async function invalidateCacheTags(tags: string[]) {
   for (const tag of uniqueTags) {
     memoryVersions.set(tag, (memoryVersions.get(tag) ?? 0) + 1);
   }
+  cacheStats.invalidations += uniqueTags.length;
 
   if (!getRedisConfig() || uniqueTags.length === 0) {
     return;
@@ -247,15 +295,40 @@ export async function invalidateCacheTags(tags: string[]) {
   try {
     await redisPipeline(uniqueTags.map((tag) => ["INCR", buildTagVersionKey(tag)]));
   } catch (error) {
+    recordCacheError();
     console.warn("Redis cache invalidation failed", error);
   }
 }
 
 export function getCacheStatus() {
+  const observedRequests = cacheStats.hits + cacheStats.misses;
+  const hitRatio =
+    observedRequests > 0
+      ? Number((cacheStats.hits / observedRequests).toFixed(4))
+      : 0;
+  const enabled = !envFlagIsFalse(process.env.CACHE_ENABLED);
+  const redisConfigured = Boolean(getRedisConfig());
+
   return {
-    enabled: !envFlagIsFalse(process.env.CACHE_ENABLED),
-    redisConfigured: Boolean(getRedisConfig()),
+    enabled,
+    redisConfigured,
+    driver: enabled ? (redisConfigured ? "redis" : "memory") : "disabled",
     memoryEntries: memoryCache.size,
     memoryVersionTags: memoryVersions.size,
+    stats: {
+      startedAt: new Date(cacheStats.startedAt).toISOString(),
+      hits: cacheStats.hits,
+      misses: cacheStats.misses,
+      hitRatio,
+      memoryHits: cacheStats.memoryHits,
+      redisHits: cacheStats.redisHits,
+      writes: cacheStats.writes,
+      invalidations: cacheStats.invalidations,
+      bypasses: cacheStats.bypasses,
+      errors: cacheStats.errors,
+      lastErrorAt: cacheStats.lastErrorAt
+        ? new Date(cacheStats.lastErrorAt).toISOString()
+        : null,
+    },
   };
 }

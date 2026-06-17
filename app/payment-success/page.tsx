@@ -17,6 +17,7 @@ import {
 
 import { useCustomerApp } from "@/components/customer-app-provider";
 import { MobileDeviceFrame } from "@/components/mobile-device-frame";
+import { StateCard } from "@/components/ui-state";
 import { formatRp } from "@/lib/customer-data";
 import { getPickupRouteUrl } from "@/lib/geo-distance";
 import type { ApiOrder } from "@/lib/order-mapper";
@@ -140,28 +141,25 @@ function PaymentSuccessContent() {
   if (isLoading || !order) {
     return (
       <MobileDeviceFrame backgroundClassName="bg-white">
-        <div className="flex h-full min-h-0 flex-1 items-center justify-center overflow-y-auto bg-white px-6 text-center [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          <div>
-            <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
-              <ReceiptText size={30} />
-            </div>
-            <h1 className="text-xl font-extrabold text-gray-950">
-              {isLoading ? "Memuat struk..." : "Order tidak ditemukan"}
-            </h1>
-            <p className="mt-2 text-sm leading-6 font-medium text-gray-500">
-              {isLoading
+        <div className="flex h-full min-h-0 flex-1 items-center justify-center overflow-y-auto bg-white px-5 py-8 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <StateCard
+            className="w-full max-w-sm"
+            variant={isLoading ? "loading" : "error"}
+            title={isLoading ? "Memuat struk" : "Order tidak ditemukan"}
+            description={
+              isLoading
                 ? "Struk pesanan sedang dimuat."
-                : "Buka halaman pesanan untuk melihat order yang berhasil dibuat."}
-            </p>
-            {!isLoading ? (
-              <Link
-                href="/orders"
-                className="mt-6 inline-flex rounded-2xl bg-emerald-500 px-5 py-3 text-sm font-extrabold text-white"
-              >
-                Buka Pesanan
-              </Link>
-            ) : null}
-          </div>
+                : "Buka halaman pesanan untuk melihat order yang berhasil dibuat."
+            }
+            action={
+              isLoading
+                ? undefined
+                : {
+                    label: "Buka Pesanan",
+                    href: "/orders",
+                  }
+            }
+          />
         </div>
       </MobileDeviceFrame>
     );
@@ -404,9 +402,24 @@ function PaymentSuccessContent() {
   );
 }
 
+function PaymentSuccessFallback() {
+  return (
+    <MobileDeviceFrame backgroundClassName="bg-white">
+      <div className="flex min-h-dvh items-center justify-center bg-white px-5 py-10">
+        <StateCard
+          className="w-full max-w-md"
+          variant="loading"
+          title="Memuat struk"
+          description="ResQFood sedang menyiapkan ringkasan pesanan."
+        />
+      </div>
+    </MobileDeviceFrame>
+  );
+}
+
 export default function PaymentSuccessPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-emerald-500" />}>
+    <Suspense fallback={<PaymentSuccessFallback />}>
       <PaymentSuccessContent />
     </Suspense>
   );

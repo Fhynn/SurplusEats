@@ -9,6 +9,10 @@ import {
   platformFeeSettingId,
 } from "@/lib/platform-fees";
 import { prisma, type PrismaTransactionClient } from "@/lib/prisma";
+import {
+  enforceSensitiveActionRateLimit,
+  securityRateLimitRules,
+} from "@/lib/security-rate-limits";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -57,6 +61,17 @@ export async function PUT(request: Request) {
 
   if (response) {
     return response;
+  }
+
+  const rateLimit = await enforceSensitiveActionRateLimit(
+    request,
+    securityRateLimitRules.adminSettingsMutation,
+    session,
+    ["platform-fees"],
+  );
+
+  if (!rateLimit.allowed) {
+    return rateLimit.response;
   }
 
   const parsed = platformFeeSettingsSchema.safeParse(await request.json());

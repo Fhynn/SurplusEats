@@ -8,6 +8,10 @@ import {
   type NotificationDeliveryPayload,
 } from "@/lib/notification-delivery";
 import { prisma } from "@/lib/prisma";
+import {
+  enforceSensitiveActionRateLimit,
+  securityRateLimitRules,
+} from "@/lib/security-rate-limits";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -52,11 +56,22 @@ export async function GET() {
   return NextResponse.json({ ok: true, status });
 }
 
-export async function POST() {
+export async function POST(request: Request) {
   const { session, response } = await requireAdmin();
 
   if (response) {
     return response;
+  }
+
+  const rateLimit = await enforceSensitiveActionRateLimit(
+    request,
+    securityRateLimitRules.adminSettingsMutation,
+    session,
+    ["notification-delivery-test"],
+  );
+
+  if (!rateLimit.allowed) {
+    return rateLimit.response;
   }
 
   const admin = await getAdminRecipient(session.userId);

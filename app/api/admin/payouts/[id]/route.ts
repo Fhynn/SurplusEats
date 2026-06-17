@@ -10,6 +10,10 @@ import { z } from "zod";
 import { getCurrentSession } from "@/lib/auth-session";
 import { createNotificationAndDeliver } from "@/lib/notification-delivery";
 import { prisma } from "@/lib/prisma";
+import {
+  enforceSensitiveActionRateLimit,
+  securityRateLimitRules,
+} from "@/lib/security-rate-limits";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,6 +43,17 @@ export async function PATCH(
   }
 
   const { id } = await params;
+  const rateLimit = await enforceSensitiveActionRateLimit(
+    request,
+    securityRateLimitRules.adminPayoutMutation,
+    session,
+    [id],
+  );
+
+  if (!rateLimit.allowed) {
+    return rateLimit.response;
+  }
+
   const parsed = updatePayoutSchema.safeParse(await request.json());
 
   if (!parsed.success) {

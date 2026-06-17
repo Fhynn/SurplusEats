@@ -9,7 +9,9 @@ import {
 import { NextResponse } from "next/server";
 
 import { getCurrentSession } from "@/lib/auth-session";
+import { buildAdminDashboardReportPdf } from "@/lib/admin-dashboard-report-pdf";
 import { prisma } from "@/lib/prisma";
+import { getCachedJson } from "@/lib/server-cache";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -491,94 +493,118 @@ export async function GET(request: Request) {
     ...auditSearchWhere,
   };
 
-  const [
-    users,
-    totalUsers,
-    restaurants,
-    totalRestaurants,
-    orders,
-    totalTransactions,
-    menuCategoryStats,
-    applications,
-    refundRequests,
-    auditLogs,
-    globalSearchResults,
-  ] = await Promise.all([
-    prisma.user.findMany({
-      where: userWhere,
-      orderBy: { createdAt: "desc" },
-      take: 100,
-    }),
-    prisma.user.count({
-      where: userWhere,
-    }),
-    prisma.restaurant.findMany({
-      where: {
-        status: {
-          not: RestaurantStatus.REJECTED,
+  const loadDashboardSnapshot = async () => {
+    const [
+      users,
+      totalUsers,
+      restaurants,
+      totalRestaurants,
+      orders,
+      totalTransactions,
+      menuCategoryStats,
+      applications,
+      refundRequests,
+      auditLogs,
+      globalSearchResults,
+    ] = await Promise.all([
+      prisma.user.findMany({
+        where: userWhere,
+        orderBy: { createdAt: "desc" },
+        take: 100,
+      }),
+      prisma.user.count({
+        where: userWhere,
+      }),
+      prisma.restaurant.findMany({
+        where: {
+          status: {
+            not: RestaurantStatus.REJECTED,
+          },
+          ...(dateWhere ? { createdAt: dateWhere } : {}),
         },
-        ...(dateWhere ? { createdAt: dateWhere } : {}),
-      },
-      orderBy: { createdAt: "desc" },
-      include: { owner: true },
-    }),
-    prisma.restaurant.count({
-      where: {
-        status: {
-          not: RestaurantStatus.REJECTED,
+        orderBy: { createdAt: "desc" },
+        include: { owner: true },
+      }),
+      prisma.restaurant.count({
+        where: {
+          status: {
+            not: RestaurantStatus.REJECTED,
+          },
+          ...(dateWhere ? { createdAt: dateWhere } : {}),
         },
-        ...(dateWhere ? { createdAt: dateWhere } : {}),
-      },
-    }),
-    prisma.order.findMany({
-      where: orderWhere,
-      orderBy: { createdAt: "desc" },
-      take: 100,
-      include: {
-        customer: true,
-        restaurant: true,
-      },
-    }),
-    prisma.order.count({ where: orderWhere }),
-    prisma.menuItem.groupBy({
-      by: ["category"],
-      _sum: {
-        soldCount: true,
-      },
-    }),
-    prisma.restaurantApplication.findMany({
-      where: applicationWhere,
-      orderBy: { submittedAt: "desc" },
-      take: 100,
-      include: {
-        _count: {
-          select: { documents: true },
+      }),
+      prisma.order.findMany({
+        where: orderWhere,
+        orderBy: { createdAt: "desc" },
+        take: 100,
+        include: {
+          customer: true,
+          restaurant: true,
         },
-      },
-    }),
-    prisma.refundRequest.findMany({
-      where: refundWhere,
-      orderBy: { createdAt: "desc" },
-      take: 100,
-      include: {
-        customer: true,
-        order: {
-          include: {
-            restaurant: true,
+      }),
+      prisma.order.count({ where: orderWhere }),
+      prisma.menuItem.groupBy({
+        by: ["category"],
+        _sum: {
+          soldCount: true,
+        },
+      }),
+      prisma.restaurantApplication.findMany({
+        where: applicationWhere,
+        orderBy: { submittedAt: "desc" },
+        take: 100,
+        include: {
+          _count: {
+            select: { documents: true },
           },
         },
-      },
-    }),
-    prisma.adminActionLog.findMany({
-      where: auditWhere,
-      orderBy: { createdAt: "desc" },
-      take: 30,
-      include: { admin: true },
-    }),
-    buildGlobalSearchResults(searchQuery, dateWhere),
-  ]);
+      }),
+      prisma.refundRequest.findMany({
+        where: refundWhere,
+        orderBy: { createdAt: "desc" },
+        take: 100,
+        include: {
+          customer: true,
+          order: {
+            include: {
+              restaurant: true,
+            },
+          },
+        },
+      }),
+      prisma.adminActionLog.findMany({
+        where: auditWhere,
+        orderBy: { createdAt: "desc" },
+        take: 30,
+        include: { admin: true },
+      }),
+      buildGlobalSearchResults(searchQuery, dateWhere),
+    ]);
+
+    return {
+      users,
+      totalUsers,
+      restaurants,
+      totalRestaurants,
+      orders,
+      totalTransactions,
+      menuCategoryStats,
+      applications,
+      refundRequests,
+      auditLogs,
+      globalSearchResults,
+    };
+  };
 
   if (format === "csv") {
+    const {
+      users,
+      restaurants,
+      orders,
+      applications,
+      refundRequests,
+      auditLogs,
+    } = await loadDashboardSnapshot();
     const csv = makeCsv(
       [
         "section",
@@ -665,139 +691,271 @@ export async function GET(request: Request) {
     });
   }
 
-  const totalOrderAmount = orders.reduce((total, order) => total + order.total, 0);
-  const soldItemCount = menuCategoryStats.reduce(
-    (total, item) => total + (item._sum.soldCount ?? 0),
-    0,
-  );
-  const categoryTotals = menuCategoryStats.reduce<Record<string, number>>(
-    (acc, item) => {
-      acc[item.category] = item._sum.soldCount ?? 0;
-      return acc;
-    },
-    {},
-  );
-  const categoryTotalCount = Object.values(categoryTotals).reduce(
-    (total, value) => total + value,
-    0,
-  );
-  const foodDistribution = Object.entries(categoryTotals)
-    .sort(([, left], [, right]) => right - left)
-    .slice(0, 3)
-    .map(([label, value], index) => ({
-      label,
-      value:
-        categoryTotalCount > 0
-          ? Math.round((value / categoryTotalCount) * 100)
-          : 0,
-      className: ["bg-blue-500", "bg-amber-400", "bg-purple-500"][index],
-      textClassName: ["text-blue-600", "text-amber-600", "text-purple-600"][index],
-    }));
-  const weekDays = Array.from({ length: 7 }, (_, index) => {
-    const date = new Date();
-    date.setDate(date.getDate() - (6 - index));
-    date.setHours(0, 0, 0, 0);
-    return date;
-  });
-  const weeklySales = weekDays.map((date) => {
-    const nextDate = new Date(date);
-    nextDate.setDate(date.getDate() + 1);
-    const dayTotal = orders
-      .filter((order) => {
-        const createdAt = new Date(order.createdAt);
-        return createdAt >= date && createdAt < nextDate;
-      })
-      .reduce((total, order) => total + order.total, 0);
-
-    return {
-      day: new Intl.DateTimeFormat("id-ID", { weekday: "long" }).format(date),
-      value: totalOrderAmount > 0 ? Math.round((dayTotal / totalOrderAmount) * 100) : 0,
-    };
-  });
-
-  return NextResponse.json({
-    ok: true,
-    metrics: {
+  if (format === "pdf") {
+    const {
+      users,
       totalUsers,
+      restaurants,
       totalRestaurants,
+      orders,
       totalTransactions,
-      foodSavedItems: soldItemCount,
+      menuCategoryStats,
+      applications,
+      refundRequests,
+      auditLogs,
+    } = await loadDashboardSnapshot();
+    const pdf = buildAdminDashboardReportPdf({
+      generatedAt: new Date(),
+      filters: {
+        query: searchQuery,
+        role: url.searchParams.get("role") || "all",
+        userStatus: url.searchParams.get("userStatus") || "all",
+        applicationStatus: url.searchParams.get("applicationStatus") || "all",
+        orderStatus: url.searchParams.get("orderStatus") || "all",
+        refundStatus: refundStatusValue || "needs_review",
+        dateFrom: from,
+        dateTo: to,
+      },
+      metrics: {
+        totalUsers,
+        totalRestaurants,
+        totalTransactions,
+        foodSavedItems: menuCategoryStats.reduce(
+          (total, item) => total + (item._sum.soldCount ?? 0),
+          0,
+        ),
+      },
+      users: users.map((user) => ({
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        status: user.status,
+        createdAt: user.createdAt,
+      })),
+      restaurants: restaurants.map((restaurant) => ({
+        id: restaurant.id,
+        name: restaurant.name,
+        ownerEmail: restaurant.owner.email,
+        city: restaurant.city,
+        status: restaurant.status,
+        createdAt: restaurant.createdAt,
+      })),
+      orders: orders.map((order) => ({
+        orderCode: order.orderCode,
+        customerEmail: order.customer.email,
+        restaurantName: order.restaurant.name,
+        status: order.status,
+        paymentStatus: order.paymentStatus,
+        total: order.total,
+        createdAt: order.createdAt,
+      })),
+      applications: applications.map((application) => ({
+        id: application.id,
+        businessName: application.businessName,
+        applicantName: application.applicantName,
+        email: application.email,
+        city: application.city,
+        status: application.status,
+        submittedAt: application.submittedAt,
+      })),
+      refunds: refundRequests.map((refund) => ({
+        id: refund.id,
+        orderCode: refund.order.orderCode,
+        customerEmail: refund.customer.email,
+        restaurantName: refund.order.restaurant.name,
+        status: refund.status,
+        amount: refund.amount,
+        reason: refund.reason,
+        createdAt: refund.createdAt,
+      })),
+      auditLogs: auditLogs.map((log) => ({
+        id: log.id,
+        action: log.action,
+        targetType: log.targetType,
+        targetId: log.targetId,
+        actorEmail: log.admin?.email || "system",
+        createdAt: log.createdAt,
+      })),
+    });
+
+    return new Response(pdf, {
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `attachment; filename="resqfood-admin-export-${Date.now()}.pdf"`,
+      },
+    });
+  }
+
+  const dashboardPayload = await getCachedJson(
+    {
+      key: `admin-dashboard:${JSON.stringify({
+        searchQuery,
+        role: url.searchParams.get("role") || "",
+        userStatus: url.searchParams.get("userStatus") || "",
+        applicationStatus: url.searchParams.get("applicationStatus") || "",
+        orderStatus: url.searchParams.get("orderStatus") || "",
+        refundStatus: refundStatusValue,
+        dateFrom: from?.toISOString() ?? null,
+        dateTo: to?.toISOString() ?? null,
+      })}`,
+      ttlMs: searchQuery ? 4_000 : 6_000,
+      tags: ["admin-dashboard"],
     },
-    users: users.map((user) => ({
-      id: user.id,
-      joinedAt: formatDate(user.createdAt),
-      name: user.name,
-      email: user.email,
-      role: user.role === UserRole.OWNER ? "owner" : "customer",
-      status: user.status === "SUSPENDED" ? "banned" : "active",
-    })),
-    verificationStores: applications.map((application) => ({
-      id: application.id,
-      date: formatDate(application.submittedAt),
-      storeName: application.businessName,
-      category: application.businessType,
-      owner: application.applicantName,
-      email: application.email,
-      phone: application.phone,
-      address: application.address,
-      latitude: application.latitude,
-      longitude: application.longitude,
-      status: application.status.toLowerCase(),
-      statusLabel: applicationLabel[application.status],
-      documentCount: application._count.documents,
-    })),
-    recentTransactions: orders.slice(0, 12).map((order) => ({
-      id: order.orderCode,
-      customer: order.customer.name,
-      store: order.restaurant.name,
-      total: formatRp(order.total),
-      status: orderStatusLabel[order.status],
-    })),
-    refundDisputes: refundRequests.map((refund) => ({
-      id: refund.id,
-      orderId: refund.order.orderCode,
-      customer: refund.customer.name,
-      resto: refund.order.restaurant.name,
-      reason: refund.reason,
-      total: formatRp(refund.amount),
-      status: refundStatusLabel[refund.status],
-    })),
-    attentionItems: [
-      {
-        title: `${refundRequests.length} refund perlu review`,
-        meta: "Berdasarkan refund pending/reviewing terbaru",
-        level: refundRequests.length > 0 ? "Tinggi" : "Aman",
-      },
-      {
-        title: `${applications.filter((item) => item.status === ApplicationStatus.PENDING).length} restoran perlu verifikasi`,
-        meta: "Ajuan mitra dengan status pending",
-        level: applications.some((item) => item.status === ApplicationStatus.PENDING)
-          ? "Sedang"
-          : "Aman",
-      },
-      {
-        title: `${totalTransactions} transaksi tercatat`,
-        meta: "Data order terbaru",
-        level: "Pantau",
-      },
-    ],
-    weeklySales,
-    foodDistribution,
-    globalSearchResults,
-    auditLogs: auditLogs.map((log) => ({
-      id: log.id,
-      action: log.action,
-      targetType: log.targetType,
-      targetId: log.targetId,
-      createdAt: log.createdAt.toISOString(),
-      admin: log.admin
-        ? {
-            id: log.admin.id,
-            name: log.admin.name,
-            email: log.admin.email,
-          }
-        : null,
-      metadata: log.metadata,
-    })),
+    async () => {
+      const {
+        users,
+        totalUsers,
+        totalRestaurants,
+        orders,
+        totalTransactions,
+        menuCategoryStats,
+        applications,
+        refundRequests,
+        auditLogs,
+        globalSearchResults,
+      } = await loadDashboardSnapshot();
+      const totalOrderAmount = orders.reduce((total, order) => total + order.total, 0);
+      const soldItemCount = menuCategoryStats.reduce(
+        (total, item) => total + (item._sum.soldCount ?? 0),
+        0,
+      );
+      const categoryTotals = menuCategoryStats.reduce<Record<string, number>>(
+        (acc, item) => {
+          acc[item.category] = item._sum.soldCount ?? 0;
+          return acc;
+        },
+        {},
+      );
+      const categoryTotalCount = Object.values(categoryTotals).reduce(
+        (total, value) => total + value,
+        0,
+      );
+      const foodDistribution = Object.entries(categoryTotals)
+        .sort(([, left], [, right]) => right - left)
+        .slice(0, 3)
+        .map(([label, value], index) => ({
+          label,
+          value:
+            categoryTotalCount > 0
+              ? Math.round((value / categoryTotalCount) * 100)
+              : 0,
+          className: ["bg-blue-500", "bg-amber-400", "bg-purple-500"][index],
+          textClassName: ["text-blue-600", "text-amber-600", "text-purple-600"][index],
+        }));
+      const weekDays = Array.from({ length: 7 }, (_, index) => {
+        const date = new Date();
+        date.setDate(date.getDate() - (6 - index));
+        date.setHours(0, 0, 0, 0);
+        return date;
+      });
+      const weeklySales = weekDays.map((date) => {
+        const nextDate = new Date(date);
+        nextDate.setDate(date.getDate() + 1);
+        const dayTotal = orders
+          .filter((order) => {
+            const createdAt = new Date(order.createdAt);
+            return createdAt >= date && createdAt < nextDate;
+          })
+          .reduce((total, order) => total + order.total, 0);
+
+        return {
+          day: new Intl.DateTimeFormat("id-ID", { weekday: "long" }).format(date),
+          value: totalOrderAmount > 0 ? Math.round((dayTotal / totalOrderAmount) * 100) : 0,
+        };
+      });
+
+      return {
+        ok: true,
+        metrics: {
+          totalUsers,
+          totalRestaurants,
+          totalTransactions,
+          foodSavedItems: soldItemCount,
+        },
+        users: users.map((user) => ({
+          id: user.id,
+          joinedAt: formatDate(user.createdAt),
+          name: user.name,
+          email: user.email,
+          role: user.role === UserRole.OWNER ? "owner" : "customer",
+          status: user.status === "SUSPENDED" ? "banned" : "active",
+        })),
+        verificationStores: applications.map((application) => ({
+          id: application.id,
+          date: formatDate(application.submittedAt),
+          storeName: application.businessName,
+          category: application.businessType,
+          owner: application.applicantName,
+          email: application.email,
+          phone: application.phone,
+          address: application.address,
+          latitude: application.latitude,
+          longitude: application.longitude,
+          status: application.status.toLowerCase(),
+          statusLabel: applicationLabel[application.status],
+          documentCount: application._count.documents,
+        })),
+        recentTransactions: orders.slice(0, 12).map((order) => ({
+          id: order.orderCode,
+          customer: order.customer.name,
+          store: order.restaurant.name,
+          total: formatRp(order.total),
+          status: orderStatusLabel[order.status],
+        })),
+        refundDisputes: refundRequests.map((refund) => ({
+          id: refund.id,
+          orderId: refund.order.orderCode,
+          customer: refund.customer.name,
+          resto: refund.order.restaurant.name,
+          reason: refund.reason,
+          total: formatRp(refund.amount),
+          status: refundStatusLabel[refund.status],
+        })),
+        attentionItems: [
+          {
+            title: `${refundRequests.length} refund perlu review`,
+            meta: "Berdasarkan refund pending/reviewing terbaru",
+            level: refundRequests.length > 0 ? "Tinggi" : "Aman",
+          },
+          {
+            title: `${applications.filter((item) => item.status === ApplicationStatus.PENDING).length} restoran perlu verifikasi`,
+            meta: "Ajuan mitra dengan status pending",
+            level: applications.some((item) => item.status === ApplicationStatus.PENDING)
+              ? "Sedang"
+              : "Aman",
+          },
+          {
+            title: `${totalTransactions} transaksi tercatat`,
+            meta: "Data order terbaru",
+            level: "Pantau",
+          },
+        ],
+        weeklySales,
+        foodDistribution,
+        globalSearchResults,
+        auditLogs: auditLogs.map((log) => ({
+          id: log.id,
+          action: log.action,
+          targetType: log.targetType,
+          targetId: log.targetId,
+          createdAt: log.createdAt.toISOString(),
+          admin: log.admin
+            ? {
+                id: log.admin.id,
+                name: log.admin.name,
+                email: log.admin.email,
+              }
+            : null,
+          metadata: log.metadata,
+        })),
+      };
+    },
+  );
+
+  return NextResponse.json(dashboardPayload, {
+    headers: {
+      "Cache-Control": "private, max-age=0, must-revalidate",
+    },
   });
 }

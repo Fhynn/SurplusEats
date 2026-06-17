@@ -5,6 +5,11 @@ import { z } from "zod";
 import { getCurrentSession } from "@/lib/auth-session";
 import { prisma } from "@/lib/prisma";
 import {
+  enforceSensitiveActionRateLimit,
+  securityRateLimitRules,
+} from "@/lib/security-rate-limits";
+import { invalidateCacheTags } from "@/lib/server-cache";
+import {
   getAdminVoucherStatus,
   getVoucherRuleLabels,
 } from "@/lib/voucher-rules";
@@ -144,6 +149,17 @@ export async function PATCH(request: Request, { params }: AdminVoucherRouteProps
     return response;
   }
 
+  const rateLimit = await enforceSensitiveActionRateLimit(
+    request,
+    securityRateLimitRules.adminVoucherMutation,
+    session,
+    [id],
+  );
+
+  if (!rateLimit.allowed) {
+    return rateLimit.response;
+  }
+
   const parsed = updateVoucherSchema.safeParse(await request.json());
 
   if (!parsed.success) {
@@ -226,6 +242,8 @@ export async function PATCH(request: Request, { params }: AdminVoucherRouteProps
         },
       },
     });
+
+    await invalidateCacheTags(["admin-dashboard"]);
 
     return NextResponse.json({ ok: true, voucher: serializeVoucher(voucher) });
   } catch (error) {

@@ -8,6 +8,10 @@ import { notifyFavoriteMenuAvailability } from "@/lib/favorite-menu-notification
 import { deriveMenuStatus } from "@/lib/menu-lifecycle";
 import { prisma } from "@/lib/prisma";
 import { notifyRestaurantFollowers } from "@/lib/restaurant-follower-notifications";
+import {
+  enforceSensitiveActionRateLimit,
+  securityRateLimitRules,
+} from "@/lib/security-rate-limits";
 import { invalidateCacheTags } from "@/lib/server-cache";
 
 export const runtime = "nodejs";
@@ -92,6 +96,17 @@ export async function PATCH(request: Request, { params }: MenuItemRouteProps) {
       { ok: false, message: "Menu tidak ditemukan atau bukan milik restoran ini." },
       { status: 404 },
     );
+  }
+
+  const rateLimit = await enforceSensitiveActionRateLimit(
+    request,
+    securityRateLimitRules.ownerMenuMutation,
+    session,
+    [id, "patch"],
+  );
+
+  if (!rateLimit.allowed) {
+    return rateLimit.response;
   }
 
   const parsed = updateMenuItemSchema.safeParse(await request.json());
@@ -194,7 +209,7 @@ export async function PATCH(request: Request, { params }: MenuItemRouteProps) {
     }
   }
 
-  await invalidateCacheTags(publicMenuCacheTags);
+  await invalidateCacheTags([...publicMenuCacheTags, "admin-dashboard"]);
 
   return NextResponse.json({ ok: true, menuItem: updatedMenuItem });
 }
@@ -217,11 +232,22 @@ export async function DELETE(_request: Request, { params }: MenuItemRouteProps) 
     );
   }
 
+  const rateLimit = await enforceSensitiveActionRateLimit(
+    _request,
+    securityRateLimitRules.ownerMenuMutation,
+    session,
+    [id, "delete"],
+  );
+
+  if (!rateLimit.allowed) {
+    return rateLimit.response;
+  }
+
   await prisma.menuItem.delete({
     where: { id: menuItem.id },
   });
 
-  await invalidateCacheTags(publicMenuCacheTags);
+  await invalidateCacheTags([...publicMenuCacheTags, "admin-dashboard"]);
 
   return NextResponse.json({ ok: true });
 }
@@ -242,6 +268,17 @@ export async function POST(request: Request, { params }: MenuItemRouteProps) {
       { ok: false, message: "Menu tidak ditemukan atau bukan milik restoran ini." },
       { status: 404 },
     );
+  }
+
+  const rateLimit = await enforceSensitiveActionRateLimit(
+    request,
+    securityRateLimitRules.ownerMenuMutation,
+    session,
+    [id, "duplicate"],
+  );
+
+  if (!rateLimit.allowed) {
+    return rateLimit.response;
   }
 
   const action = new URL(request.url).searchParams.get("action");
@@ -276,7 +313,7 @@ export async function POST(request: Request, { params }: MenuItemRouteProps) {
     },
   });
 
-  await invalidateCacheTags(publicMenuCacheTags);
+  await invalidateCacheTags([...publicMenuCacheTags, "admin-dashboard"]);
 
   return NextResponse.json({ ok: true, menuItem: duplicate }, { status: 201 });
 }

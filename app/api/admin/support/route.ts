@@ -9,6 +9,10 @@ import {
 } from "@/lib/notification-delivery";
 import { prisma, type PrismaTransactionClient } from "@/lib/prisma";
 import {
+  enforceSensitiveActionRateLimit,
+  securityRateLimitRules,
+} from "@/lib/security-rate-limits";
+import {
   getSupportSlaDates,
   getSupportSlaState,
   normalizeSupportPriority,
@@ -125,6 +129,16 @@ export async function PATCH(request: Request) {
       { ok: false, message: "Akses admin diperlukan." },
       { status: session ? 403 : 401 },
     );
+  }
+
+  const rateLimit = await enforceSensitiveActionRateLimit(
+    request,
+    securityRateLimitRules.adminSupportMutation,
+    session,
+  );
+
+  if (!rateLimit.allowed) {
+    return rateLimit.response;
   }
 
   const parsed = updateTicketSchema.safeParse(await request.json());

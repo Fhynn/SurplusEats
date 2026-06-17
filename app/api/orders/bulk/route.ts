@@ -18,6 +18,10 @@ import {
   isValidOrderStatusTransition,
 } from "@/lib/order-status-flow";
 import { prisma, type PrismaTransactionClient } from "@/lib/prisma";
+import {
+  enforceSensitiveActionRateLimit,
+  securityRateLimitRules,
+} from "@/lib/security-rate-limits";
 import { invalidateCacheTags } from "@/lib/server-cache";
 import { transitionOrderIncomeWalletTransaction } from "@/lib/wallet-integrity";
 
@@ -89,6 +93,17 @@ export async function PATCH(request: Request) {
       { ok: false, message: "Akses owner diperlukan." },
       { status: session ? 403 : 401 },
     );
+  }
+
+  const rateLimit = await enforceSensitiveActionRateLimit(
+    request,
+    securityRateLimitRules.ownerOrderMutation,
+    session,
+    ["bulk"],
+  );
+
+  if (!rateLimit.allowed) {
+    return rateLimit.response;
   }
 
   const parsed = bulkOrderStatusSchema.safeParse(await request.json());
@@ -272,6 +287,7 @@ export async function PATCH(request: Request) {
   );
 
   await invalidateCacheTags([
+    "admin-dashboard",
     ...ownerAnalyticsTags,
     ...(transactionResult.restoredAvailableMenuItemIds.length > 0
       ? ["menu-items:public"]

@@ -29,25 +29,25 @@ Fitur Belum Sempurna
   14. Owner wallet/payout
      Wallet/payout sudah punya saldo pending/available, validasi rekening dasar, settlement otomatis wallet, fee platform/commission, payout request, admin single/bulk payout review, batch reference, transfer reference, dan metadata rekening. Belum ada payout otomatis langsung via bank/payment provider.
   15. Owner analytics
-     Analytics ada. Belum lengkap: conversion rate, menu terlaris detail, jam pickup terlaris, refund rate, repeat customer, export laporan.
+     Owner analytics sudah punya conversion rate, menu terlaris detail, jam pickup terlaris, refund rate, repeat customer, insight operasional, cache pendek, dan export laporan CSV/PDF. Masih bisa dikembangkan ke campaign analytics dan benchmark antar periode yang lebih dalam.
   16. Admin dashboard
-     Admin lengkap secara dasar. Belum sempurna: global search benar-benar lintas semua entity, audit detail, export, filter advanced.
+     Admin dashboard sudah punya global search lintas user/restoran/menu/order/refund/ajuan/support/voucher/audit, audit detail modal, filter advanced, polling adaptif, dan export CSV/PDF sesuai filter. Masih bisa dikembangkan ke analytics admin lebih dalam dan permission granular.
   17. Admin approval mitra
-     Approve/reject ada. Perlu checklist dokumen, preview file lebih nyaman, alasan reject template, dan history revisi dokumen.
+     Admin approval mitra sudah punya checklist dokumen/final, preview file lebih nyaman untuk dokumen aktif dan riwayat revisi, template alasan revisi dokumen, template alasan reject pengajuan, dan history revisi dokumen. Masih bisa dikembangkan ke deteksi fraud/dokumen otomatis eksternal.
   18. Admin users
-     User management ada. Perlu reset password admin-side, impersonation aman, detail aktivitas user, device/session list.
+     Admin users sudah punya reset password admin-side, impersonation aman berdurasi pendek dengan audit, detail aktivitas user, device/session list, dan revoke session per device. Masih bisa dikembangkan ke permission granular admin dan self-service device management untuk user.
   19. Support ticket
-     Support ticket sudah punya form detail, thread customer-admin, assignment admin, priority, attachment, SLA, polling, dan email/WhatsApp eksternal untuk ticket create/reply/update. Belum realtime penuh via WebSocket/SSE, multi-admin assignment, dan SLA escalation otomatis.
+     Support ticket sudah punya form detail, thread customer-admin, assignment admin, priority, attachment, SLA, polling, email/WhatsApp eksternal untuk ticket create/reply/update, dan SLA escalation otomatis lewat cron `/api/cron/support/sla-escalations`. Belum realtime penuh via WebSocket/SSE dan multi-admin assignment.
   20. ResQBot
-     AI route ada pakai Gemini. Belum sempurna: quota handling, guardrail jawaban, tool checkout lebih stabil, context order/cart lebih kaya.
+     ResQBot sudah punya Gemini dengan fallback lokal, classifier quota/error/timeout, guardrail output final, schema JSON Gemini, context cart/order/checkout lebih kaya, dan checkoutReady dikunci ke state checkout asli. Masih bisa dikembangkan ke tool execution yang benar-benar membuat aksi terarah dan context personalisasi riwayat lebih dalam.
   21. Loading/error/empty state
-     Banyak sudah ada, tapi belum konsisten 100% di semua route.
+     Loading/error/empty state sudah punya komponen reusable `StateCard`, `PageState`, `InlineNotice`, dan skeleton yang lebih aksesibel. Route penting customer/admin/owner/payment sudah mulai diseragamkan, termasuk detail order, refund, transaksi, verifikasi, dan payment status/success. Masih perlu audit manual seluruh route minor agar 100% konsisten.
   22. Responsive QA
-     Sebagian besar sudah responsive, tapi belum semua route dicek manual di HP/tablet/desktop nyata.
+     Responsive QA sudah dijalankan otomatis di Chrome headless pada 360x740, 390x844, 768x1024, dan 1440x900 untuk route publik serta route protected yang redirect ke login. Tidak ada horizontal overflow dan tidak ada touch target kecil pada pass terbaru. Prompt install PWA sudah aman untuk safe-area bawah dan footer login/legal sudah memakai target klik minimum. Masih perlu test manual di device nyata untuk route protected setelah login customer/owner/admin.
   23. Performance
-     Cache layer server-side sudah ada dengan optional Upstash Redis REST dan memory fallback. Public menu listing sudah cache pendek + invalidasi saat stok/menu berubah, owner analytics cache per owner/periode, admin dashboard query menu sudah pakai agregasi, dan notification API sudah membatasi payload + unreadCount akurat. Masih bisa dikembangkan ke cache admin dashboard penuh, Redis production env, dan monitoring hit ratio.
+     Cache layer server-side sudah ada dengan optional Upstash Redis REST dan memory fallback. Public menu listing sudah cache pendek + invalidasi saat stok/menu berubah, owner analytics cache per owner/periode, admin dashboard JSON sudah cache pendek per filter, admin dashboard query menu sudah pakai agregasi, dan notification API sudah membatasi payload + unreadCount akurat. Cache layer sekarang punya statistik hit/miss, memory/Redis hit, invalidasi, error counter, dan status bisa dipantau dari `/admin/settings` lewat endpoint `/api/admin/settings/cache-status`. Mutasi order/menu/payment/refund/voucher/verifikasi mitra sudah menginvalidasi tag admin dashboard. Masih bisa dikembangkan ke Redis production env final, monitoring eksternal hit ratio, dan tracing query lambat.
   24. Security hardening
-     Auth dan role guard ada. Rate limit login/register/upload/checkout/ResQBot sudah ada dengan Redis optional + memory fallback, middleware API sudah menolak mutasi dari origin asing, upload sudah divalidasi dari signature file, dan rate limit block tercatat ke admin action log. Masih perlu rate limit granular di semua endpoint sensitif, upload antivirus/scanning eksternal, dan monitoring suspicious activity yang lebih lengkap.
+     Auth dan role guard ada. Rate limit login/register/upload/checkout/ResQBot sudah ada dengan Redis optional + memory fallback. Rate limit granular juga sudah diperluas ke endpoint sensitif: support create/reply, refund create/review, voucher claim/admin voucher, review/report, owner menu/order/payout, approval mitra, admin user reset/impersonate/revoke session, payout admin, support admin, dan settings admin. Middleware API sudah menolak mutasi dari origin asing, upload sudah divalidasi dari signature file, dan rate limit block tercatat ke admin action log dengan metadata origin/referer/user-agent/IP/hash identitas. Masih perlu upload antivirus/scanning eksternal dan monitoring security production seperti Sentry/SIEM.
   25. Data integrity
      Schema sudah cukup rapi. Voucher checkout/claim sudah memakai advisory lock + update atomik, order transition owner/bulk/customer cancel sudah memakai optimistic guard status lama + payment PAID, callback Tripay dikunci per reference, wallet income update tidak lagi silent updateMany, dan refund paid mengecek order masih valid. Masih perlu constraint database tambahan/unique partial yang lebih kuat dan audit rekonsiliasi berkala.
 
@@ -79,19 +79,19 @@ Fitur Belum Sempurna
   24. Payout otomatis ke rekening.
   25. Platform fee/commission system sudah ada secara dasar. Checkout menyimpan service fee/pajak sebagai biaya customer dan platformFee sebagai komisi mitra. Wallet mitra hanya dikurangi komisi mitra saat callback Tripay PAID; service fee/pajak customer tidak tampil sebagai potongan mitra.
   26. Tax/service fee config admin sudah ada di /admin/settings. Admin bisa mengubah service fee flat/persen, pajak flat/persen, komisi flat/persen, minimum komisi, dan status aktif.
-  27. Export CSV/PDF untuk admin dan owner.
+  27. Export CSV/PDF untuk owner analytics dan admin dashboard lintas entity sudah ada; export spesifik halaman admin lain masih bisa ditambah.
   28. Audit log UI yang lengkap.
   29. Admin role permission granular.
   30. Multi-admin assignment untuk support/refund.
-  31. Device/session management.
+  31. Device/session management admin-side sudah ada untuk melihat dan mencabut session per user; self-service device/session management untuk customer/owner belum ada.
   32. Forgot password email asli.
   33. Email verification asli.
   34. Two-factor authentication.
-  35. Rate limiting dasar sudah ada untuk login/register/upload/checkout/ResQBot; masih perlu diperluas ke semua endpoint sensitif.
+  35. Rate limiting sudah ada untuk login/register/upload/checkout/ResQBot dan diperluas ke endpoint sensitif customer/owner/admin. Masih perlu tuning limit produksi berdasarkan traffic asli.
   36. Redis/cache layer dasar sudah ada via optional Upstash Redis REST + memory fallback; rate limit juga bisa memakai Upstash Redis REST. Masih perlu env Redis production dan observability hit/miss.
   37. Background worker/queue.
   38. Cron tambahan untuk voucher expired, payout settlement, stale checkout.
-      Cron refund SLA reminder sudah ada; cron tambahan lain masih bisa ditambah untuk stale checkout/payment expiry khusus bila dibutuhkan.
+      Cron refund SLA reminder dan support SLA escalation sudah ada; cron tambahan lain masih bisa ditambah untuk stale checkout/payment expiry khusus bila dibutuhkan.
   39. Monitoring/logging production seperti Sentry.
   40. E2E tests Playwright.
   41. Unit/integration tests API penting.

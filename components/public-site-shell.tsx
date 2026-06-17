@@ -125,7 +125,7 @@ export function PublicSiteShell({
                 <Link
                   key={item.href}
                   href={item.href}
-                  className="inline-flex min-h-11 items-center transition-colors hover:text-emerald-700"
+                  className="inline-flex min-h-11 min-w-11 items-center justify-center transition-colors hover:text-emerald-700"
                 >
                   {item.label}
                 </Link>

@@ -6,6 +6,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   ChevronLeft,
+  CreditCard,
   Clock3,
   Download,
   MapPin,
@@ -25,6 +26,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useCustomerApp } from "@/components/customer-app-provider";
 import { MobileDeviceFrame } from "@/components/mobile-device-frame";
 import { PickupQrCode } from "@/components/pickup-qr-code";
+import { InlineNotice, StateCard } from "@/components/ui-state";
 import { useRealtimePolling } from "@/components/use-realtime-polling";
 import {
   getPickupRouteUrl,
@@ -32,8 +34,13 @@ import {
 } from "@/lib/geo-distance";
 import type { ApiOrder } from "@/lib/order-mapper";
 
-type OrderStatus = "preparing" | "ready" | "cancelled" | "noShow";
-type TimelineKey = "confirmed" | "preparing" | "ready";
+type OrderStatus =
+  | "pendingPayment"
+  | "preparing"
+  | "ready"
+  | "cancelled"
+  | "noShow";
+type TimelineKey = "payment" | "confirmed" | "preparing" | "ready";
 
 type ChatMessage = {
   id: string;
@@ -75,6 +82,8 @@ type TrackingOrder = {
   pickupRouteUrl: string;
   pickupRouteLabel: string;
   apiStatus: string;
+  paymentStatus: string;
+  checkoutAttemptId: string | null;
   createdAt: string;
   pickupTime: string | null;
   pickupCode: string | null;
@@ -158,7 +167,9 @@ function apiOrderToTracking(
     quantity: firstItem?.quantity || 1,
     total: order.total,
     status:
-      order.status === "NO_SHOW"
+      order.status === "PENDING" || order.paymentStatus === "PENDING"
+        ? "pendingPayment"
+        : order.status === "NO_SHOW"
         ? "noShow"
         : order.status === "CANCELLED" || order.status === "REFUNDED"
         ? "cancelled"
@@ -171,14 +182,56 @@ function apiOrderToTracking(
     pickupRouteUrl: pickupRoute.url,
     pickupRouteLabel: pickupRoute.label,
     apiStatus: order.status,
+    paymentStatus: order.paymentStatus,
+    checkoutAttemptId: order.checkoutAttemptId,
     createdAt: order.createdAt,
     pickupTime: order.pickupTime,
     pickupCode: order.pickupCode,
   };
 }
 
-const getTimelineSteps = (order: TrackingOrder) =>
-  [
+const getTimelineSteps = (order: TrackingOrder) => {
+  if (order.status === "pendingPayment") {
+    return [
+      {
+        key: "payment",
+        title: "Menunggu Pembayaran",
+        description:
+          "Selesaikan pembayaran dulu agar order masuk ke restoran.",
+        time: "Berjalan",
+        icon: CreditCard,
+      },
+      {
+        key: "confirmed",
+        title: "Pembayaran Dikonfirmasi",
+        description: "Tripay akan mengirim konfirmasi setelah pembayaran valid.",
+        time: "Menunggu",
+        icon: CheckCircle2,
+      },
+      {
+        key: "preparing",
+        title: "Restoran Menyiapkan",
+        description: "Mitra mulai menyiapkan setelah pembayaran valid.",
+        time: "Menunggu",
+        icon: Package,
+      },
+      {
+        key: "ready",
+        title: "Pesanan Siap Diambil",
+        description: "Kode pickup aktif setelah owner menandai pesanan siap.",
+        time: "Menunggu",
+        icon: QrCode,
+      },
+    ] satisfies Array<{
+      key: TimelineKey;
+      title: string;
+      description: string;
+      time: string;
+      icon: typeof CheckCircle2;
+    }>;
+  }
+
+  return [
     {
       key: "confirmed",
       title: "Pesanan Dikonfirmasi",
@@ -213,6 +266,7 @@ const getTimelineSteps = (order: TrackingOrder) =>
     time: string;
     icon: typeof CheckCircle2;
   }>;
+};
 
 export default function CustomerOrderTrackingPage() {
   const router = useRouter();
@@ -340,41 +394,44 @@ export default function CustomerOrderTrackingPage() {
   if (isLoadingOrder || !order) {
     return (
       <MobileDeviceFrame backgroundClassName="bg-white">
-        <div className="flex h-full min-h-0 flex-1 items-center justify-center overflow-y-auto bg-white px-6 text-center [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          <div>
-            <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
-              <Package size={32} />
-            </div>
-            <h1 className="text-xl font-extrabold text-gray-950">
-              {isLoadingOrder ? "Memuat pesanan..." : "Pesanan tidak ditemukan"}
-            </h1>
-            <p className="mt-2 text-sm leading-6 font-medium text-gray-500">
-              {isLoadingOrder
+        <div className="flex h-full min-h-0 flex-1 items-center justify-center overflow-y-auto bg-white px-5 py-8 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <StateCard
+            className="w-full max-w-sm"
+            variant={isLoadingOrder ? "loading" : "error"}
+            title={isLoadingOrder ? "Memuat pesanan" : "Pesanan tidak ditemukan"}
+            description={
+              isLoadingOrder
                 ? "Data tracking sedang dimuat."
-                : "Cek kembali ID pesanan atau buka riwayat pesanan."}
-            </p>
-            {!isLoadingOrder ? (
-              <button
-                type="button"
-                onClick={() => router.push("/orders")}
-                className="mt-6 rounded-2xl bg-gray-900 px-6 py-3 text-sm font-extrabold text-white"
-              >
-                Buka Riwayat
-              </button>
-            ) : null}
-          </div>
+                : "Cek kembali ID pesanan atau buka riwayat pesanan."
+            }
+            action={
+              isLoadingOrder
+                ? undefined
+                : {
+                    label: "Buka Riwayat",
+                    onClick: () => router.push("/orders"),
+                  }
+            }
+          />
         </div>
       </MobileDeviceFrame>
     );
   }
 
   const isReady = order.status === "ready";
+  const isPaymentPending = order.status === "pendingPayment";
   const isCancelled = order.status === "cancelled";
   const isNoShow = order.status === "noShow";
-  const canCancelOrder = ["PENDING", "PAID", "CONFIRMED", "PREPARING"].includes(
-    order.apiStatus,
-  );
-  const activeStepIndex = isReady ? 2 : isCancelled || isNoShow ? 0 : 1;
+  const canCancelOrder =
+    order.paymentStatus === "PAID" &&
+    ["PAID", "CONFIRMED", "PREPARING"].includes(order.apiStatus);
+  const activeStepIndex = isPaymentPending
+    ? 0
+    : isReady
+      ? 2
+      : isCancelled || isNoShow
+        ? 0
+        : 1;
   const timelineSteps = getTimelineSteps(order);
   const closeCancelModal = () => {
     setIsCancelOpen(false);
@@ -505,6 +562,8 @@ export default function CustomerOrderTrackingPage() {
               className={`flex h-9 w-9 items-center justify-center rounded-full border-4 border-white shadow-xl ${
                 isCancelled || isNoShow
                   ? "bg-red-500"
+                  : isPaymentPending
+                    ? "bg-amber-500"
                   : isReady
                     ? "animate-bounce bg-emerald-500"
                     : "bg-blue-500"
@@ -536,6 +595,8 @@ export default function CustomerOrderTrackingPage() {
                 className={`mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full ${
                   isCancelled || isNoShow
                     ? "bg-red-50 text-red-600"
+                    : isPaymentPending
+                      ? "bg-amber-50 text-amber-600"
                     : isReady
                     ? "bg-emerald-50 text-emerald-600"
                     : "bg-blue-50 text-blue-600"
@@ -543,6 +604,8 @@ export default function CustomerOrderTrackingPage() {
               >
                 {isCancelled || isNoShow ? (
                   <X size={32} />
+                ) : isPaymentPending ? (
+                  <CreditCard size={32} />
                 ) : isReady ? (
                   <QrCode size={32} />
                 ) : (
@@ -553,6 +616,8 @@ export default function CustomerOrderTrackingPage() {
                 className={`text-xs font-extrabold tracking-[0.18em] uppercase ${
                   isCancelled || isNoShow
                     ? "text-red-600"
+                    : isPaymentPending
+                      ? "text-amber-600"
                     : isReady
                       ? "text-emerald-600"
                       : "text-blue-600"
@@ -562,6 +627,8 @@ export default function CustomerOrderTrackingPage() {
                   ? "No Show"
                   : isCancelled
                     ? "Cancelled"
+                  : isPaymentPending
+                    ? "Waiting Payment"
                   : isReady
                     ? "Ready for Pickup"
                     : "In Preparation"}
@@ -570,6 +637,8 @@ export default function CustomerOrderTrackingPage() {
                 className={`mt-2 text-2xl font-extrabold ${
                   isCancelled || isNoShow
                     ? "text-red-600"
+                    : isPaymentPending
+                      ? "text-amber-600"
                     : isReady
                       ? "text-emerald-600"
                       : "text-blue-600"
@@ -579,6 +648,8 @@ export default function CustomerOrderTrackingPage() {
                   ? "Pesanan Tidak Diambil"
                   : isCancelled
                     ? "Pesanan Dibatalkan"
+                  : isPaymentPending
+                    ? "Menunggu Pembayaran"
                   : isReady
                     ? "Siap Diambil!"
                     : "Sedang Disiapkan"}
@@ -588,6 +659,8 @@ export default function CustomerOrderTrackingPage() {
                   ? "Pesanan melewati batas pickup dan sudah ditandai tidak diambil."
                   : isCancelled
                     ? "Pesanan ini sudah dibatalkan dan tidak perlu diambil ke restoran."
+                  : isPaymentPending
+                    ? "Selesaikan pembayaran dulu. Setelah pembayaran valid, order baru masuk ke restoran."
                   : isReady
                     ? `Datang ke toko sebelum ${order.deadline} dan tunjukkan kode pickup.`
                     : "Restoran sedang mengemas pesanan. Kode pickup akan aktif saat status siap diambil."}
@@ -607,6 +680,8 @@ export default function CustomerOrderTrackingPage() {
               <div className="relative z-10 mb-3 rounded-2xl bg-white p-3 shadow-sm">
                 {isCancelled || isNoShow ? (
                   <X size={112} className="text-red-300" />
+                ) : isPaymentPending ? (
+                  <CreditCard size={112} className="text-amber-300" />
                 ) : isReady ? (
                   <PickupQrCode
                     orderId={order.id}
@@ -622,6 +697,8 @@ export default function CustomerOrderTrackingPage() {
                   ? "Pickup Tidak Diambil"
                   : isCancelled
                     ? "Pickup Dibatalkan"
+                  : isPaymentPending
+                    ? "Pembayaran Belum Selesai"
                   : isReady
                     ? "Tunjukkan Kode ke Kasir"
                     : "Kode Belum Aktif"}
@@ -669,15 +746,21 @@ export default function CustomerOrderTrackingPage() {
                   Progress pesanan
                 </h2>
                 <span className="text-xs font-bold text-gray-400">
-                  {activeStepIndex + 1}/3
+                  {activeStepIndex + 1}/{timelineSteps.length}
                 </span>
               </div>
               <div className="h-2 overflow-hidden rounded-full bg-gray-100">
                 <div
                   className={`h-full rounded-full transition-all ${
-                    isReady ? "bg-emerald-500" : "bg-blue-500"
+                    isPaymentPending
+                      ? "bg-amber-500"
+                      : isReady
+                        ? "bg-emerald-500"
+                        : "bg-blue-500"
                   }`}
-                  style={{ width: `${((activeStepIndex + 1) / 3) * 100}%` }}
+                  style={{
+                    width: `${((activeStepIndex + 1) / timelineSteps.length) * 100}%`,
+                  }}
                 />
               </div>
             </div>
@@ -696,7 +779,9 @@ export default function CustomerOrderTrackingPage() {
                     <div
                       className={`z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-4 border-white shadow ${
                         isDone
-                          ? isCurrent && !isReady
+                          ? isCurrent && isPaymentPending
+                            ? "bg-amber-500 text-white"
+                            : isCurrent && !isReady
                             ? "bg-blue-500 text-white"
                             : "bg-emerald-500 text-white"
                           : "bg-gray-100 text-gray-400"
@@ -709,6 +794,8 @@ export default function CustomerOrderTrackingPage() {
                         isCurrent
                           ? isReady
                             ? "border border-emerald-100 bg-emerald-50 shadow-sm"
+                            : isPaymentPending
+                              ? "border border-amber-100 bg-amber-50 shadow-sm"
                             : "border border-blue-100 bg-blue-50 shadow-sm"
                           : "bg-white"
                       }`}
@@ -719,6 +806,8 @@ export default function CustomerOrderTrackingPage() {
                             isCurrent
                               ? isReady
                                 ? "text-emerald-900"
+                                : isPaymentPending
+                                  ? "text-amber-900"
                                 : "text-blue-900"
                               : isDone
                                 ? "text-gray-900"
@@ -732,6 +821,8 @@ export default function CustomerOrderTrackingPage() {
                             isCurrent
                               ? isReady
                                 ? "text-emerald-600"
+                                : isPaymentPending
+                                  ? "text-amber-600"
                                 : "text-blue-600"
                               : "text-gray-400"
                           }`}
@@ -744,6 +835,8 @@ export default function CustomerOrderTrackingPage() {
                           isCurrent
                             ? isReady
                               ? "text-emerald-700"
+                              : isPaymentPending
+                                ? "text-amber-800"
                               : "text-blue-700"
                             : "text-gray-500"
                         }`}
@@ -756,43 +849,71 @@ export default function CustomerOrderTrackingPage() {
               })}
             </div>
 
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <a
-                href={order.pickupRouteUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="flex flex-col items-center justify-center gap-2 rounded-2xl bg-blue-50 p-4 text-blue-600 transition-colors hover:bg-blue-100"
-              >
-                <Navigation size={20} />
-                <span className="text-xs font-bold">{order.pickupRouteLabel}</span>
-              </a>
-              <button
-                type="button"
-                onClick={openChatModal}
-                className="flex flex-col items-center justify-center gap-2 rounded-2xl bg-gray-50 p-4 text-gray-600 transition-colors hover:bg-gray-100"
-              >
-                <MessageCircle size={20} />
-                <span className="text-xs font-bold">Chat Restoran</span>
-              </button>
-            </div>
+            {isPaymentPending ? (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <Link
+                  href={
+                    order.checkoutAttemptId
+                      ? `/payment-status?attempt=${order.checkoutAttemptId}`
+                      : "/orders"
+                  }
+                  className="flex flex-col items-center justify-center gap-2 rounded-2xl bg-amber-500 p-4 text-white shadow-[0_10px_24px_rgba(245,158,11,0.22)] transition-colors hover:bg-amber-600"
+                >
+                  <CreditCard size={20} />
+                  <span className="text-xs font-bold">Lanjut Pembayaran</span>
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => void loadOrder()}
+                  className="flex flex-col items-center justify-center gap-2 rounded-2xl bg-gray-50 p-4 text-gray-600 transition-colors hover:bg-gray-100"
+                >
+                  <Clock3 size={20} />
+                  <span className="text-xs font-bold">Periksa Status</span>
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <a
+                    href={order.pickupRouteUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex flex-col items-center justify-center gap-2 rounded-2xl bg-blue-50 p-4 text-blue-600 transition-colors hover:bg-blue-100"
+                  >
+                    <Navigation size={20} />
+                    <span className="text-xs font-bold">
+                      {order.pickupRouteLabel}
+                    </span>
+                  </a>
+                  <button
+                    type="button"
+                    onClick={openChatModal}
+                    className="flex flex-col items-center justify-center gap-2 rounded-2xl bg-gray-50 p-4 text-gray-600 transition-colors hover:bg-gray-100"
+                  >
+                    <MessageCircle size={20} />
+                    <span className="text-xs font-bold">Chat Restoran</span>
+                  </button>
+                </div>
 
-            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <Link
-                href={`/payment-success?order=${order.id}`}
-                className="flex w-full items-center justify-center gap-2 rounded-2xl border border-emerald-100 bg-emerald-50 py-4 text-sm font-extrabold text-emerald-700 transition-colors hover:bg-emerald-100"
-              >
-                <ReceiptText size={18} />
-                Lihat Receipt
-              </Link>
-              <a
-                href={`/api/orders/${order.id}/receipt`}
-                download
-                className="flex w-full items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-white py-4 text-sm font-extrabold text-gray-700 transition-colors hover:bg-gray-50"
-              >
-                <Download size={18} />
-                Download PDF
-              </a>
-            </div>
+                <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <Link
+                    href={`/payment-success?order=${order.id}`}
+                    className="flex w-full items-center justify-center gap-2 rounded-2xl border border-emerald-100 bg-emerald-50 py-4 text-sm font-extrabold text-emerald-700 transition-colors hover:bg-emerald-100"
+                  >
+                    <ReceiptText size={18} />
+                    Lihat Receipt
+                  </Link>
+                  <a
+                    href={`/api/orders/${order.id}/receipt`}
+                    download
+                    className="flex w-full items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-white py-4 text-sm font-extrabold text-gray-700 transition-colors hover:bg-gray-50"
+                  >
+                    <Download size={18} />
+                    Download PDF
+                  </a>
+                </div>
+              </>
+            )}
 
             {canCancelOrder ? (
               <>
@@ -851,29 +972,24 @@ export default function CustomerOrderTrackingPage() {
 
               <div className="min-h-[320px] flex-1 space-y-4 overflow-y-auto bg-gray-50 p-5 [scrollbar-width:none] md:p-6 [&::-webkit-scrollbar]:hidden">
                 {chatNotice ? (
-                  <div className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-xs font-bold text-red-700">
-                    {chatNotice}
-                  </div>
+                  <InlineNotice variant="error" description={chatNotice} />
                 ) : null}
 
                 {isLoadingMessages ? (
-                  <div className="rounded-2xl bg-white p-5 text-center text-sm font-bold text-gray-500">
-                    Memuat pesan restoran...
-                  </div>
+                  <StateCard
+                    variant="loading"
+                    size="sm"
+                    title="Memuat pesan restoran"
+                    description="Percakapan terbaru sedang diambil."
+                  />
                 ) : chatMessages.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-gray-200 bg-white p-6 text-center">
-                    <MessageSquareText
-                      size={30}
-                      className="mx-auto mb-3 text-gray-300"
-                    />
-                    <p className="text-sm font-extrabold text-gray-950">
-                      Belum ada percakapan
-                    </p>
-                    <p className="mt-1 text-xs leading-5 font-medium text-gray-500">
-                      Tanyakan status pickup, catatan pengambilan, atau info toko
-                      langsung ke restoran.
-                    </p>
-                  </div>
+                  <StateCard
+                    variant="empty"
+                    size="sm"
+                    icon={MessageSquareText}
+                    title="Belum ada percakapan"
+                    description="Tanyakan status pickup, catatan pengambilan, atau info toko langsung ke restoran."
+                  />
                 ) : (
                   chatMessages.map((message) => {
                     const isCustomer = message.sender === "customer";
@@ -1004,7 +1120,12 @@ export default function CustomerOrderTrackingPage() {
                     <p className="text-sm leading-6 font-semibold text-amber-800">
                       Status saat ini:{" "}
                       <span className="font-extrabold">
-                        Sedang disiapkan
+                        {isReady
+                          ? "Siap diambil"
+                          : order.apiStatus === "PAID" ||
+                              order.apiStatus === "CONFIRMED"
+                            ? "Pesanan baru"
+                            : "Sedang disiapkan"}
                       </span>
                       . Pembatalan akan langsung memperbarui status pesanan.
                     </p>

@@ -4,6 +4,11 @@ import { z } from "zod";
 
 import { getCurrentSession } from "@/lib/auth-session";
 import { prisma, type PrismaTransactionClient } from "@/lib/prisma";
+import {
+  enforceSensitiveActionRateLimit,
+  securityRateLimitRules,
+} from "@/lib/security-rate-limits";
+import { invalidateCacheTags } from "@/lib/server-cache";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -79,6 +84,18 @@ export async function PATCH(
     );
   }
 
+  const { id } = await params;
+  const rateLimit = await enforceSensitiveActionRateLimit(
+    request,
+    securityRateLimitRules.adminApplicationReview,
+    session,
+    [id],
+  );
+
+  if (!rateLimit.allowed) {
+    return rateLimit.response;
+  }
+
   const parsed = documentReviewSchema.safeParse(await request.json());
 
   if (!parsed.success) {
@@ -92,7 +109,6 @@ export async function PATCH(
     );
   }
 
-  const { id } = await params;
   const application = await prisma.restaurantApplication.findUnique({
     where: { id },
     include: { documents: true },
@@ -218,6 +234,8 @@ export async function PATCH(
       user: true,
     },
   });
+
+  await invalidateCacheTags(["admin-dashboard"]);
 
   return NextResponse.json({ ok: true, application: updatedApplication });
 }

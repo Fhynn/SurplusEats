@@ -54,6 +54,7 @@ const finalStatuses = new Set([
 ]);
 
 const statusClassNameByStatus: Record<UiOrderStatus, string> = {
+  pendingPayment: "bg-amber-50 text-amber-700",
   ready: "bg-emerald-50 text-emerald-700",
   preparing: "bg-blue-50 text-blue-700",
   completed: "bg-gray-100 text-gray-600",
@@ -63,7 +64,7 @@ const statusClassNameByStatus: Record<UiOrderStatus, string> = {
 
 const trackingSteps: TrackingStep[] = [
   {
-    label: "Order dikonfirmasi",
+    label: "Pembayaran dikonfirmasi",
     description: "Pembayaran valid dan order sudah masuk ke restoran.",
     rank: 1,
   },
@@ -318,6 +319,8 @@ export function CustomerOrderTrackingScreen() {
                     >
                       {selectedOrder.status === "ready" ? (
                         <CheckCircle2 size={14} />
+                      ) : selectedOrder.status === "pendingPayment" ? (
+                        <Clock3 size={14} />
                       ) : (
                         <Clock3 size={14} />
                       )}

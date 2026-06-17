@@ -25,6 +25,7 @@ import {
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
+import { InlineNotice, StateCard } from "@/components/ui-state";
 import { useRealtimePolling } from "@/components/use-realtime-polling";
 import {
   type PickupScannerResult,
@@ -447,34 +448,31 @@ export default function OwnerOrderDetailPage() {
 
   if (isLoadingOrder) {
     return (
-      <div className="mx-auto max-w-6xl rounded-[32px] border border-gray-100 bg-white p-10 text-center shadow-sm">
-        <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-4 border-emerald-100 border-t-emerald-500" />
-        <h1 className="text-xl font-extrabold text-gray-950">
-          Memuat detail pesanan
-        </h1>
-        <p className="mt-2 text-sm font-medium text-gray-500">
-          Detail pesanan sedang dimuat.
-        </p>
-      </div>
+      <StateCard
+        className="mx-auto max-w-6xl"
+        variant="loading"
+        size="lg"
+        title="Memuat detail pesanan"
+        description="Detail pesanan, status pickup, dan pesan customer sedang dimuat."
+      />
     );
   }
 
   if (!order) {
     return (
-      <div className="mx-auto max-w-6xl rounded-[32px] border border-red-100 bg-red-50 p-10 text-center shadow-sm">
-        <h1 className="text-xl font-extrabold text-red-700">
-          Order tidak ditemukan
-        </h1>
-        <p className="mt-2 text-sm font-bold text-red-600">
-          {orderNotice ?? "ID order tidak tersedia untuk owner yang sedang login."}
-        </p>
-        <Link
-          href="/owner/dashboard?tab=orders"
-          className="mt-6 inline-flex rounded-2xl bg-red-600 px-5 py-3 text-sm font-extrabold text-white"
-        >
-          Kembali ke daftar pesanan
-        </Link>
-      </div>
+      <StateCard
+        className="mx-auto max-w-6xl"
+        variant="error"
+        size="lg"
+        title="Order tidak ditemukan"
+        description={
+          orderNotice ?? "ID order tidak tersedia untuk owner yang sedang login."
+        }
+        action={{
+          label: "Kembali ke daftar pesanan",
+          href: "/owner/dashboard?tab=orders",
+        }}
+      />
     );
   }
 
@@ -710,9 +708,7 @@ export default function OwnerOrderDetailPage() {
       </header>
 
       {orderNotice ? (
-        <div className="rounded-[22px] border border-red-100 bg-red-50 px-5 py-4 text-sm font-bold text-red-700">
-          {orderNotice}
-        </div>
+        <InlineNotice variant="error" description={orderNotice} />
       ) : null}
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1fr_360px]">
@@ -1100,23 +1096,20 @@ export default function OwnerOrderDetailPage() {
 
             <div className="flex-1 space-y-4 overflow-y-auto bg-gray-50 p-6">
               {isLoadingMessages ? (
-                <div className="rounded-2xl bg-white p-5 text-center text-sm font-bold text-gray-500">
-                  Memuat pesan order...
-                </div>
+                <StateCard
+                  variant="loading"
+                  size="sm"
+                  title="Memuat pesan order"
+                  description="Percakapan customer sedang diambil."
+                />
               ) : chatMessages.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-gray-200 bg-white p-5 text-center">
-                  <MessageSquareText
-                    size={28}
-                    className="mx-auto mb-3 text-gray-300"
-                  />
-                  <p className="text-sm font-extrabold text-gray-900">
-                    Belum ada pesan
-                  </p>
-                  <p className="mt-1 text-xs font-medium text-gray-500">
-                    Pesan yang dikirim di sini akan tersimpan di database dan
-                    mengirim notifikasi ke customer.
-                  </p>
-                </div>
+                <StateCard
+                  variant="empty"
+                  size="sm"
+                  icon={MessageSquareText}
+                  title="Belum ada pesan"
+                  description="Pesan yang dikirim di sini akan tersimpan di database dan mengirim notifikasi ke customer."
+                />
               ) : (
                 chatMessages.map((message) => {
                   const isOwner = message.sender === "owner";

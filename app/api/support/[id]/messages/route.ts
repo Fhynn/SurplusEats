@@ -8,6 +8,10 @@ import {
   type NotificationDeliveryPayload,
 } from "@/lib/notification-delivery";
 import { prisma, type PrismaTransactionClient } from "@/lib/prisma";
+import {
+  enforceSensitiveActionRateLimit,
+  securityRateLimitRules,
+} from "@/lib/security-rate-limits";
 import { getSupportSlaState } from "@/lib/support-sla";
 
 export const runtime = "nodejs";
@@ -160,6 +164,17 @@ export async function POST(
 
   if (auth.response) {
     return auth.response;
+  }
+
+  const rateLimit = await enforceSensitiveActionRateLimit(
+    request,
+    securityRateLimitRules.supportReply,
+    session,
+    [id],
+  );
+
+  if (!rateLimit.allowed) {
+    return rateLimit.response;
   }
 
   if (auth.ticket!.status === "CLOSED") {

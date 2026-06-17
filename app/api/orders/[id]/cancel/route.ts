@@ -13,6 +13,10 @@ import { getCurrentSession } from "@/lib/auth-session";
 import { notifyFavoriteMenuItemsAvailableByIds } from "@/lib/favorite-menu-notifications";
 import { deliverNotifications } from "@/lib/notification-delivery";
 import { prisma, type PrismaTransactionClient } from "@/lib/prisma";
+import {
+  enforceSensitiveActionRateLimit,
+  securityRateLimitRules,
+} from "@/lib/security-rate-limits";
 import { transitionOrderIncomeWalletTransaction } from "@/lib/wallet-integrity";
 
 export const runtime = "nodejs";
@@ -85,6 +89,17 @@ export async function POST(request: Request, { params }: CancelOrderRouteProps) 
       { ok: false, message: "Login customer diperlukan." },
       { status: session ? 403 : 401 },
     );
+  }
+
+  const rateLimit = await enforceSensitiveActionRateLimit(
+    request,
+    securityRateLimitRules.customerOrderCancel,
+    session,
+    [id],
+  );
+
+  if (!rateLimit.allowed) {
+    return rateLimit.response;
   }
 
   const parsed = cancelOrderSchema.safeParse(await request.json());

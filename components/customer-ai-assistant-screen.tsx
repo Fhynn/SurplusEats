@@ -68,6 +68,7 @@ type AiMessage = {
     itemCount: number;
     totalText: string;
     restaurants: string[];
+    nextAction?: "add_menu" | "set_location" | "adjust_stock" | "store_location_missing" | "open_checkout";
   };
 };
 
@@ -116,6 +117,21 @@ function recommendationToFood(
     category: normalizeFoodCategory(item.category),
     description: item.description,
   }, origin);
+}
+
+function getFallbackLabel(reason?: string) {
+  switch (reason) {
+    case "quota":
+      return "Mode lokal: kuota AI penuh";
+    case "timeout":
+      return "Mode lokal: AI lambat";
+    case "missing_api_key":
+      return "Mode lokal: AI belum aktif";
+    case "parse_error":
+      return "Mode lokal: jawaban AI dirapikan";
+    default:
+      return "Mode fallback lokal";
+  }
 }
 
 export function CustomerAiAssistantScreen() {
@@ -383,7 +399,7 @@ export function CustomerAiAssistantScreen() {
 
                     {!isUser && message.degraded ? (
                       <div className="mt-3 inline-flex rounded-full bg-amber-50 px-3 py-1 text-[10px] font-extrabold text-amber-700">
-                        Mode fallback lokal
+                        {getFallbackLabel(message.fallbackReason)}
                       </div>
                     ) : null}
 

@@ -4,6 +4,7 @@ import {
 } from "@/lib/geo-distance";
 
 export type UiOrderStatus =
+  | "pendingPayment"
   | "ready"
   | "preparing"
   | "completed"
@@ -14,6 +15,8 @@ export type ApiOrder = {
   id: string;
   orderCode: string;
   status: string;
+  paymentStatus: string;
+  checkoutAttemptId: string | null;
   subtotal: number;
   discount: number;
   serviceFee: number;
@@ -72,6 +75,9 @@ export type CustomerOrderCard = {
   total: number;
   status: UiOrderStatus;
   statusText: string;
+  rawStatus: string;
+  paymentStatus: string;
+  checkoutAttemptId: string | null;
   time: string;
   image: string;
   foodId?: string;
@@ -85,7 +91,14 @@ export type CustomerOrderCard = {
   }>;
 };
 
-export function mapOrderStatus(status: string): UiOrderStatus {
+export function mapOrderStatus(
+  status: string,
+  paymentStatus?: string | null,
+): UiOrderStatus {
+  if (status === "PENDING" || paymentStatus === "PENDING") {
+    return "pendingPayment";
+  }
+
   if (status === "READY") return "ready";
   if (status === "COMPLETED" || status === "REFUNDED") return "completed";
   if (status === "NO_SHOW") return "noShow";
@@ -94,6 +107,7 @@ export function mapOrderStatus(status: string): UiOrderStatus {
 }
 
 export function orderStatusText(status: UiOrderStatus) {
+  if (status === "pendingPayment") return "Menunggu Pembayaran";
   if (status === "ready") return "Siap Diambil";
   if (status === "completed") return "Selesai";
   if (status === "cancelled") return "Dibatalkan";
@@ -129,7 +143,7 @@ export function apiOrderToCard(
   order: ApiOrder,
   customerCoordinates: Coordinates | null = null,
 ): CustomerOrderCard {
-  const status = mapOrderStatus(order.status);
+  const status = mapOrderStatus(order.status, order.paymentStatus);
   const firstItem = order.items[0];
   const itemSummary = order.items
     .map((item) => `${item.menuNameSnapshot} (x${item.quantity})`)
@@ -147,6 +161,9 @@ export function apiOrderToCard(
     total: order.total,
     status,
     statusText: orderStatusText(status),
+    rawStatus: order.status,
+    paymentStatus: order.paymentStatus,
+    checkoutAttemptId: order.checkoutAttemptId,
     time: formatOrderTime(order.pickupTime || order.createdAt),
     image: firstItem?.menuItem?.imageUrl || "/placeholder-food.svg",
     foodId: firstItem?.menuItem?.id,

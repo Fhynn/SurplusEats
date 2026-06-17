@@ -15,6 +15,7 @@ import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 
 import { useCustomerApp } from "@/components/customer-app-provider";
 import { MobileDeviceFrame } from "@/components/mobile-device-frame";
+import { StateCard } from "@/components/ui-state";
 import { useRealtimePolling } from "@/components/use-realtime-polling";
 import { formatRp } from "@/lib/customer-data";
 
@@ -150,7 +151,11 @@ function PaymentStatusContent() {
                   ? "Pembayaran belum berhasil"
                   : "Menunggu konfirmasi pembayaran"}
             </h1>
-            <p className="mt-3 text-sm leading-6 font-medium text-gray-600">
+            <p
+              role={errorMessage ? "alert" : undefined}
+              aria-live={errorMessage ? "assertive" : "polite"}
+              className="mt-3 text-sm leading-6 font-medium text-gray-600"
+            >
               {errorMessage ||
                 (isFailed
                   ? payload?.payment?.errorMessage ||
@@ -227,9 +232,24 @@ function PaymentStatusContent() {
   );
 }
 
+function PaymentStatusFallback() {
+  return (
+    <MobileDeviceFrame backgroundClassName="bg-gray-50">
+      <div className="flex min-h-dvh items-center justify-center bg-gray-50 px-5 py-10">
+        <StateCard
+          className="w-full max-w-md"
+          variant="loading"
+          title="Memuat status pembayaran"
+          description="ResQFood sedang membaca referensi pembayaran dari halaman ini."
+        />
+      </div>
+    </MobileDeviceFrame>
+  );
+}
+
 export default function PaymentStatusPage() {
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={<PaymentStatusFallback />}>
       <PaymentStatusContent />
     </Suspense>
   );

@@ -8,6 +8,10 @@ import {
   isValidReviewImageContentType,
   maxReviewImages,
 } from "@/lib/review-utils";
+import {
+  enforceSensitiveActionRateLimit,
+  securityRateLimitRules,
+} from "@/lib/security-rate-limits";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,6 +31,16 @@ export async function POST(request: Request) {
       { ok: false, message: "Login customer diperlukan untuk membuat ulasan." },
       { status: session ? 403 : 401 },
     );
+  }
+
+  const rateLimit = await enforceSensitiveActionRateLimit(
+    request,
+    securityRateLimitRules.reviewCreate,
+    session,
+  );
+
+  if (!rateLimit.allowed) {
+    return rateLimit.response;
   }
 
   const parsed = reviewSchema.safeParse(await request.json());

@@ -5,8 +5,10 @@ import { useEffect, useState } from "react";
 import {
   BellRing,
   Clock3,
+  Database,
   Mail,
   MessageCircle,
+  RefreshCcw,
   Save,
   Send,
   ShieldCheck,
@@ -63,6 +65,27 @@ type NotificationDeliveryStatus = {
   appBaseUrlConfigured: boolean;
   promoExternalEnabled: boolean;
   timeoutMs: number;
+};
+
+type CacheRuntimeStatus = {
+  enabled: boolean;
+  redisConfigured: boolean;
+  driver: "redis" | "memory" | "disabled";
+  memoryEntries: number;
+  memoryVersionTags: number;
+  stats: {
+    startedAt: string;
+    hits: number;
+    misses: number;
+    hitRatio: number;
+    memoryHits: number;
+    redisHits: number;
+    writes: number;
+    invalidations: number;
+    bypasses: number;
+    errors: number;
+    lastErrorAt: string | null;
+  };
 };
 
 type NotificationDeliveryResult = {
@@ -128,6 +151,10 @@ function formatTime(value: string) {
   }).format(new Date(value));
 }
 
+function formatPercent(value: number) {
+  return `${Math.round(value * 100)}%`;
+}
+
 export default function AdminSettingsPage() {
   const [admin, setAdmin] = useState<AdminUser | null>(null);
   const [logs, setLogs] = useState<AdminLog[]>([]);
@@ -141,11 +168,13 @@ export default function AdminSettingsPage() {
   const [isSavingFees, setIsSavingFees] = useState(false);
   const [notificationStatus, setNotificationStatus] =
     useState<NotificationDeliveryStatus | null>(null);
+  const [cacheStatus, setCacheStatus] = useState<CacheRuntimeStatus | null>(null);
   const [notificationNotice, setNotificationNotice] = useState<{
     type: "success" | "error";
     message: string;
   } | null>(null);
   const [isTestingNotification, setIsTestingNotification] = useState(false);
+  const [isRefreshingCacheStatus, setIsRefreshingCacheStatus] = useState(false);
 
   useEffect(() => {
     let ignore = false;
@@ -159,6 +188,7 @@ export default function AdminSettingsPage() {
           logsResponse,
           feesResponse,
           notificationResponse,
+          cacheResponse,
         ] = await Promise.all([
           fetch("/api/auth/me", { cache: "no-store" }),
           fetch("/api/admin/logs", { cache: "no-store" }),
@@ -166,6 +196,7 @@ export default function AdminSettingsPage() {
           fetch("/api/admin/settings/notification-delivery", {
             cache: "no-store",
           }),
+          fetch("/api/admin/settings/cache-status", { cache: "no-store" }),
         ]);
         const meData = (await meResponse.json()) as {
           ok: boolean;
@@ -185,6 +216,11 @@ export default function AdminSettingsPage() {
         const notificationData = (await notificationResponse.json()) as {
           ok: boolean;
           status?: NotificationDeliveryStatus;
+          message?: string;
+        };
+        const cacheData = (await cacheResponse.json()) as {
+          ok: boolean;
+          status?: CacheRuntimeStatus;
           message?: string;
         };
 
@@ -213,11 +249,18 @@ export default function AdminSettingsPage() {
           );
         }
 
+        if (!cacheResponse.ok || !cacheData.ok || !cacheData.status) {
+          throw new Error(
+            cacheData.message || "Status cache performa gagal dimuat.",
+          );
+        }
+
         if (!ignore) {
           setAdmin(meData.user);
           setLogs(logsData.logs ?? []);
           setFeeForm(toFeeForm(feesData.settings));
           setNotificationStatus(notificationData.status);
+          setCacheStatus(cacheData.status);
           setNotice(null);
         }
       } catch (error) {
@@ -344,6 +387,33 @@ export default function AdminSettingsPage() {
     }
   };
 
+  const handleRefreshCacheStatus = async () => {
+    setIsRefreshingCacheStatus(true);
+
+    try {
+      const response = await fetch("/api/admin/settings/cache-status", {
+        cache: "no-store",
+      });
+      const data = (await response.json()) as {
+        ok: boolean;
+        status?: CacheRuntimeStatus;
+        message?: string;
+      };
+
+      if (!response.ok || !data.ok || !data.status) {
+        throw new Error(data.message || "Status cache gagal dimuat.");
+      }
+
+      setCacheStatus(data.status);
+    } catch (error) {
+      setNotice(
+        error instanceof Error ? error.message : "Status cache gagal dimuat.",
+      );
+    } finally {
+      setIsRefreshingCacheStatus(false);
+    }
+  };
+
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 p-5 md:p-8">
       <header className="rounded-[28px] border border-gray-100 bg-white p-6 shadow-sm">
@@ -398,6 +468,99 @@ export default function AdminSettingsPage() {
                 {admin?.role || "-"}
               </p>
             </div>
+          </section>
+
+          <section className="rounded-[28px] border border-gray-100 bg-white p-6 shadow-sm">
+            <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+              <div>
+                <p className="text-xs font-extrabold tracking-[0.2em] text-emerald-600 uppercase">
+                  Performance
+                </p>
+                <h2 className="mt-1 flex items-center gap-2 text-lg font-extrabold text-gray-950">
+                  <Database size={20} className="text-emerald-600" />
+                  Cache Runtime
+                </h2>
+                <p className="mt-2 max-w-2xl text-sm font-medium text-gray-500">
+                  Cache pendek dipakai untuk endpoint berat seperti dashboard admin,
+                  menu publik, analytics owner, dan reverse geocode.
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={isRefreshingCacheStatus}
+                onClick={handleRefreshCacheStatus}
+                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-emerald-100 bg-emerald-50 px-5 py-3 text-sm font-extrabold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
+              >
+                <RefreshCcw
+                  size={18}
+                  className={isRefreshingCacheStatus ? "animate-spin" : ""}
+                />
+                {isRefreshingCacheStatus ? "Memuat..." : "Refresh"}
+              </button>
+            </div>
+
+            {cacheStatus ? (
+              <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <div className="rounded-2xl bg-gray-50 p-4">
+                  <p className="text-xs font-extrabold tracking-wider text-gray-400 uppercase">
+                    Driver
+                  </p>
+                  <p className="mt-1 text-lg font-extrabold text-gray-950">
+                    {cacheStatus.driver === "redis"
+                      ? "Redis"
+                      : cacheStatus.driver === "memory"
+                        ? "Memory"
+                        : "Nonaktif"}
+                  </p>
+                  <p className="mt-1 text-xs font-bold text-gray-500">
+                    {cacheStatus.redisConfigured
+                      ? "Upstash REST terhubung"
+                      : "Fallback memory runtime"}
+                  </p>
+                </div>
+                <div className="rounded-2xl bg-gray-50 p-4">
+                  <p className="text-xs font-extrabold tracking-wider text-gray-400 uppercase">
+                    Hit Ratio
+                  </p>
+                  <p className="mt-1 text-lg font-extrabold text-gray-950">
+                    {formatPercent(cacheStatus.stats.hitRatio)}
+                  </p>
+                  <p className="mt-1 text-xs font-bold text-gray-500">
+                    {cacheStatus.stats.hits} hit / {cacheStatus.stats.misses} miss
+                  </p>
+                </div>
+                <div className="rounded-2xl bg-gray-50 p-4">
+                  <p className="text-xs font-extrabold tracking-wider text-gray-400 uppercase">
+                    Entries
+                  </p>
+                  <p className="mt-1 text-lg font-extrabold text-gray-950">
+                    {cacheStatus.memoryEntries}
+                  </p>
+                  <p className="mt-1 text-xs font-bold text-gray-500">
+                    {cacheStatus.memoryVersionTags} tag version aktif
+                  </p>
+                </div>
+                <div className="rounded-2xl bg-gray-50 p-4">
+                  <p className="text-xs font-extrabold tracking-wider text-gray-400 uppercase">
+                    Mutasi
+                  </p>
+                  <p className="mt-1 text-lg font-extrabold text-gray-950">
+                    {cacheStatus.stats.invalidations}
+                  </p>
+                  <p className="mt-1 text-xs font-bold text-gray-500">
+                    {cacheStatus.stats.errors} error cache tercatat
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <StateCard
+                className="mt-6"
+                title="Status cache belum tersedia"
+                description="Coba refresh status cache."
+                variant="empty"
+                size="sm"
+              />
+            )}
           </section>
 
           <section className="rounded-[28px] border border-gray-100 bg-white p-6 shadow-sm">

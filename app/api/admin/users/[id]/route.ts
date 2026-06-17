@@ -4,6 +4,10 @@ import { z } from "zod";
 
 import { getCurrentSession } from "@/lib/auth-session";
 import { prisma, type PrismaTransactionClient } from "@/lib/prisma";
+import {
+  enforceSensitiveActionRateLimit,
+  securityRateLimitRules,
+} from "@/lib/security-rate-limits";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -352,6 +356,17 @@ export async function PATCH(request: Request, { params }: AdminUserRouteProps) {
   }
 
   const { id } = await params;
+  const rateLimit = await enforceSensitiveActionRateLimit(
+    request,
+    securityRateLimitRules.adminUserMutation,
+    adminCheck.session,
+    [id],
+  );
+
+  if (!rateLimit.allowed) {
+    return rateLimit.response;
+  }
+
   const parsed = updateUserSchema.safeParse(await request.json());
 
   if (!parsed.success) {

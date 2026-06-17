@@ -4,6 +4,10 @@ import { z } from "zod";
 
 import { getCurrentSession } from "@/lib/auth-session";
 import { prisma } from "@/lib/prisma";
+import {
+  enforceSensitiveActionRateLimit,
+  securityRateLimitRules,
+} from "@/lib/security-rate-limits";
 import { claimVoucherForUser } from "@/lib/voucher-integrity";
 import {
   getVoucherRuleLabels,
@@ -188,6 +192,16 @@ export async function POST(request: Request) {
       { ok: false, message: "Login customer diperlukan." },
       { status: session ? 403 : 401 },
     );
+  }
+
+  const rateLimit = await enforceSensitiveActionRateLimit(
+    request,
+    securityRateLimitRules.voucherClaim,
+    session,
+  );
+
+  if (!rateLimit.allowed) {
+    return rateLimit.response;
   }
 
   const parsed = claimVoucherSchema.safeParse(await request.json());

@@ -11,6 +11,10 @@ import { createPayoutReference } from "@/lib/backend-utils";
 import { getCurrentSession } from "@/lib/auth-session";
 import { createNotificationAndDeliver } from "@/lib/notification-delivery";
 import { prisma } from "@/lib/prisma";
+import {
+  enforceSensitiveActionRateLimit,
+  securityRateLimitRules,
+} from "@/lib/security-rate-limits";
 import { settleCompletedWalletTransactions } from "@/lib/wallet-settlement";
 import {
   buildPayoutDescription,
@@ -123,6 +127,16 @@ export async function POST(request: Request) {
       { ok: false, message: "Akses owner diperlukan." },
       { status: session ? 403 : 401 },
     );
+  }
+
+  const rateLimit = await enforceSensitiveActionRateLimit(
+    request,
+    securityRateLimitRules.ownerPayoutRequest,
+    session,
+  );
+
+  if (!rateLimit.allowed) {
+    return rateLimit.response;
   }
 
   const parsed = payoutRequestSchema.safeParse(await request.json());

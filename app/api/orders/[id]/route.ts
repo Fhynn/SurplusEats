@@ -12,6 +12,10 @@ import {
   type PickupVerificationMethod,
 } from "@/lib/order-status-flow";
 import { prisma, type PrismaTransactionClient } from "@/lib/prisma";
+import {
+  enforceSensitiveActionRateLimit,
+  securityRateLimitRules,
+} from "@/lib/security-rate-limits";
 import { invalidateCacheTags } from "@/lib/server-cache";
 import {
   MenuItemStatus,
@@ -104,6 +108,10 @@ export async function GET(_request: Request, { params }: OrderDetailRouteProps) 
     where: {
       orderCode: id,
       customerId: session.role === UserRole.CUSTOMER ? session.userId : undefined,
+      paymentStatus:
+        session.role === UserRole.OWNER
+          ? { in: [PaymentStatus.PAID, PaymentStatus.REFUNDED] }
+          : undefined,
       restaurant:
         session.role === UserRole.OWNER ? { ownerId: session.userId } : undefined,
     },
@@ -155,6 +163,17 @@ export async function PATCH(request: Request, { params }: OrderDetailRouteProps)
       { ok: false, message: "Akses owner diperlukan." },
       { status: session ? 403 : 401 },
     );
+  }
+
+  const rateLimit = await enforceSensitiveActionRateLimit(
+    request,
+    securityRateLimitRules.ownerOrderMutation,
+    session,
+    [id],
+  );
+
+  if (!rateLimit.allowed) {
+    return rateLimit.response;
   }
 
   const parsed = updateOrderStatusSchema.safeParse(await request.json());
@@ -352,6 +371,7 @@ export async function PATCH(request: Request, { params }: OrderDetailRouteProps)
   );
 
   await invalidateCacheTags([
+    "admin-dashboard",
     `owner-analytics:${updatedOrder.restaurant.ownerId}`,
     ...(restoredAvailableMenuItemIds.length > 0 ? ["menu-items:public"] : []),
   ]);

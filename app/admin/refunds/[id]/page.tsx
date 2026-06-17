@@ -25,6 +25,7 @@ import {
   refundAdminDecisionTemplates,
   type RefundStatusValue,
 } from "@/lib/refund-policy";
+import { InlineNotice, StateCard } from "@/components/ui-state";
 
 type RefundDetail = {
   id: string;
@@ -264,21 +265,15 @@ export default function AdminRefundDetailPage() {
       </header>
 
       {notice ? (
-        <div
-          className={`rounded-2xl border p-4 text-sm font-bold ${
-            noticeType === "success"
-              ? "border-emerald-100 bg-emerald-50 text-emerald-700"
-              : "border-red-100 bg-red-50 text-red-700"
-          }`}
-        >
-          {notice}
-        </div>
+        <InlineNotice variant={noticeType} description={notice} />
       ) : null}
 
       {isLoading ? (
-        <div className="rounded-[28px] border border-gray-100 bg-white p-10 text-center text-sm font-bold text-gray-500 shadow-sm">
-          Memuat refund...
-        </div>
+        <StateCard
+          variant="loading"
+          title="Memuat refund"
+          description="Detail refund, bukti, SLA, dan tiket terkait sedang disiapkan."
+        />
       ) : refund ? (
         <section className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
           <div className="space-y-6">
@@ -555,7 +550,17 @@ export default function AdminRefundDetailPage() {
             </div>
           </aside>
         </section>
-      ) : null}
+      ) : (
+        <StateCard
+          variant="error"
+          title="Refund tidak ditemukan"
+          description={notice || "Data refund ini tidak tersedia atau sudah dipindahkan."}
+          action={{
+            label: "Coba lagi",
+            onClick: () => void loadRefund(),
+          }}
+        />
+      )}
     </div>
   );
 }

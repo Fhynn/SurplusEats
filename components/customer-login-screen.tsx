@@ -319,25 +319,25 @@ export function CustomerLoginScreen() {
             >
               <Link
                 href="/tentang-kami"
-                className="inline-flex min-h-11 items-center hover:text-emerald-700"
+                className="inline-flex min-h-11 min-w-11 items-center justify-center hover:text-emerald-700"
               >
                 Tentang Kami
               </Link>
               <Link
                 href="/kebijakan-privasi"
-                className="inline-flex min-h-11 items-center hover:text-emerald-700"
+                className="inline-flex min-h-11 min-w-11 items-center justify-center hover:text-emerald-700"
               >
                 Kebijakan Privasi
               </Link>
               <Link
                 href="/syarat-ketentuan"
-                className="inline-flex min-h-11 items-center hover:text-emerald-700"
+                className="inline-flex min-h-11 min-w-11 items-center justify-center hover:text-emerald-700"
               >
                 Syarat & Ketentuan
               </Link>
               <Link
                 href="/kontak"
-                className="inline-flex min-h-11 items-center hover:text-emerald-700"
+                className="inline-flex min-h-11 min-w-11 items-center justify-center hover:text-emerald-700"
               >
                 Kontak
               </Link>

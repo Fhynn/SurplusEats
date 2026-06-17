@@ -9,6 +9,10 @@ import {
 } from "@/lib/auth-session";
 import { createPersistedSession } from "@/lib/auth-session-records";
 import { prisma } from "@/lib/prisma";
+import {
+  enforceSensitiveActionRateLimit,
+  securityRateLimitRules,
+} from "@/lib/security-rate-limits";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -72,6 +76,18 @@ export async function POST(
     );
   }
 
+  const { id } = await params;
+  const rateLimit = await enforceSensitiveActionRateLimit(
+    request,
+    securityRateLimitRules.adminImpersonation,
+    adminSession,
+    [id],
+  );
+
+  if (!rateLimit.allowed) {
+    return rateLimit.response;
+  }
+
   const admin = await prisma.user.findUnique({
     where: { id: adminSession.userId },
     select: { id: true, email: true, name: true, role: true, status: true },
@@ -84,7 +100,6 @@ export async function POST(
     );
   }
 
-  const { id } = await params;
   const targetUser = await prisma.user.findUnique({
     where: { id },
     select: {

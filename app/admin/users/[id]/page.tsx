@@ -75,6 +75,11 @@ type AdminUserSession = {
   } | null;
 };
 
+type NoticeState = {
+  type: "success" | "error";
+  message: string;
+};
+
 const toneClassName: Record<AccountActivity["tone"], string> = {
   emerald: "bg-emerald-50 text-emerald-600",
   blue: "bg-blue-50 text-blue-600",
@@ -89,12 +94,15 @@ export default function AdminUserDetailPage() {
   const [activities, setActivities] = useState<AccountActivity[]>([]);
   const [sessions, setSessions] = useState<AdminUserSession[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<NoticeState | null>(null);
   const [newPassword, setNewPassword] = useState("");
   const [resetResult, setResetResult] = useState<string | null>(null);
   const [revokeSessions, setRevokeSessions] = useState(true);
   const [isResettingPassword, setIsResettingPassword] = useState(false);
   const [isImpersonating, setIsImpersonating] = useState(false);
+  const [revokingSessionId, setRevokingSessionId] = useState<string | null>(
+    null,
+  );
 
   const loadUser = useCallback(async () => {
     setIsLoading(true);
@@ -120,7 +128,10 @@ export default function AdminUserDetailPage() {
       setSessions(data.sessions ?? []);
       setNotice(null);
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "User gagal dimuat.");
+      setNotice({
+        type: "error",
+        message: error instanceof Error ? error.message : "User gagal dimuat.",
+      });
       setUser(null);
       setActivities([]);
       setSessions([]);
@@ -142,11 +153,21 @@ export default function AdminUserDetailPage() {
     const data = (await response.json()) as { ok: boolean; message?: string };
 
     if (!response.ok || !data.ok) {
-      setNotice(data.message || "Status user gagal diperbarui.");
+      setNotice({
+        type: "error",
+        message: data.message || "Status user gagal diperbarui.",
+      });
       return;
     }
 
     await loadUser();
+    setNotice({
+      type: "success",
+      message:
+        status === "ACTIVE"
+          ? "User berhasil diaktifkan."
+          : "User berhasil dibekukan.",
+    });
   };
 
   const resetPassword = async () => {
@@ -177,12 +198,14 @@ export default function AdminUserDetailPage() {
 
       setResetResult(data.temporaryPassword);
       setNewPassword("");
-      setNotice("Password user berhasil direset.");
       await loadUser();
+      setNotice({ type: "success", message: "Password user berhasil direset." });
     } catch (error) {
-      setNotice(
-        error instanceof Error ? error.message : "Reset password gagal.",
-      );
+      setNotice({
+        type: "error",
+        message:
+          error instanceof Error ? error.message : "Reset password gagal.",
+      });
     } finally {
       setIsResettingPassword(false);
     }
@@ -194,7 +217,55 @@ export default function AdminUserDetailPage() {
     }
 
     await navigator.clipboard.writeText(resetResult);
-    setNotice("Password baru disalin.");
+    setNotice({ type: "success", message: "Password baru disalin." });
+  };
+
+  const revokeSession = async (sessionId: string) => {
+    const selectedSession = sessions.find((item) => item.id === sessionId);
+
+    if (!selectedSession || selectedSession.revokedAt || revokingSessionId) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Cabut session ${selectedSession.deviceLabel}? User akan perlu login ulang di perangkat tersebut.`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setRevokingSessionId(sessionId);
+
+    try {
+      const response = await fetch(
+        `/api/admin/users/${params.id}/sessions/${sessionId}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ reason: "SESSION_REVOKED_BY_ADMIN" }),
+        },
+      );
+      const data = (await response.json()) as {
+        ok: boolean;
+        message?: string;
+      };
+
+      if (!response.ok || !data.ok) {
+        throw new Error(data.message || "Session gagal dicabut.");
+      }
+
+      await loadUser();
+      setNotice({ type: "success", message: "Session berhasil dicabut." });
+    } catch (error) {
+      setNotice({
+        type: "error",
+        message:
+          error instanceof Error ? error.message : "Session gagal dicabut.",
+      });
+    } finally {
+      setRevokingSessionId(null);
+    }
   };
 
   const startImpersonation = async () => {
@@ -216,9 +287,11 @@ export default function AdminUserDetailPage() {
 
       window.location.href = data.redirectTo || "/home";
     } catch (error) {
-      setNotice(
-        error instanceof Error ? error.message : "Impersonation gagal.",
-      );
+      setNotice({
+        type: "error",
+        message:
+          error instanceof Error ? error.message : "Impersonation gagal.",
+      });
       setIsImpersonating(false);
     }
   };
@@ -278,7 +351,7 @@ export default function AdminUserDetailPage() {
       </header>
 
       {notice ? (
-        <InlineNotice variant="error" description={notice} />
+        <InlineNotice variant={notice.type} description={notice.message} />
       ) : null}
 
       {isLoading ? (
@@ -526,9 +599,24 @@ export default function AdminUserDetailPage() {
                             </p>
                           ) : null}
                         </div>
-                        <div className="shrink-0 rounded-xl bg-white px-3 py-2 text-right text-[11px] font-bold text-gray-500">
-                          <p>Mulai {sessionItem.startedAt}</p>
-                          <p>Expired {sessionItem.expiresAt}</p>
+                        <div className="shrink-0 space-y-2 text-right">
+                          <div className="rounded-xl bg-white px-3 py-2 text-[11px] font-bold text-gray-500">
+                            <p>Mulai {sessionItem.startedAt}</p>
+                            <p>Expired {sessionItem.expiresAt}</p>
+                          </div>
+                          {!sessionItem.revokedAt ? (
+                            <button
+                              type="button"
+                              onClick={() => void revokeSession(sessionItem.id)}
+                              disabled={revokingSessionId === sessionItem.id}
+                              className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-xl border border-red-100 bg-red-50 px-3 text-[11px] font-extrabold text-red-600 transition-colors hover:bg-red-100 disabled:cursor-wait disabled:bg-gray-100 disabled:text-gray-400"
+                            >
+                              <Ban size={13} />
+                              {revokingSessionId === sessionItem.id
+                                ? "Mencabut..."
+                                : "Cabut"}
+                            </button>
+                          ) : null}
                         </div>
                       </div>
                     </article>

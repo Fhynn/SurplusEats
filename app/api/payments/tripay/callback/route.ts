@@ -13,6 +13,7 @@ import { createPickupCode } from "@/lib/backend-utils";
 import { notifyFavoriteMenuItemsAvailableByIds } from "@/lib/favorite-menu-notifications";
 import { createManyNotificationsAndDeliver } from "@/lib/notification-delivery";
 import { prisma, type PrismaTransactionClient } from "@/lib/prisma";
+import { invalidateCacheTags } from "@/lib/server-cache";
 import {
   getTripayPaidAt,
   tripayAmountMatchesOrderTotal,
@@ -197,6 +198,11 @@ export async function POST(request: Request) {
       paymentStatus: true,
       status: true,
       total: true,
+      restaurant: {
+        select: {
+          ownerId: true,
+        },
+      },
     },
   });
 
@@ -538,6 +544,14 @@ export async function POST(request: Request) {
       console.warn("Tripay favorite restock notification failed", error);
     });
   }
+
+  await invalidateCacheTags([
+    "admin-dashboard",
+    "menu-items:public",
+    ...Array.from(
+      new Set(orders.map((order) => `owner-analytics:${order.restaurant.ownerId}`)),
+    ),
+  ]);
 
   console.info("Tripay callback processed", {
     merchantReference,

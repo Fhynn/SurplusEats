@@ -22,6 +22,7 @@ import { useParams } from "next/navigation";
 import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { MobileDeviceFrame } from "@/components/mobile-device-frame";
+import { StateCard } from "@/components/ui-state";
 import { formatRp } from "@/lib/customer-data";
 import type { ApiOrder } from "@/lib/order-mapper";
 import {
@@ -338,26 +339,23 @@ export default function CustomerRefundRequestPage() {
   if (isLoadingOrder || !order) {
     return (
       <MobileDeviceFrame backgroundClassName="bg-white">
-        <div className="flex h-full min-h-0 flex-1 items-center justify-center overflow-y-auto bg-white px-6 text-center [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          <div>
-            <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-blue-50 text-blue-600">
-              <RefreshCcw size={30} />
-            </div>
-            <h1 className="text-xl font-extrabold text-gray-950">
-              {isLoadingOrder ? "Memuat order..." : "Order tidak ditemukan"}
-            </h1>
-            <p className="mt-2 text-sm leading-6 font-medium text-gray-500">
-              {notice || "Refund hanya bisa diajukan dari order asli akun kamu."}
-            </p>
-            {!isLoadingOrder ? (
-              <Link
-                href="/orders"
-                className="mt-6 inline-flex rounded-2xl bg-emerald-500 px-5 py-3 text-sm font-extrabold text-white"
-              >
-                Buka Pesanan
-              </Link>
-            ) : null}
-          </div>
+        <div className="flex h-full min-h-0 flex-1 items-center justify-center overflow-y-auto bg-white px-5 py-8 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <StateCard
+            className="w-full max-w-sm"
+            variant={isLoadingOrder ? "loading" : "error"}
+            title={isLoadingOrder ? "Memuat order" : "Order tidak ditemukan"}
+            description={
+              notice || "Refund hanya bisa diajukan dari order asli akun kamu."
+            }
+            action={
+              isLoadingOrder
+                ? undefined
+                : {
+                    label: "Buka Pesanan",
+                    href: "/orders",
+                  }
+            }
+          />
         </div>
       </MobileDeviceFrame>
     );
