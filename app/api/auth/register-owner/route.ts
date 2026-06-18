@@ -3,6 +3,7 @@ import {
   ApplicationStatus,
   AssetVisibility,
   UserRole,
+  UserStatus,
 } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -120,6 +121,7 @@ const documentRequirements = [
 ] as const;
 
 const maxDocumentSize = 6 * 1024 * 1024;
+const maxRegistrationRequestSize = Math.floor(4.2 * 1024 * 1024);
 
 type RegistrationDocumentFile = {
   type: string;
@@ -134,6 +136,17 @@ type UploadedRegistrationDocument = {
   pathname: string;
   contentType: string;
   size: number;
+};
+
+type OwnerRegistrationResult = {
+  user: {
+    id: string;
+    email: string;
+    name: string;
+    role: UserRole;
+    status: UserStatus;
+  };
+  application: object;
 };
 
 async function readRegisterPayload(request: Request) {
@@ -232,6 +245,19 @@ async function uploadRegistrationDocuments(
 }
 
 export async function POST(request: Request) {
+  const contentLength = Number(request.headers.get("content-length") || 0);
+
+  if (Number.isFinite(contentLength) && contentLength > maxRegistrationRequestSize) {
+    return NextResponse.json(
+      {
+        ok: false,
+        message:
+          "Ukuran total dokumen terlalu besar. Gunakan foto lebih kecil lalu kirim ulang.",
+      },
+      { status: 413 },
+    );
+  }
+
   const ipRateLimit = await enforceRateLimit(request, {
     keyPrefix: "auth-register-owner-ip",
     max: 8,
@@ -314,85 +340,100 @@ export async function POST(request: Request) {
     );
   }
 
-  const result = await prisma.$transaction(async (tx: PrismaTransactionClient) => {
-    const user = await tx.user.create({
-      data: {
-        email,
-        name: data.ownerName,
-        phone: data.phone,
-        passwordHash: hashPassword(data.password),
-        role: UserRole.OWNER,
-      },
-    });
+  let result: OwnerRegistrationResult;
 
-    const application = await tx.restaurantApplication.create({
-      data: {
-        userId: user.id,
-        applicantName: data.ownerName,
-        email,
-        phone: data.phone,
-        businessName: data.storeName,
-        businessType: data.businessType,
-        address: data.address,
-        city: data.city,
-        latitude: data.latitude,
-        longitude: data.longitude,
-        description: data.description,
-        bankName: data.bankName,
-        bankAccountNumber: data.bankAccountNumber,
-        bankAccountHolder: data.bankAccountHolder,
-        status: ApplicationStatus.PENDING,
-      },
-    });
-
-    for (const document of uploadedDocuments) {
-      const asset = await tx.asset.create({
+  try {
+    result = await prisma.$transaction(async (tx: PrismaTransactionClient) => {
+      const user = await tx.user.create({
         data: {
-          uploadedById: user.id,
-          url: document.url,
-          pathname: document.pathname,
-          contentType: document.contentType,
-          size: document.size,
-          visibility: AssetVisibility.PUBLIC,
-          entityType: "restaurant_application",
-          entityId: application.id,
+          email,
+          name: data.ownerName,
+          phone: data.phone,
+          passwordHash: hashPassword(data.password),
+          role: UserRole.OWNER,
         },
       });
 
-      const verificationDocument = await tx.verificationDocument.create({
+      const application = await tx.restaurantApplication.create({
         data: {
-          applicationId: application.id,
-          assetId: asset.id,
-          type: document.type,
-          label: document.label,
-          status: "submitted",
+          userId: user.id,
+          applicantName: data.ownerName,
+          email,
+          phone: data.phone,
+          businessName: data.storeName,
+          businessType: data.businessType,
+          address: data.address,
+          city: data.city,
+          latitude: data.latitude,
+          longitude: data.longitude,
+          description: data.description,
+          bankName: data.bankName,
+          bankAccountNumber: data.bankAccountNumber,
+          bankAccountHolder: data.bankAccountHolder,
+          status: ApplicationStatus.PENDING,
         },
       });
 
-      await tx.verificationDocumentRevision.create({
+      for (const document of uploadedDocuments) {
+        const asset = await tx.asset.create({
+          data: {
+            uploadedById: user.id,
+            url: document.url,
+            pathname: document.pathname,
+            contentType: document.contentType,
+            size: document.size,
+            visibility: AssetVisibility.PUBLIC,
+            entityType: "restaurant_application",
+            entityId: application.id,
+          },
+        });
+
+        const verificationDocument = await tx.verificationDocument.create({
+          data: {
+            applicationId: application.id,
+            assetId: asset.id,
+            type: document.type,
+            label: document.label,
+            status: "submitted",
+          },
+        });
+
+        await tx.verificationDocumentRevision.create({
+          data: {
+            verificationDocumentId: verificationDocument.id,
+            assetId: asset.id,
+            revision: 1,
+            status: "submitted",
+            event: "SUBMITTED",
+            createdById: user.id,
+          },
+        });
+      }
+
+      await tx.notification.create({
         data: {
-          verificationDocumentId: verificationDocument.id,
-          assetId: asset.id,
-          revision: 1,
-          status: "submitted",
-          event: "SUBMITTED",
-          createdById: user.id,
+          userId: user.id,
+          type: "SYSTEM",
+          title: "Pendaftaran mitra diterima",
+          body: "Admin akan meninjau data usaha sebelum dashboard owner aktif.",
+          href: "/owner/verify",
         },
       });
-    }
 
-    await tx.notification.create({
-      data: {
-        userId: user.id,
-        type: "SYSTEM",
-        title: "Pendaftaran mitra diterima",
-        body: "Admin akan meninjau data usaha sebelum dashboard owner aktif.",
-        href: "/owner/verify",
-      },
+      return { user, application };
     });
+  } catch (error) {
+    console.error("Owner registration transaction failed", error);
+    return NextResponse.json(
+      {
+        ok: false,
+        message:
+          "Pendaftaran mitra gagal diproses server. Coba lagi sebentar.",
+      },
+      { status: 500 },
+    );
+  }
 
-    return { user, application };
-  });
   await deliverNotifications([
     {
       userId: result.user.id,
@@ -401,7 +442,9 @@ export async function POST(request: Request) {
       body: "Admin akan meninjau data usaha sebelum dashboard owner aktif.",
       href: "/owner/verify",
     },
-  ]);
+  ]).catch((error) => {
+    console.warn("Owner registration notification delivery failed", error);
+  });
   const persistedSession = await createPersistedSession({
     userId: result.user.id,
     request,

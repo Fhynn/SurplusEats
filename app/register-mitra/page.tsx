@@ -77,7 +77,7 @@ const uploadRequirements: {
   {
     id: "identity",
     title: "Foto KTP Pemilik",
-    description: "JPG, PNG, WEBP, atau PDF maksimal 6 MB",
+    description: "JPG, PNG, WEBP, atau PDF. Foto akan dioptimalkan otomatis",
     icon: Camera,
   },
   {
@@ -219,15 +219,205 @@ const fieldErrorLabels: Record<FormErrorKey, string> = {
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const maxUploadSize = 6 * 1024 * 1024;
+const maxRegistrationPayloadSize = Math.floor(3.6 * 1024 * 1024);
+const maxCompressedImageSize = 900 * 1024;
+const maxCompressedImageDimension = 1600;
 const allowedUploadTypes = new Set([
   "image/jpeg",
   "image/png",
   "image/webp",
   "application/pdf",
 ]);
+const compressibleUploadTypes = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+]);
 
 function normalizeBankAccountNumber(value: string) {
   return value.replace(/\D/g, "").slice(0, 20);
+}
+
+function formatFileSize(size: number) {
+  if (size < 1024 * 1024) {
+    return `${Math.ceil(size / 1024)} KB`;
+  }
+
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function getUploadBaseName(fileName: string) {
+  const baseName = fileName.replace(/\.[^.]+$/, "").trim();
+
+  return baseName ? `${baseName}.jpg` : "dokumen-mitra.jpg";
+}
+
+function loadImageFromFile(file: File) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+    const objectUrl = URL.createObjectURL(file);
+
+    image.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve(image);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("Foto dokumen gagal dibaca. Coba pilih foto lain."));
+    };
+    image.src = objectUrl;
+  });
+}
+
+function canvasToJpegBlob(canvas: HTMLCanvasElement, quality: number) {
+  return new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => {
+        if (!blob) {
+          reject(new Error("Foto dokumen gagal dikompres. Coba pilih foto lain."));
+          return;
+        }
+
+        resolve(blob);
+      },
+      "image/jpeg",
+      quality,
+    );
+  });
+}
+
+async function compressImageForSubmit(file: File) {
+  if (!compressibleUploadTypes.has(file.type)) {
+    return file;
+  }
+
+  const image = await loadImageFromFile(file);
+  const longestSide = Math.max(image.naturalWidth, image.naturalHeight);
+  const scale =
+    longestSide > maxCompressedImageDimension
+      ? maxCompressedImageDimension / longestSide
+      : 1;
+  const canvas = document.createElement("canvas");
+
+  canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+  canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+
+  const context = canvas.getContext("2d", {
+    alpha: false,
+  });
+
+  if (!context) {
+    return file;
+  }
+
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+  let bestBlob: Blob | null = null;
+
+  for (const quality of [0.82, 0.72, 0.62, 0.52]) {
+    const blob = await canvasToJpegBlob(canvas, quality);
+
+    if (!bestBlob || blob.size < bestBlob.size) {
+      bestBlob = blob;
+    }
+
+    if (blob.size <= maxCompressedImageSize) {
+      break;
+    }
+  }
+
+  if (!bestBlob || bestBlob.size >= file.size) {
+    return file;
+  }
+
+  return new File([bestBlob], getUploadBaseName(file.name), {
+    type: "image/jpeg",
+    lastModified: file.lastModified,
+  });
+}
+
+async function prepareDocumentsForSubmit(uploadedDocs: UploadedDocs) {
+  const preparedDocs = { ...uploadedDocs };
+  const optimizedLabels: string[] = [];
+
+  for (const requirement of uploadRequirements) {
+    const file = uploadedDocs[requirement.id];
+
+    if (!file) {
+      continue;
+    }
+
+    const optimizedFile = await compressImageForSubmit(file);
+
+    if (optimizedFile.size < file.size) {
+      optimizedLabels.push(requirement.title);
+    }
+
+    preparedDocs[requirement.id] = optimizedFile;
+  }
+
+  const totalSize = Object.values(preparedDocs).reduce(
+    (total, file) => total + (file?.size ?? 0),
+    0,
+  );
+
+  if (totalSize > maxRegistrationPayloadSize) {
+    throw new Error(
+      `Ukuran total dokumen ${formatFileSize(
+        totalSize,
+      )} masih terlalu besar untuk dikirim. Pakai foto lebih kecil atau ubah PDF menjadi JPG.`,
+    );
+  }
+
+  return { preparedDocs, optimizedLabels };
+}
+
+async function parseRegisterOwnerResponse(response: Response) {
+  const text = await response.text();
+
+  if (!text) {
+    return {
+      ok: response.ok,
+      message: response.ok
+        ? undefined
+        : `Pendaftaran mitra gagal. Server mengembalikan status ${response.status}.`,
+    };
+  }
+
+  try {
+    return JSON.parse(text) as {
+      ok: boolean;
+      message?: string;
+      redirectTo?: string;
+      issues?: {
+        fieldErrors?: Partial<Record<keyof PartnerForm, string[]>>;
+      };
+    };
+  } catch {
+    return {
+      ok: false,
+      message:
+        response.status === 413
+          ? "Ukuran total dokumen terlalu besar untuk server. Pilih foto yang lebih kecil lalu kirim ulang."
+          : response.status >= 500
+            ? "Server pendaftaran sedang gagal memproses data. Coba lagi sebentar."
+            : `Pendaftaran mitra gagal. Server mengembalikan status ${response.status}.`,
+    };
+  }
+}
+
+function getSubmitFailureMessage(error: unknown) {
+  if (error instanceof Error && error.message) {
+    if (/failed to fetch|networkerror|load failed/i.test(error.message)) {
+      return "Pendaftaran belum terkirim. Server tidak merespons atau koneksi terputus saat upload dokumen.";
+    }
+
+    return error.message;
+  }
+
+  return "Pendaftaran belum terkirim. Coba lagi sebentar.";
 }
 
 function getBankNameError(value: string) {
@@ -863,6 +1053,8 @@ export default function RegisterMitraPage() {
     setIsSubmitting(true);
 
     try {
+      const { preparedDocs, optimizedLabels } =
+        await prepareDocumentsForSubmit(uploadedDocs);
       const formData = new FormData();
 
       formData.set("ownerName", form.ownerName);
@@ -888,7 +1080,13 @@ export default function RegisterMitraPage() {
         )} a.n. ${form.bankAccountHolder}.`,
       );
 
-      Object.entries(uploadedDocs).forEach(([key, file]) => {
+      if (optimizedLabels.length > 0) {
+        setNotice(
+          `Foto ${optimizedLabels.join(", ")} dioptimalkan agar upload stabil.`,
+        );
+      }
+
+      Object.entries(preparedDocs).forEach(([key, file]) => {
         if (file) {
           formData.set(key, file);
         }
@@ -901,14 +1099,7 @@ export default function RegisterMitraPage() {
         }),
         waitForLoadingScreen(),
       ]);
-      const result = (await response.json()) as {
-        ok: boolean;
-        message?: string;
-        redirectTo?: string;
-        issues?: {
-          fieldErrors?: Partial<Record<keyof PartnerForm, string[]>>;
-        };
-      };
+      const result = await parseRegisterOwnerResponse(response);
 
       if (!response.ok || !result.ok || !result.redirectTo) {
         const apiFieldErrors = result.issues?.fieldErrors;
@@ -935,8 +1126,8 @@ export default function RegisterMitraPage() {
       await new Promise((resolve) => setTimeout(resolve, welcomeLoadingDelayMs));
       router.push(result.redirectTo);
       router.refresh();
-    } catch {
-      setNotice("Pendaftaran mitra gagal karena koneksi bermasalah.");
+    } catch (error) {
+      setNotice(getSubmitFailureMessage(error));
     } finally {
       setIsSubmitting(false);
     }
