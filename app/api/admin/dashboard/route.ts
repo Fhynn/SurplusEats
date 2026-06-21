@@ -1,6 +1,7 @@
 import {
   ApplicationStatus,
   OrderStatus,
+  PaymentStatus,
   RefundStatus,
   RestaurantStatus,
   UserRole,
@@ -485,6 +486,10 @@ export async function GET(request: Request) {
     ...(dateWhere ? { createdAt: dateWhere } : {}),
     ...auditSearchWhere,
   };
+  const paidOrderWhere = {
+    ...orderWhere,
+    paymentStatus: PaymentStatus.PAID,
+  };
 
   const loadDashboardSnapshot = async () => {
     const [
@@ -499,6 +504,7 @@ export async function GET(request: Request) {
       refundRequests,
       auditLogs,
       globalSearchResults,
+      revenueAggregate,
     ] = await Promise.all([
       prisma.user.findMany({
         where: userWhere,
@@ -572,7 +578,29 @@ export async function GET(request: Request) {
         include: { admin: true },
       }),
       buildGlobalSearchResults(searchQuery, dateWhere),
+      prisma.order.aggregate({
+        where: paidOrderWhere,
+        _count: { _all: true },
+        _sum: {
+          total: true,
+          subtotal: true,
+          serviceFee: true,
+          taxFee: true,
+          platformFee: true,
+        },
+      }),
     ]);
+    const grossRevenue = revenueAggregate._sum.total ?? 0;
+    const subtotalRevenue = revenueAggregate._sum.subtotal ?? 0;
+    const serviceFeeRevenue = revenueAggregate._sum.serviceFee ?? 0;
+    const taxFeeRevenue = revenueAggregate._sum.taxFee ?? 0;
+    const commissionRevenue = revenueAggregate._sum.platformFee ?? 0;
+    const platformRevenue =
+      serviceFeeRevenue + taxFeeRevenue + commissionRevenue;
+    const merchantRevenue = Math.max(0, subtotalRevenue - commissionRevenue);
+    const paidTransactions = revenueAggregate._count._all;
+    const averageOrderValue =
+      paidTransactions > 0 ? Math.round(grossRevenue / paidTransactions) : 0;
 
     return {
       users,
@@ -586,6 +614,16 @@ export async function GET(request: Request) {
       refundRequests,
       auditLogs,
       globalSearchResults,
+      revenue: {
+        grossRevenue,
+        platformRevenue,
+        merchantRevenue,
+        serviceFeeRevenue,
+        taxFeeRevenue,
+        commissionRevenue,
+        paidTransactions,
+        averageOrderValue,
+      },
     };
   };
 
@@ -597,6 +635,7 @@ export async function GET(request: Request) {
       applications,
       refundRequests,
       auditLogs,
+      revenue,
     } = await loadDashboardSnapshot();
     const csv = makeCsv(
       [
@@ -673,6 +712,40 @@ export async function GET(request: Request) {
             metadata: log.metadata,
           },
         ]),
+        [
+          "revenue",
+          "gross_revenue",
+          "GMV Dibayar",
+          "",
+          "",
+          revenue.grossRevenue,
+          "",
+          "",
+        ],
+        [
+          "revenue",
+          "platform_revenue",
+          "Pendapatan Platform",
+          "",
+          "",
+          revenue.platformRevenue,
+          "",
+          {
+            serviceFeeRevenue: revenue.serviceFeeRevenue,
+            taxFeeRevenue: revenue.taxFeeRevenue,
+            commissionRevenue: revenue.commissionRevenue,
+          },
+        ],
+        [
+          "revenue",
+          "merchant_revenue",
+          "Pendapatan Mitra",
+          "",
+          "",
+          revenue.merchantRevenue,
+          "",
+          "",
+        ],
       ],
     );
 
@@ -807,6 +880,7 @@ export async function GET(request: Request) {
         refundRequests,
         auditLogs,
         globalSearchResults,
+        revenue,
       } = await loadDashboardSnapshot();
       const totalOrderAmount = orders.reduce((total, order) => total + order.total, 0);
       const soldItemCount = menuCategoryStats.reduce(
@@ -865,6 +939,14 @@ export async function GET(request: Request) {
           totalRestaurants,
           totalTransactions,
           foodSavedItems: soldItemCount,
+          grossRevenue: revenue.grossRevenue,
+          platformRevenue: revenue.platformRevenue,
+          merchantRevenue: revenue.merchantRevenue,
+          serviceFeeRevenue: revenue.serviceFeeRevenue,
+          taxFeeRevenue: revenue.taxFeeRevenue,
+          commissionRevenue: revenue.commissionRevenue,
+          paidTransactions: revenue.paidTransactions,
+          averageOrderValue: revenue.averageOrderValue,
         },
         users: users.map((user) => ({
           id: user.id,

@@ -162,6 +162,14 @@ type AdminDashboardData = {
     totalRestaurants: number;
     totalTransactions: number;
     foodSavedItems: number;
+    grossRevenue: number;
+    platformRevenue: number;
+    merchantRevenue: number;
+    serviceFeeRevenue: number;
+    taxFeeRevenue: number;
+    commissionRevenue: number;
+    paidTransactions: number;
+    averageOrderValue: number;
   };
   users: AdminUser[];
   verificationStores: VerificationStore[];
@@ -180,6 +188,14 @@ const emptyDashboardData: AdminDashboardData = {
     totalRestaurants: 0,
     totalTransactions: 0,
     foodSavedItems: 0,
+    grossRevenue: 0,
+    platformRevenue: 0,
+    merchantRevenue: 0,
+    serviceFeeRevenue: 0,
+    taxFeeRevenue: 0,
+    commissionRevenue: 0,
+    paidTransactions: 0,
+    averageOrderValue: 0,
   },
   users: [],
   verificationStores: [],
@@ -201,6 +217,13 @@ const defaultDashboardFilters: DashboardFilters = {
   dateFrom: "",
   dateTo: "",
 };
+
+const formatRp = (amount: number) =>
+  new Intl.NumberFormat("id-ID", {
+    style: "currency",
+    currency: "IDR",
+    maximumFractionDigits: 0,
+  }).format(amount);
 
 function getMapsUrl(latitude: number, longitude: number) {
   return `https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`;
@@ -419,6 +442,48 @@ function AdminDashboardPage() {
       icon: Leaf,
       iconWrapClassName: "bg-green-50",
       iconClassName: "text-green-500",
+    },
+  ] as const;
+  const revenueStats = [
+    {
+      label: "Pendapatan Platform",
+      value: formatRp(dashboardData.metrics.platformRevenue),
+      helper: `Service fee ${formatRp(
+        dashboardData.metrics.serviceFeeRevenue,
+      )} + komisi ${formatRp(dashboardData.metrics.commissionRevenue)}`,
+      trend: "Admin",
+      icon: WalletCards,
+      iconWrapClassName: "bg-emerald-50",
+      iconClassName: "text-emerald-500",
+    },
+    {
+      label: "GMV Dibayar",
+      value: formatRp(dashboardData.metrics.grossRevenue),
+      helper: `${dashboardData.metrics.paidTransactions} transaksi paid`,
+      trend: "PAID",
+      icon: ReceiptText,
+      iconWrapClassName: "bg-blue-50",
+      iconClassName: "text-blue-500",
+    },
+    {
+      label: "Pendapatan Mitra",
+      value: formatRp(dashboardData.metrics.merchantRevenue),
+      helper: "Nominal bersih yang masuk ke toko",
+      trend: "Owner",
+      icon: Store,
+      iconWrapClassName: "bg-amber-50",
+      iconClassName: "text-amber-500",
+    },
+    {
+      label: "Rata-rata Order",
+      value: formatRp(dashboardData.metrics.averageOrderValue),
+      helper: dashboardData.metrics.taxFeeRevenue
+        ? `Termasuk pajak ${formatRp(dashboardData.metrics.taxFeeRevenue)}`
+        : "Rata-rata dari transaksi dibayar",
+      trend: "AOV",
+      icon: PieChart,
+      iconWrapClassName: "bg-purple-50",
+      iconClassName: "text-purple-500",
     },
   ] as const;
 
@@ -1157,6 +1222,58 @@ function AdminDashboardPage() {
 
               {activeTab === "dashboard" ? (
                 <div className="space-y-6">
+                  <section className="rounded-[24px] border border-gray-100 bg-white p-5 shadow-[0_4px_20px_rgba(0,0,0,0.03)] md:p-6">
+                    <div className="mb-5 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+                      <div>
+                        <p className="text-xs font-extrabold tracking-wider text-emerald-600 uppercase">
+                          Revenue Control
+                        </p>
+                        <h2 className="mt-1 text-lg font-extrabold text-gray-950">
+                          Ringkasan Pendapatan Admin
+                        </h2>
+                        <p className="mt-1 text-sm font-semibold text-gray-500">
+                          Pendapatan platform dipisah dari GMV dan saldo mitra.
+                        </p>
+                      </div>
+                      <span className="inline-flex w-fit items-center rounded-full bg-gray-950 px-3 py-1.5 text-xs font-extrabold text-white">
+                        Berdasarkan transaksi PAID
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                      {revenueStats.map((stat) => {
+                        const Icon = stat.icon;
+
+                        return (
+                          <div
+                            key={stat.label}
+                            className="relative min-h-[168px] overflow-hidden rounded-[22px] border border-gray-100 bg-gray-50/60 p-5 transition-colors hover:border-emerald-100 hover:bg-white"
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div
+                                className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${stat.iconWrapClassName}`}
+                              >
+                                <Icon size={21} className={stat.iconClassName} />
+                              </div>
+                              <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-extrabold text-gray-500 shadow-sm">
+                                {stat.trend}
+                              </span>
+                            </div>
+                            <p className="mt-4 text-sm font-bold text-gray-500">
+                              {stat.label}
+                            </p>
+                            <h3 className="mt-1 text-2xl font-extrabold tracking-tight text-gray-950">
+                              {stat.value}
+                            </h3>
+                            <p className="mt-3 line-clamp-2 text-xs leading-5 font-semibold text-gray-500">
+                              {stat.helper}
+                            </p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </section>
+
                   <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
                     {stats.map((stat) => {
                       const Icon = stat.icon;
