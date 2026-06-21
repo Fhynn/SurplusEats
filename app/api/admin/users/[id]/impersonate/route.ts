@@ -1,9 +1,9 @@
 import { UserRole, UserStatus } from "@prisma/client";
 import { NextResponse } from "next/server";
 
+import { requireAdminPermission } from "@/lib/admin-permissions";
 import {
   createSessionToken,
-  getCurrentSession,
   setSessionCookie,
   type OwnerAccessStatus,
 } from "@/lib/auth-session";
@@ -67,37 +67,22 @@ export async function POST(
   { params }: ImpersonateRouteProps,
 ) {
   const sessionCookie = request.headers.get("cookie") ?? "";
-  const adminSession = await getCurrentSession();
+  const auth = await requireAdminPermission("ADMIN_IMPERSONATE");
 
-  if (adminSession?.role !== UserRole.ADMIN) {
-    return NextResponse.json(
-      { ok: false, message: "Akses admin diperlukan." },
-      { status: adminSession ? 403 : 401 },
-    );
+  if (auth.response) {
+    return auth.response;
   }
 
   const { id } = await params;
   const rateLimit = await enforceSensitiveActionRateLimit(
     request,
     securityRateLimitRules.adminImpersonation,
-    adminSession,
+    auth.session,
     [id],
   );
 
   if (!rateLimit.allowed) {
     return rateLimit.response;
-  }
-
-  const admin = await prisma.user.findUnique({
-    where: { id: adminSession.userId },
-    select: { id: true, email: true, name: true, role: true, status: true },
-  });
-
-  if (!admin || admin.role !== UserRole.ADMIN || admin.status !== UserStatus.ACTIVE) {
-    return NextResponse.json(
-      { ok: false, message: "Session admin tidak valid." },
-      { status: 403 },
-    );
   }
 
   const targetUser = await prisma.user.findUnique({
@@ -134,7 +119,7 @@ export async function POST(
     request,
     kind: "IMPERSONATION",
     maxAgeSeconds: impersonationMaxAgeSeconds,
-    impersonatedById: admin.id,
+    impersonatedById: auth.user.id,
   });
   const token = await createSessionToken(
     {
@@ -145,9 +130,9 @@ export async function POST(
       role: targetUser.role,
       status: targetUser.status,
       ownerStatus,
-      impersonatedById: admin.id,
-      impersonatedByEmail: admin.email,
-      impersonatedByName: admin.name,
+      impersonatedById: auth.user.id,
+      impersonatedByEmail: auth.user.email,
+      impersonatedByName: auth.user.name,
     },
     false,
     impersonationMaxAgeSeconds,
@@ -159,7 +144,7 @@ export async function POST(
 
   await prisma.adminActionLog.create({
     data: {
-      adminId: admin.id,
+      adminId: auth.user.id,
       action: "USER_IMPERSONATION_STARTED",
       targetType: "user",
       targetId: targetUser.id,

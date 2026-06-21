@@ -8,7 +8,7 @@ import {
 } from "@prisma/client";
 import { NextResponse } from "next/server";
 
-import { getCurrentSession } from "@/lib/auth-session";
+import { requireAdminPermission } from "@/lib/admin-permissions";
 import { buildAdminDashboardReportPdf } from "@/lib/admin-dashboard-report-pdf";
 import { prisma } from "@/lib/prisma";
 import { getCachedJson } from "@/lib/server-cache";
@@ -29,10 +29,6 @@ const formatRp = (amount: number) =>
     currency: "IDR",
     maximumFractionDigits: 0,
   }).format(amount);
-
-function requireAdmin(session: Awaited<ReturnType<typeof getCurrentSession>>) {
-  return session?.role === UserRole.ADMIN;
-}
 
 const csvValue = (value: unknown) => {
   if (value === null || value === undefined) {
@@ -385,13 +381,10 @@ async function buildGlobalSearchResults(query: string, dateWhere?: { gte?: Date;
 }
 
 export async function GET(request: Request) {
-  const session = await getCurrentSession();
+  const auth = await requireAdminPermission("DASHBOARD_VIEW");
 
-  if (!requireAdmin(session)) {
-    return NextResponse.json(
-      { ok: false, message: "Akses admin diperlukan." },
-      { status: session ? 403 : 401 },
-    );
+  if (auth.response) {
+    return auth.response;
   }
 
   const url = new URL(request.url);

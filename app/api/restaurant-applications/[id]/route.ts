@@ -1,8 +1,7 @@
-import { UserRole } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { getCurrentSession } from "@/lib/auth-session";
+import { requireAdminPermission } from "@/lib/admin-permissions";
 import { prisma, type PrismaTransactionClient } from "@/lib/prisma";
 import {
   enforceSensitiveActionRateLimit,
@@ -33,13 +32,10 @@ export async function GET(
   _request: Request,
   { params }: RestaurantApplicationDetailRouteProps,
 ) {
-  const session = await getCurrentSession();
+  const auth = await requireAdminPermission("VERIFICATIONS_REVIEW");
 
-  if (session?.role !== UserRole.ADMIN) {
-    return NextResponse.json(
-      { ok: false, message: "Akses admin diperlukan." },
-      { status: session ? 403 : 401 },
-    );
+  if (auth.response) {
+    return auth.response;
   }
 
   const { id } = await params;
@@ -75,20 +71,17 @@ export async function PATCH(
   request: Request,
   { params }: RestaurantApplicationDetailRouteProps,
 ) {
-  const session = await getCurrentSession();
+  const auth = await requireAdminPermission("VERIFICATIONS_REVIEW");
 
-  if (session?.role !== UserRole.ADMIN) {
-    return NextResponse.json(
-      { ok: false, message: "Akses admin diperlukan." },
-      { status: session ? 403 : 401 },
-    );
+  if (auth.response) {
+    return auth.response;
   }
 
   const { id } = await params;
   const rateLimit = await enforceSensitiveActionRateLimit(
     request,
     securityRateLimitRules.adminApplicationReview,
-    session,
+    auth.session,
     [id],
   );
 
@@ -187,7 +180,7 @@ export async function PATCH(
           status: review.status,
           reviewNote: review.note || null,
           reviewedAt: new Date(),
-          reviewedById: session.userId,
+          reviewedById: auth.session.userId,
         },
       });
 
@@ -199,14 +192,14 @@ export async function PATCH(
           status: review.status,
           note: review.note || null,
           event: "REVIEWED",
-          createdById: session.userId,
+          createdById: auth.session.userId,
         },
       });
     }
 
     await tx.adminActionLog.create({
       data: {
-        adminId: session.userId,
+        adminId: auth.session.userId,
         action: "REVIEW_RESTAURANT_DOCUMENTS",
         targetType: "restaurant_application",
         targetId: application.id,

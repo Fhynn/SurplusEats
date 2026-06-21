@@ -1,11 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import type { FormEvent } from "react";
 import { useEffect, useState } from "react";
 import {
   BellRing,
   Clock3,
   Database,
+  ExternalLink,
   Mail,
   MessageCircle,
   RefreshCcw,
@@ -860,10 +862,19 @@ export default function AdminSettingsPage() {
           </section>
 
           <section className="rounded-[28px] border border-gray-100 bg-white p-6 shadow-sm">
-            <h2 className="mb-5 flex items-center gap-2 text-lg font-extrabold text-gray-950">
-              <Clock3 size={20} className="text-emerald-600" />
-              Audit Log
-            </h2>
+            <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <h2 className="flex items-center gap-2 text-lg font-extrabold text-gray-950">
+                <Clock3 size={20} className="text-emerald-600" />
+                Audit Log
+              </h2>
+              <Link
+                href="/admin/audit"
+                className="motion-press inline-flex min-h-10 items-center justify-center gap-2 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-2 text-xs font-extrabold text-emerald-700 transition hover:bg-emerald-100"
+              >
+                Audit lengkap
+                <ExternalLink size={14} />
+              </Link>
+            </div>
             {logs.length === 0 ? (
               <StateCard
                 title="Belum ada audit log"

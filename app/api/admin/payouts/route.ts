@@ -1,11 +1,7 @@
-import {
-  UserRole,
-  WalletTransactionStatus,
-  WalletTransactionType,
-} from "@prisma/client";
+import { WalletTransactionStatus, WalletTransactionType } from "@prisma/client";
 import { NextResponse } from "next/server";
 
-import { getCurrentSession } from "@/lib/auth-session";
+import { requireAdminPermission } from "@/lib/admin-permissions";
 import { prisma } from "@/lib/prisma";
 import { settleCompletedWalletTransactions } from "@/lib/wallet-settlement";
 
@@ -52,13 +48,10 @@ function serializePayout(
 }
 
 export async function GET() {
-  const session = await getCurrentSession();
+  const auth = await requireAdminPermission("PAYOUTS_REVIEW");
 
-  if (session?.role !== UserRole.ADMIN) {
-    return NextResponse.json(
-      { ok: false, message: "Akses admin diperlukan." },
-      { status: session ? 403 : 401 },
-    );
+  if (auth.response) {
+    return auth.response;
   }
 
   await settleCompletedWalletTransactions();

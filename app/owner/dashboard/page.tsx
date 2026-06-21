@@ -92,6 +92,38 @@ type ApiOwnerMenuItem = {
   soldCount: number;
 };
 
+type ApiOwnerWallet = {
+  ok: boolean;
+  message?: string;
+  balance?: number;
+  pendingIncome?: number;
+  pendingPayout?: number;
+  transactions?: {
+    type: string;
+    status: string;
+    amount: number;
+    netAmount: number | null;
+  }[];
+};
+
+type OwnerRevenueSummary = {
+  balance: number;
+  totalIncome: number;
+  pendingIncome: number;
+  pendingPayout: number;
+  incomeCount: number;
+  averageIncome: number;
+};
+
+const emptyRevenueSummary: OwnerRevenueSummary = {
+  balance: 0,
+  totalIncome: 0,
+  pendingIncome: 0,
+  pendingPayout: 0,
+  incomeCount: 0,
+  averageIncome: 0,
+};
+
 const orderColumns = [
   {
     id: "new",
@@ -386,6 +418,8 @@ export default function OwnerDashboardPage() {
   const router = useRouter();
   const [orders, setOrders] = useState<KanbanOrder[]>([]);
   const [restaurantName, setRestaurantName] = useState("Restoran");
+  const [revenueSummary, setRevenueSummary] =
+    useState<OwnerRevenueSummary>(emptyRevenueSummary);
   const [activeMenuCount, setActiveMenuCount] = useState(0);
   const [rescuedItemCount, setRescuedItemCount] = useState(0);
   const [isLoadingDashboard, setIsLoadingDashboard] = useState(true);
@@ -407,10 +441,11 @@ export default function OwnerDashboardPage() {
       }
 
       try {
-        const [ordersResponse, menuResponse, profileResponse] = await Promise.all([
+        const [ordersResponse, menuResponse, profileResponse, walletResponse] = await Promise.all([
           fetch("/api/orders", { cache: "no-store" }),
           fetch("/api/menu-items?scope=owner", { cache: "no-store" }),
           fetch("/api/owner/profile", { cache: "no-store" }),
+          fetch("/api/owner/wallet", { cache: "no-store" }),
         ]);
         const ordersData = (await ordersResponse.json()) as {
           ok: boolean;
@@ -426,6 +461,7 @@ export default function OwnerDashboardPage() {
           ok: boolean;
           restaurant?: { name: string } | null;
         };
+        const walletData = (await walletResponse.json()) as ApiOwnerWallet;
 
         if (!ordersResponse.ok || !ordersData.ok) {
           throw new Error(ordersData.message || "Pesanan gagal dimuat.");
@@ -435,13 +471,35 @@ export default function OwnerDashboardPage() {
           throw new Error(menuData.message || "Menu owner gagal dimuat.");
         }
 
+        if (!walletResponse.ok || !walletData.ok) {
+          throw new Error(walletData.message || "Wallet owner gagal dimuat.");
+        }
+
         const nextOrders = (ordersData.orders || [])
           .map(mapApiOrder)
           .filter((order): order is KanbanOrder => order !== null);
         const menuItems = menuData.menuItems || [];
+        const incomeTransactions = (walletData.transactions || []).filter(
+          (transaction) => transaction.type === "ORDER_INCOME",
+        );
+        const totalIncome = incomeTransactions.reduce(
+          (total, transaction) =>
+            total + (transaction.netAmount ?? transaction.amount),
+          0,
+        );
+        const incomeCount = incomeTransactions.length;
 
         setOrders(nextOrders);
         setRestaurantName(profileData.restaurant?.name || "Restoran");
+        setRevenueSummary({
+          balance: walletData.balance ?? 0,
+          totalIncome,
+          pendingIncome: walletData.pendingIncome ?? 0,
+          pendingPayout: walletData.pendingPayout ?? 0,
+          incomeCount,
+          averageIncome:
+            incomeCount > 0 ? Math.round(totalIncome / incomeCount) : 0,
+        });
         setActiveMenuCount(
           menuItems.filter((item) => item.status === "ACTIVE").length,
         );
@@ -502,20 +560,6 @@ export default function OwnerDashboardPage() {
     );
   }, [normalizedKanbanQuery, orders]);
   const recentOrders = orders.slice(0, 4);
-  const todayRevenue = useMemo(() => {
-    const startOfToday = new Date();
-    startOfToday.setHours(0, 0, 0, 0);
-
-    return orders.reduce((total, order) => {
-      const createdAt = new Date(order.createdAt);
-
-      if (createdAt < startOfToday || order.status !== "completed") {
-        return total;
-      }
-
-      return total + order.total;
-    }, 0);
-  }, [orders]);
   const orderSummary = useMemo(
     () => ({
       new: orders.filter((order) => order.status === "new").length,
@@ -525,15 +569,41 @@ export default function OwnerDashboardPage() {
     }),
     [orders],
   );
-  const dashboardStats = [
+  const revenueStats = [
     {
-      label: "Pendapatan Hari Ini",
-      value: formatRp(todayRevenue),
+      label: "Pendapatan Total",
+      value: formatRp(revenueSummary.totalIncome),
       icon: TrendingUp,
       iconWrapClassName: "bg-emerald-50",
       iconClassName: "text-emerald-500",
-      trend: "DB",
+      trend: "Semua order",
     },
+    {
+      label: "Saldo Tersedia",
+      value: formatRp(revenueSummary.balance),
+      icon: CheckCircle2,
+      iconWrapClassName: "bg-blue-50",
+      iconClassName: "text-blue-500",
+      trend: "Bisa cair",
+    },
+    {
+      label: "Menunggu Masuk",
+      value: formatRp(revenueSummary.pendingIncome),
+      icon: Clock,
+      iconWrapClassName: "bg-amber-50",
+      iconClassName: "text-amber-500",
+      trend: "Settlement",
+    },
+    {
+      label: "Rata-rata / Order",
+      value: formatRp(revenueSummary.averageIncome),
+      icon: ShoppingBag,
+      iconWrapClassName: "bg-purple-50",
+      iconClassName: "text-purple-500",
+      trend: `${revenueSummary.incomeCount} trx`,
+    },
+  ] as const;
+  const dashboardStats = [
     {
       label: "Pesanan Masuk",
       value: String(orders.length),
@@ -541,6 +611,14 @@ export default function OwnerDashboardPage() {
       iconWrapClassName: "bg-blue-50",
       iconClassName: "text-blue-500",
       trend: "DB",
+    },
+    {
+      label: "Transaksi Dibayar",
+      value: String(revenueSummary.incomeCount),
+      icon: CheckCircle2,
+      iconWrapClassName: "bg-emerald-50",
+      iconClassName: "text-emerald-500",
+      trend: "Wallet",
     },
     {
       label: "Menu Surplus Aktif",
@@ -830,6 +908,55 @@ export default function OwnerDashboardPage() {
               <Plus size={18} />
               Tambah Makanan
             </button>
+          </div>
+
+          <div className="space-y-4">
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <h3 className="text-lg font-extrabold text-gray-950">
+                  Ringkasan Pendapatan
+                </h3>
+                <p className="text-sm font-semibold text-gray-500">
+                  Nominal bersih mitra dari transaksi wallet.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => router.push("/owner/wallet")}
+                className="inline-flex min-h-11 items-center self-start text-sm font-bold text-emerald-600 transition-colors hover:text-emerald-700 hover:underline"
+              >
+                Buka Wallet
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
+              {revenueStats.map((stat) => {
+                const Icon = stat.icon;
+
+                return (
+                  <div
+                    key={stat.label}
+                    className="group relative overflow-hidden rounded-[24px] border border-emerald-100 bg-white p-6 shadow-[0_2px_15px_rgba(0,0,0,0.03)] transition-colors hover:border-emerald-200"
+                  >
+                    <div
+                      className={`mb-4 flex h-12 w-12 items-center justify-center rounded-[16px] ${stat.iconWrapClassName}`}
+                    >
+                      <Icon size={24} className={stat.iconClassName} />
+                    </div>
+                    <p className="mb-1 text-sm font-bold text-gray-500">
+                      {stat.label}
+                    </p>
+                    <h3 className="text-2xl font-extrabold tracking-tight text-gray-900">
+                      {stat.value}
+                    </h3>
+                    <div className="absolute top-6 right-6 flex items-center rounded-md bg-emerald-50 px-2 py-1 text-xs font-bold text-emerald-600">
+                      <ArrowUpRight size={12} className="mr-0.5" />
+                      {stat.trend}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
 
           <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">

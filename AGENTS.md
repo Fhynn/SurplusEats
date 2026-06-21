@@ -49,7 +49,7 @@ Fitur Belum Sempurna
   24. Security hardening
      Auth dan role guard ada. Rate limit login/register/upload/checkout/ResQBot sudah ada dengan Redis optional + memory fallback. Rate limit granular juga sudah diperluas ke endpoint sensitif: support create/reply, refund create/review, voucher claim/admin voucher, review/report, owner menu/order/payout, approval mitra, admin user reset/impersonate/revoke session, payout admin, support admin, dan settings admin. Middleware API sudah menolak mutasi dari origin asing, upload sudah divalidasi dari signature file, dan rate limit block tercatat ke admin action log dengan metadata origin/referer/user-agent/IP/hash identitas. Masih perlu upload antivirus/scanning eksternal dan monitoring security production seperti Sentry/SIEM.
   25. Data integrity
-     Schema sudah cukup rapi. Voucher checkout/claim sudah memakai advisory lock + update atomik, order transition owner/bulk/customer cancel sudah memakai optimistic guard status lama + payment PAID, callback Tripay dikunci per reference, wallet income update tidak lagi silent updateMany, dan refund paid mengecek order masih valid. Masih perlu constraint database tambahan/unique partial yang lebih kuat dan audit rekonsiliasi berkala.
+     Schema sudah cukup rapi. Voucher checkout/claim sudah memakai advisory lock + update atomik, order transition owner/bulk/customer cancel sudah memakai optimistic guard status lama + payment PAID, callback Tripay dikunci per reference, wallet income update tidak lagi silent updateMany, dan refund paid mengecek order masih valid. Index tambahan sudah ditambahkan untuk order payment status, voucher redemption, dan wallet reference. Audit rekonsiliasi berkala sudah tersedia di `/api/cron/integrity/reconciliation` dan dijadwalkan Vercel Cron harian; audit mengecek mismatch order-wallet, duplikat wallet income, stale pending wallet, refund/order mismatch, voucher claim/redemption mismatch, review-order mismatch, dan angka menu invalid, lalu mencatat hasil ke admin action log. Masih bisa dikembangkan ke constraint partial native SQL dan auto-remediation setelah ada SOP admin.
 
   Fitur Belum Ada
 
@@ -80,8 +80,8 @@ Fitur Belum Sempurna
   25. Platform fee/commission system sudah ada secara dasar. Checkout menyimpan service fee/pajak sebagai biaya customer dan platformFee sebagai komisi mitra. Wallet mitra hanya dikurangi komisi mitra saat callback Tripay PAID; service fee/pajak customer tidak tampil sebagai potongan mitra.
   26. Tax/service fee config admin sudah ada di /admin/settings. Admin bisa mengubah service fee flat/persen, pajak flat/persen, komisi flat/persen, minimum komisi, dan status aktif.
   27. Export CSV/PDF untuk owner analytics dan admin dashboard lintas entity sudah ada; export spesifik halaman admin lain masih bisa ditambah.
-  28. Audit log UI yang lengkap.
-  29. Admin role permission granular.
+  28. Audit log UI lengkap sudah ada di `/admin/audit` dengan filter action/target/actor/tanggal, pencarian, pagination, detail metadata, metrik risk/security, dan export CSV. Ringkasan audit di `/admin/settings` sudah diarahkan ke halaman audit lengkap.
+  29. Admin role permission granular sudah ada. User admin punya field `adminPermissions`; nilai kosong/null tetap full access untuk admin lama agar tidak lockout, sedangkan admin terbatas memakai array permission eksplisit. Halaman `/admin/permissions` sudah bisa mengatur izin admin lain dengan audit log, dan endpoint sensitif utama sudah memakai guard permission: dashboard, audit, user security/status, impersonation, verifikasi mitra, refund, payout, voucher, support, dan settings. Masih bisa dikembangkan ke permission per-tab dashboard dan role preset siap pakai setelah ada kebutuhan tim admin yang jelas.
   30. Multi-admin assignment untuk support/refund.
   31. Device/session management admin-side sudah ada untuk melihat dan mencabut session per user; self-service device/session management untuk customer/owner belum ada.
   32. Forgot password email asli.
@@ -91,7 +91,7 @@ Fitur Belum Sempurna
   36. Redis/cache layer dasar sudah ada via optional Upstash Redis REST + memory fallback; rate limit juga bisa memakai Upstash Redis REST. Masih perlu env Redis production dan observability hit/miss.
   37. Background worker/queue.
   38. Cron tambahan untuk voucher expired, payout settlement, stale checkout.
-      Cron refund SLA reminder dan support SLA escalation sudah ada; cron tambahan lain masih bisa ditambah untuk stale checkout/payment expiry khusus bila dibutuhkan.
+      Cron refund SLA reminder, support SLA escalation, dan data integrity reconciliation sudah ada; cron tambahan lain masih bisa ditambah untuk stale checkout/payment expiry khusus bila dibutuhkan.
   39. Monitoring/logging production seperti Sentry.
   40. E2E tests Playwright.
   41. Unit/integration tests API penting.

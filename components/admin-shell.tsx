@@ -5,6 +5,7 @@ import {
   BarChart3,
   Bell,
   FileBadge2,
+  Fingerprint,
   LayoutDashboard,
   LifeBuoy,
   LogOut,
@@ -98,6 +99,26 @@ const adminNavItems = [
     },
   },
   {
+    href: "/admin/audit",
+    label: "Audit",
+    icon: Fingerprint,
+    badge: undefined,
+    match: (pathname: string, dashboardTab: string | null) => {
+      void dashboardTab;
+      return pathname === "/admin/audit";
+    },
+  },
+  {
+    href: "/admin/permissions",
+    label: "Izin Admin",
+    icon: ShieldCheck,
+    badge: undefined,
+    match: (pathname: string, dashboardTab: string | null) => {
+      void dashboardTab;
+      return pathname === "/admin/permissions";
+    },
+  },
+  {
     href: "/admin/notifications",
     label: "Notifikasi",
     icon: Bell,
@@ -131,6 +152,14 @@ const pageLabelByPath = [
   {
     test: (pathname: string) => pathname === "/admin/support",
     label: "Support Desk",
+  },
+  {
+    test: (pathname: string) => pathname === "/admin/audit",
+    label: "Audit Trail",
+  },
+  {
+    test: (pathname: string) => pathname === "/admin/permissions",
+    label: "Admin Permissions",
   },
   {
     test: (pathname: string) => pathname === "/admin/settings",

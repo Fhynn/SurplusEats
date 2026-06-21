@@ -2,6 +2,7 @@ import { NotificationType, UserRole } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { requireAdminPermission } from "@/lib/admin-permissions";
 import { getCurrentSession } from "@/lib/auth-session";
 import {
   deliverNotifications,
@@ -131,6 +132,14 @@ export async function GET(
     );
   }
 
+  if (session.role === UserRole.ADMIN) {
+    const adminAuth = await requireAdminPermission("SUPPORT_MANAGE");
+
+    if (adminAuth.response) {
+      return adminAuth.response;
+    }
+  }
+
   const { id } = await params;
   const auth = await getAuthorizedTicket(id, session);
 
@@ -157,6 +166,14 @@ export async function POST(
       { ok: false, message: "Login diperlukan untuk membalas support." },
       { status: 401 },
     );
+  }
+
+  if (session.role === UserRole.ADMIN) {
+    const adminAuth = await requireAdminPermission("SUPPORT_MANAGE");
+
+    if (adminAuth.response) {
+      return adminAuth.response;
+    }
   }
 
   const { id } = await params;

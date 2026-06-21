@@ -1,8 +1,7 @@
-import { UserRole } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { getCurrentSession } from "@/lib/auth-session";
+import { requireAdminPermission } from "@/lib/admin-permissions";
 import {
   getPlatformFeeSettings,
   normalizePlatformFeeSettings,
@@ -29,19 +28,7 @@ const platformFeeSettingsSchema = z.object({
 });
 
 async function requireAdmin() {
-  const session = await getCurrentSession();
-
-  if (session?.role !== UserRole.ADMIN) {
-    return {
-      session,
-      response: NextResponse.json(
-        { ok: false, message: "Akses admin diperlukan." },
-        { status: session ? 403 : 401 },
-      ),
-    };
-  }
-
-  return { session, response: null };
+  return requireAdminPermission("SETTINGS_MANAGE");
 }
 
 export async function GET() {

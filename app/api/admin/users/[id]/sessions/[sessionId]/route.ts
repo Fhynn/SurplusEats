@@ -2,7 +2,7 @@ import { UserRole } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { getCurrentSession } from "@/lib/auth-session";
+import { requireAdminPermission } from "@/lib/admin-permissions";
 import { prisma, type PrismaTransactionClient } from "@/lib/prisma";
 import {
   enforceSensitiveActionRateLimit,
@@ -24,20 +24,17 @@ export async function POST(
   request: Request,
   { params }: AdminUserSessionRouteProps,
 ) {
-  const adminSession = await getCurrentSession();
+  const auth = await requireAdminPermission("USERS_SECURITY");
 
-  if (adminSession?.role !== UserRole.ADMIN) {
-    return NextResponse.json(
-      { ok: false, message: "Akses admin diperlukan." },
-      { status: adminSession ? 403 : 401 },
-    );
+  if (auth.response) {
+    return auth.response;
   }
 
   const { id, sessionId } = await params;
   const rateLimit = await enforceSensitiveActionRateLimit(
     request,
     securityRateLimitRules.adminSessionRevoke,
-    adminSession,
+    auth.session,
     [id, sessionId],
   );
 
@@ -104,7 +101,7 @@ export async function POST(
         },
         data: {
           revokedAt: new Date(),
-          revokedById: adminSession.userId,
+          revokedById: auth.session.userId,
           revokeReason,
         },
       });
@@ -115,7 +112,7 @@ export async function POST(
 
       await tx.adminActionLog.create({
         data: {
-          adminId: adminSession.userId,
+          adminId: auth.session.userId,
           action: "USER_SESSION_REVOKED",
           targetType: "user",
           targetId: targetUser.id,

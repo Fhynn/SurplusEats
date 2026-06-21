@@ -3,14 +3,13 @@ import {
   OrderStatus,
   PaymentStatus,
   RefundStatus,
-  UserRole,
   WalletTransactionStatus,
   WalletTransactionType,
 } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { getCurrentSession } from "@/lib/auth-session";
+import { requireAdminPermission } from "@/lib/admin-permissions";
 import { deliverNotifications } from "@/lib/notification-delivery";
 import { prisma, type PrismaTransactionClient } from "@/lib/prisma";
 import {
@@ -100,13 +99,10 @@ async function applyPaidRefundWalletEffect(
 }
 
 export async function GET(_request: Request, { params }: RefundDetailRouteProps) {
-  const session = await getCurrentSession();
+  const auth = await requireAdminPermission("REFUNDS_REVIEW");
 
-  if (session?.role !== UserRole.ADMIN) {
-    return NextResponse.json(
-      { ok: false, message: "Akses admin diperlukan." },
-      { status: session ? 403 : 401 },
-    );
+  if (auth.response) {
+    return auth.response;
   }
 
   const { id } = await params;
@@ -158,20 +154,17 @@ export async function PATCH(
   request: Request,
   { params }: RefundDetailRouteProps,
 ) {
-  const session = await getCurrentSession();
+  const auth = await requireAdminPermission("REFUNDS_REVIEW");
 
-  if (session?.role !== UserRole.ADMIN) {
-    return NextResponse.json(
-      { ok: false, message: "Akses admin diperlukan." },
-      { status: session ? 403 : 401 },
-    );
+  if (auth.response) {
+    return auth.response;
   }
 
   const { id } = await params;
   const rateLimit = await enforceSensitiveActionRateLimit(
     request,
     securityRateLimitRules.adminRefundMutation,
-    session,
+    auth.session,
     [id],
   );
 
@@ -316,7 +309,7 @@ export async function PATCH(
 
     await tx.adminActionLog.create({
       data: {
-        adminId: session.userId,
+        adminId: auth.session.userId,
         action: `REFUND_${parsed.data.status}`,
         targetType: "refund_request",
         targetId: updatedRefund.id,

@@ -1,13 +1,12 @@
 import {
   NotificationType,
-  UserRole,
   WalletTransactionStatus,
   WalletTransactionType,
 } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { getCurrentSession } from "@/lib/auth-session";
+import { requireAdminPermission } from "@/lib/admin-permissions";
 import { createNotificationAndDeliver } from "@/lib/notification-delivery";
 import { prisma } from "@/lib/prisma";
 import {
@@ -33,20 +32,17 @@ export async function PATCH(
   request: Request,
   { params }: AdminPayoutRouteProps,
 ) {
-  const session = await getCurrentSession();
+  const auth = await requireAdminPermission("PAYOUTS_REVIEW");
 
-  if (session?.role !== UserRole.ADMIN) {
-    return NextResponse.json(
-      { ok: false, message: "Akses admin diperlukan." },
-      { status: session ? 403 : 401 },
-    );
+  if (auth.response) {
+    return auth.response;
   }
 
   const { id } = await params;
   const rateLimit = await enforceSensitiveActionRateLimit(
     request,
     securityRateLimitRules.adminPayoutMutation,
-    session,
+    auth.session,
     [id],
   );
 
@@ -117,7 +113,7 @@ export async function PATCH(
     data: {
       status: nextStatus,
       processedAt: new Date(),
-      processedBy: session.name,
+      processedBy: auth.session.name,
       adminNote: parsed.data.adminNote,
       transferReference:
         nextStatus === WalletTransactionStatus.COMPLETED
@@ -158,7 +154,7 @@ export async function PATCH(
 
   await prisma.adminActionLog.create({
     data: {
-      adminId: session.userId,
+      adminId: auth.session.userId,
       action:
         nextStatus === WalletTransactionStatus.COMPLETED
           ? "PAYOUT_APPROVED"

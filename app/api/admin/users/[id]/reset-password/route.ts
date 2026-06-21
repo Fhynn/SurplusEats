@@ -2,7 +2,7 @@ import { UserRole } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { getCurrentSession } from "@/lib/auth-session";
+import { requireAdminPermission } from "@/lib/admin-permissions";
 import { hashPassword } from "@/lib/password";
 import { prisma, type PrismaTransactionClient } from "@/lib/prisma";
 import {
@@ -37,20 +37,17 @@ export async function POST(
   request: Request,
   { params }: ResetPasswordRouteProps,
 ) {
-  const session = await getCurrentSession();
+  const auth = await requireAdminPermission("USERS_SECURITY");
 
-  if (session?.role !== UserRole.ADMIN) {
-    return NextResponse.json(
-      { ok: false, message: "Akses admin diperlukan." },
-      { status: session ? 403 : 401 },
-    );
+  if (auth.response) {
+    return auth.response;
   }
 
   const { id } = await params;
   const rateLimit = await enforceSensitiveActionRateLimit(
     request,
     securityRateLimitRules.adminResetPassword,
-    session,
+    auth.session,
     [id],
   );
 
@@ -96,7 +93,7 @@ export async function POST(
         where: { userId: targetUser.id, revokedAt: null },
         data: {
           revokedAt: new Date(),
-          revokedById: session.userId,
+          revokedById: auth.session.userId,
           revokeReason: "PASSWORD_RESET_BY_ADMIN",
         },
       });
@@ -104,7 +101,7 @@ export async function POST(
 
     await tx.adminActionLog.create({
       data: {
-        adminId: session.userId,
+        adminId: auth.session.userId,
         action: "USER_PASSWORD_RESET",
         targetType: "user",
         targetId: targetUser.id,

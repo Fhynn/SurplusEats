@@ -2,7 +2,10 @@ import { UserRole, UserStatus } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { getCurrentSession } from "@/lib/auth-session";
+import {
+  requireAdminPermission,
+  type AdminPermission,
+} from "@/lib/admin-permissions";
 import { prisma, type PrismaTransactionClient } from "@/lib/prisma";
 import {
   enforceSensitiveActionRateLimit,
@@ -62,20 +65,8 @@ function getOrderTone(status: string): ActivityTone {
   return "blue";
 }
 
-async function requireAdmin() {
-  const session = await getCurrentSession();
-
-  if (session?.role !== UserRole.ADMIN) {
-    return {
-      session,
-      response: NextResponse.json(
-        { ok: false, message: "Akses admin diperlukan." },
-        { status: session ? 403 : 401 },
-      ),
-    };
-  }
-
-  return { session, response: null };
+async function requireAdmin(permission: AdminPermission = "USERS_VIEW") {
+  return requireAdminPermission(permission);
 }
 
 export async function GET(_request: Request, { params }: AdminUserRouteProps) {
@@ -349,7 +340,7 @@ export async function GET(_request: Request, { params }: AdminUserRouteProps) {
 }
 
 export async function PATCH(request: Request, { params }: AdminUserRouteProps) {
-  const adminCheck = await requireAdmin();
+  const adminCheck = await requireAdmin("USERS_MANAGE_STATUS");
 
   if (adminCheck.response) {
     return adminCheck.response;

@@ -1,12 +1,11 @@
 import {
   ApplicationStatus,
   RestaurantStatus,
-  UserRole,
 } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { getCurrentSession } from "@/lib/auth-session";
+import { requireAdminPermission } from "@/lib/admin-permissions";
 import { slugify } from "@/lib/backend-utils";
 import { getStorePickupCoordinateIssue } from "@/lib/location-quality";
 import { deliverNotifications } from "@/lib/notification-delivery";
@@ -62,13 +61,10 @@ async function createUniqueRestaurantSlug(
 }
 
 export async function GET(request: Request) {
-  const session = await getCurrentSession();
+  const auth = await requireAdminPermission("VERIFICATIONS_REVIEW");
 
-  if (session?.role !== UserRole.ADMIN) {
-    return NextResponse.json(
-      { ok: false, message: "Akses admin diperlukan." },
-      { status: session ? 403 : 401 },
-    );
+  if (auth.response) {
+    return auth.response;
   }
 
   const url = new URL(request.url);
@@ -107,19 +103,16 @@ export async function POST() {
 }
 
 export async function PATCH(request: Request) {
-  const session = await getCurrentSession();
+  const auth = await requireAdminPermission("VERIFICATIONS_REVIEW");
 
-  if (session?.role !== UserRole.ADMIN) {
-    return NextResponse.json(
-      { ok: false, message: "Akses admin diperlukan." },
-      { status: session ? 403 : 401 },
-    );
+  if (auth.response) {
+    return auth.response;
   }
 
   const rateLimit = await enforceSensitiveActionRateLimit(
     request,
     securityRateLimitRules.adminApplicationReview,
-    session,
+    auth.session,
   );
 
   if (!rateLimit.allowed) {
@@ -302,7 +295,7 @@ export async function PATCH(request: Request) {
 
       await tx.adminActionLog.create({
         data: {
-          adminId: session.userId,
+          adminId: auth.session.userId,
           action:
             data.status === ApplicationStatus.APPROVED
               ? "APPROVE_RESTAURANT_APPLICATION"

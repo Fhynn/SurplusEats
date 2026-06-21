@@ -1,20 +1,16 @@
-import { UserRole } from "@prisma/client";
 import { NextResponse } from "next/server";
 
-import { getCurrentSession } from "@/lib/auth-session";
+import { requireAdminPermission } from "@/lib/admin-permissions";
 import { getCacheStatus } from "@/lib/server-cache";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const session = await getCurrentSession();
+  const auth = await requireAdminPermission("SETTINGS_MANAGE");
 
-  if (session?.role !== UserRole.ADMIN) {
-    return NextResponse.json(
-      { ok: false, message: "Akses admin diperlukan." },
-      { status: session ? 403 : 401 },
-    );
+  if (auth.response) {
+    return auth.response;
   }
 
   return NextResponse.json({
