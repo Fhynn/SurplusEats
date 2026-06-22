@@ -764,12 +764,12 @@ model WalletTransaction {
 model PlatformFeeSetting {
   id                String   @id @default("default")
   active            Boolean  @default(true)
-  serviceFeeFlat    Int      @default(2000)
+  serviceFeeFlat    Int      @default(0)
   serviceFeePercent Float    @default(0)
   taxFeeFlat        Int      @default(0)
   taxFeePercent     Float    @default(0)
   commissionFlat    Int      @default(0)
-  commissionPercent Float    @default(0)
+  commissionPercent Float    @default(10)
   minCommission     Int      @default(0)
   updatedById       String?
   createdAt         DateTime @default(now())

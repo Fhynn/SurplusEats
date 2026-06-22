@@ -30,12 +30,12 @@ type PlatformFeeClient = Pick<typeof prisma, "platformFeeSetting">;
 export const defaultPlatformFeeSettings: PlatformFeeSettings = {
   id: platformFeeSettingId,
   active: true,
-  serviceFeeFlat: 2000,
+  serviceFeeFlat: 0,
   serviceFeePercent: 0,
   taxFeeFlat: 0,
   taxFeePercent: 0,
   commissionFlat: 0,
-  commissionPercent: 0,
+  commissionPercent: 10,
   minCommission: 0,
   updatedById: null,
 };
